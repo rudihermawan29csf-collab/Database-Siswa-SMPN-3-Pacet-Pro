@@ -75,10 +75,17 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
                   // Helper untuk ambil value dari beberapa kemungkinan key
                   const getVal = (keys: string[], def: any = '') => {
                       for (const k of keys) {
+                          // Check exact match
                           if (row[k] !== undefined) return row[k];
+                          // Check loose match (case insensitive)
+                          const looseKey = Object.keys(row).find(rk => rk.toLowerCase() === k.toLowerCase());
+                          if (looseKey && row[looseKey] !== undefined) return row[looseKey];
                       }
                       return def;
                   };
+
+                  const genderRaw = getVal(['L/P', 'Jenis Kelamin', 'JK'], 'L');
+                  const gender = (genderRaw === 'L' || genderRaw === 'Laki-laki') ? 'L' : 'P';
 
                   return {
                       id: Math.random().toString(36).substr(2, 9),
@@ -86,8 +93,8 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
                       fullName: getVal(['Nama Peserta Didik', 'Nama Lengkap', 'Nama'], ''),
                       nis: String(getVal(['NIS', 'NIPD'], '')),
                       nisn: String(getVal(['NISN'], '')),
-                      className: getVal(['Kelas', 'Rombel', 'Tingkat Pendidikan'], 'VII A'),
-                      gender: (getVal(['L/P', 'Jenis Kelamin']) === 'L' || getVal(['L/P', 'Jenis Kelamin']) === 'Laki-laki') ? 'L' : 'P',
+                      className: getVal(['Kelas', 'Rombel', 'Tingkat Pendidikan', 'Rombel Saat Ini'], 'VII A'),
+                      gender: gender,
                       birthPlace: getVal(['Tempat Lahir'], ''),
                       birthDate: getVal(['Tanggal Lahir'], ''),
                       religion: getVal(['Agama'], 'Islam'),
@@ -97,11 +104,11 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
                       address: getVal(['Alamat Jalan', 'Alamat'], ''),
                       postalCode: String(getVal(['Kode Pos'], '')),
                       subDistrict: getVal(['Kecamatan'], ''),
-                      district: getVal(['Kabupaten', 'Kabupaten/Kota'], ''),
+                      district: getVal(['Kabupaten', 'Kabupaten/Kota'], 'Mojokerto'),
                       
                       // 3. Periodik
-                      childOrder: Number(getVal(['Anak Ke'], 1)),
-                      siblingCount: Number(getVal(['Jml Saudara', 'Jumlah Saudara Kandung'], 0)),
+                      childOrder: Number(getVal(['Anak Ke', 'Anak ke-berapa'], 1)),
+                      siblingCount: Number(getVal(['Jml Saudara', 'Jumlah Saudara Kandung', 'Jml. Saudara Kandung'], 0)),
                       height: Number(getVal(['Tinggi Badan'], 0)),
                       weight: Number(getVal(['Berat Badan'], 0)),
                       bloodType: getVal(['Golongan Darah'], '-'),
@@ -115,16 +122,16 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
 
                       // 4. Orang Tua
                       father: { 
-                          name: getVal(['Nama Ayah'], ''), 
+                          name: getVal(['Nama Ayah', 'Data Ayah', 'Nama Ayah Kandung'], ''), 
                           nik: String(getVal(['NIK Ayah'], '')), 
                           birthPlaceDate: String(getVal(['Tahun Lahir Ayah'], '')), 
                           education: getVal(['Pendidikan Ayah'], ''), 
                           job: getVal(['Pekerjaan Ayah'], ''), 
                           income: getVal(['Penghasilan Ayah'], ''), 
-                          phone: String(getVal(['No HP', 'Nomor Telepon', 'No Handphone'], '')) 
+                          phone: String(getVal(['No HP', 'Nomor Telepon', 'No Handphone', 'HP'], '')) 
                       },
                       mother: { 
-                          name: getVal(['Nama Ibu', 'Nama Ibu Kandung'], ''), 
+                          name: getVal(['Nama Ibu', 'Nama Ibu Kandung', 'Data Ibu'], ''), 
                           nik: String(getVal(['NIK Ibu'], '')), 
                           birthPlaceDate: String(getVal(['Tahun Lahir Ibu'], '')), 
                           education: getVal(['Pendidikan Ibu'], ''), 
@@ -133,7 +140,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
                           phone: '' 
                       },
                       guardian: {
-                          name: getVal(['Nama Wali'], ''),
+                          name: getVal(['Nama Wali', 'Data Wali'], ''),
                           nik: '',
                           birthPlaceDate: String(getVal(['Tahun Lahir Wali'], '')),
                           education: getVal(['Pendidikan Wali'], ''),
@@ -154,26 +161,26 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
                           kodePos: String(getVal(['Kode Pos'], '')),
                           livingStatus: getVal(['Jenis Tinggal'], ''),
                           transportation: getVal(['Alat Transportasi'], ''),
-                          email: getVal(['Email'], ''),
+                          email: getVal(['Email', 'E-Mail'], ''),
                           skhun: getVal(['No SKHUN'], ''),
                           kpsReceiver: getVal(['Penerima KPS', 'Penerima KPH'], 'Tidak'),
                           kpsNumber: String(getVal(['No KPS'], '')),
                           kipReceiver: getVal(['Penerima KIP'], 'Tidak'),
-                          kipNumber: String(getVal(['No KIP'], '')),
+                          kipNumber: String(getVal(['No KIP', 'Nomor KIP'], '')),
                           kipName: getVal(['Nama di KIP', 'Nama KIP'], ''),
-                          kksNumber: String(getVal(['No KKS'], '')),
+                          kksNumber: String(getVal(['No KKS', 'Nomor KKS'], '')),
                           birthRegNumber: String(getVal(['No Reg Akta', 'No Registrasi Akta Lahir'], '')),
                           bank: getVal(['Bank'], ''),
-                          bankAccount: String(getVal(['No Rekening'], '')),
-                          bankAccountName: getVal(['Atas Nama Rekening'], ''),
-                          pipEligible: getVal(['Layak PIP'], 'Tidak'),
+                          bankAccount: String(getVal(['No Rekening', 'Nomor Rekening Bank'], '')),
+                          bankAccountName: getVal(['Atas Nama Rekening', 'Rekening Atas Nama'], ''),
+                          pipEligible: getVal(['Layak PIP', 'Layak PIP (usulan dari sekolah)'], 'Tidak'),
                           pipReason: getVal(['Alasan Layak PIP'], ''),
                           specialNeeds: getVal(['Kebutuhan Khusus'], 'Tidak'),
                           latitude: String(getVal(['Lintang'], '')),
                           longitude: String(getVal(['Bujur'], '')),
                           headCircumference: Number(getVal(['Lingkar Kepala'], 0)),
-                          distanceToSchool: getVal(['Jarak Rumah', 'Jarak Tempat Tinggal ke Sekolah'], ''),
-                          unExamNumber: getVal(['No Peserta UN'], ''),
+                          distanceToSchool: getVal(['Jarak Rumah', 'Jarak Tempat Tinggal ke Sekolah', 'Jarak Rumah ke Sekolah (KM)'], ''),
+                          unExamNumber: getVal(['No Peserta UN', 'No Peserta Ujian Nasional'], ''),
                           travelTimeHours: 0,
                           travelTimeMinutes: Number(getVal(['Waktu Tempuh (Menit)', 'Waktu Tempuh'], 0)),
                       },
