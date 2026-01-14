@@ -97,6 +97,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           if (pendingDoc) {
               setActiveDocType(pendingDoc.category);
           } else {
+              // Only reset to IJAZAH if current type is not present
               const currentTabHasDoc = currentStudent.documents.some(d => d.category === activeDocType);
               if (!currentTabHasDoc) setActiveDocType('IJAZAH');
           }
@@ -151,7 +152,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       if (currentDoc && currentStudent) { 
           setIsSaving(true);
           
-          // IMMUTABLE UPDATE: Create a new student object with updated documents
+          // IMMUTABLE UPDATE
           const updatedDocs = currentStudent.documents.map(d => 
               d.id === currentDoc.id 
               ? {
@@ -171,13 +172,18 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           };
           
           if (onSave) {
+              // Optimistic UI Update via App State
               await onSave(updatedStudent);
+              // NOTE: Do NOT call onUpdate() here, as it triggers a re-fetch that overwrites local state with stale server data
           } else {
+              // Fallback if onSave not provided
               await api.updateStudent(updatedStudent);
+              if (onUpdate) onUpdate(); 
           }
           
           setIsSaving(false);
-          if (onUpdate) onUpdate(); 
+          // Force re-render of local component just in case, though props change should handle it
+          setForceUpdate(prev => prev + 1); 
       } 
   };
   
@@ -206,16 +212,20 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           };
 
           if (onSave) {
+              // Optimistic UI Update
               await onSave(updatedStudent);
+              // NOTE: Do NOT call onUpdate() here to avoid stale data overwrite
           } else {
               await api.updateStudent(updatedStudent);
+              if (onUpdate) onUpdate(); 
           }
           
           setIsSaving(false);
           setRejectModalOpen(false); 
           setRejectionNote(''); 
           
-          if (onUpdate) onUpdate(); 
+          // Force re-render
+          setForceUpdate(prev => prev + 1); 
       } 
   };
 
@@ -242,8 +252,14 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               documents: updatedDocs
           };
 
-          if (onSave) await onSave(updatedStudent); else await api.updateStudent(updatedStudent);
+          if (onSave) {
+              await onSave(updatedStudent);
+          } else {
+              await api.updateStudent(updatedStudent);
+              if (onUpdate) onUpdate();
+          }
           setIsSaving(false);
+          setForceUpdate(prev => prev + 1);
       }
   };
 
@@ -399,7 +415,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                             setIsSaving(true);
                             if (onSave) await onSave(currentStudent); else await api.updateStudent(currentStudent);
                             setIsSaving(false);
-                            if(onUpdate) onUpdate();
+                            // Do not call onUpdate() here to avoid stale data refetch
                         }
                         setIsEditing(!isEditing);
                     }} className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-bold transition-colors ${isEditing ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600'}`}>{isEditing ? <><Save className="w-3 h-3" /> Selesai</> : <><Pencil className="w-3 h-3" /> Edit Data</>}</button>
