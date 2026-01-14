@@ -217,14 +217,16 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       const element = document.getElementById('report-content');
       const fileName = `Rapor_${selectedStudent.fullName.replace(/\s+/g, '_')}_Sem${dbSemester}_F4.pdf`;
 
-      // Optimasi ukuran agar tidak terpotong (width 190mm + margin 10mm left + 10mm right = 210mm < 215mm F4)
+      // Optimasi ukuran agar pas 1 Halaman F4 (215x330mm)
+      // Mengurangi margin agar muat dan menggunakan format custom untuk F4
       const opt = {
-          margin: [5, 10, 5, 10], // Margin atas, kiri, bawah, kanan (mm)
+          margin: [3, 10, 3, 10], // Top, Left, Bottom, Right (mm) - More vertical space saved
           filename: fileName,
           image: { type: 'jpeg', quality: 0.98 },
           html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
-          // F4 size is roughly 215mm x 330mm
-          jsPDF: { unit: 'mm', format: [215, 330], orientation: 'portrait' } 
+          // Custom F4 size in mm
+          jsPDF: { unit: 'mm', format: [215, 330], orientation: 'portrait' },
+          pagebreak: { mode: 'avoid-all' }
       };
 
       // @ts-ignore
@@ -406,48 +408,63 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       const p5Key = `${currentYear}-${level}-${dbSemester}`;
       const p5Data = p5Config[p5Key] || [];
 
+      // HELPER for Student Interaction Styling
+      const isStudent = userRole === 'STUDENT';
+      const getCellClass = () => isStudent 
+          ? "bg-yellow-50 hover:bg-yellow-100 cursor-pointer print:bg-white text-blue-900" 
+          : "bg-white";
+
       return (
-          // Adjusted width to 190mm to ensure it fits within 215mm width minus margins (10mm left + 10mm right)
-          <div id="report-content" className="bg-white p-6 shadow-lg w-[190mm] min-h-[330mm] mx-auto text-black font-serif text-xs leading-tight box-border relative">
-                {/* Header */}
-                <div className="mb-4 font-bold text-xs">
+          // Adjusted width to 190mm to ensure proper print margins on F4 (215mm width).
+          // Font set to text-[8px] globally to ensure compact header and table.
+          // Added min-h-[310mm] to ensure full page background even with less content
+          <div id="report-content" className="bg-white p-5 shadow-lg w-[190mm] min-h-[310mm] mx-auto text-black font-serif text-[8px] leading-tight box-border relative flex flex-col">
+                {/* Header - Ensure compact spacing, Removed Font Bold from Labels */}
+                <div className="mb-2 text-[8px] border-b border-black pb-2">
                     <table className="w-full">
                         <tbody>
-                            <tr>
-                                <td className="w-32 py-0.5">Nama Peserta Didik</td>
-                                <td className="py-0.5">: {student.fullName}</td>
-                                <td className="w-20 py-0.5">Semester</td>
-                                <td className="py-0.5">: {dbSemester} ({dbSemester % 2 !== 0 ? 'Ganjil' : 'Genap'})</td>
+                            <tr className="align-top">
+                                <td className="w-24 pb-0.5">Nama Peserta Didik</td>
+                                <td className="pb-0.5">: <span className="font-bold">{student.fullName}</span></td>
+                                <td className="w-20 pb-0.5">Semester</td>
+                                <td className="pb-0.5">: {dbSemester} ({dbSemester % 2 !== 0 ? 'Ganjil' : 'Genap'})</td>
                             </tr>
-                            <tr>
-                                <td className="py-0.5">Kelas</td>
-                                <td className="py-0.5">: {student.className}</td>
-                                <td className="py-0.5">Fase</td>
-                                <td className="py-0.5">: D</td>
+                            <tr className="align-top">
+                                <td className="pb-0.5">Kelas</td>
+                                <td className="pb-0.5">: {student.className}</td>
+                                <td className="pb-0.5">Fase</td>
+                                <td className="pb-0.5">: D</td>
                             </tr>
-                            <tr>
-                                <td className="py-0.5">Sekolah</td>
-                                <td className="py-0.5">: SMPN 3 PACET</td>
-                                <td className="py-0.5">Tahun</td>
-                                <td className="py-0.5">: {currentYear}</td>
+                            <tr className="align-top">
+                                <td className="pb-0.5">Sekolah</td>
+                                <td className="pb-0.5">: SMPN 3 PACET</td>
+                                <td className="pb-0.5">Tahun</td>
+                                <td className="pb-0.5">: {currentYear}</td>
                             </tr>
-                            <tr>
-                                <td className="py-0.5 align-top">Alamat</td>
-                                <td className="py-0.5" colSpan={3}>: Jl. Tirtowening- Ds. Kembangbelor - Kec. Pacet Kab. Mojokerto</td>
+                            <tr className="align-top">
+                                <td className="pb-0.5">Alamat</td>
+                                <td colSpan={3} className="pb-0.5">: Jl. Tirtowening- Ds. Kembangbelor - Kec. Pacet Kab. Mojokerto</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
 
-                {/* A. Intrakurikuler */}
-                <h3 className="font-bold mb-1 text-xs">A. INTRAKURIKULER</h3>
-                <table className="w-full border-collapse border border-black mb-4 text-[10px]">
+                {isStudent && (
+                    <div className="no-print mb-2 p-1 bg-blue-50 border border-blue-200 rounded text-[8px] text-blue-800 flex items-center gap-2">
+                        <AlertTriangle className="w-3 h-3" />
+                        <span>Klik pada kotak nilai berwarna kuning untuk mengajukan koreksi nilai.</span>
+                    </div>
+                )}
+
+                {/* A. Intrakurikuler - Compact Table */}
+                <h3 className="font-bold mb-0.5 text-[8px]">A. INTRAKURIKULER</h3>
+                <table className="w-full border-collapse border border-black mb-2 text-[8px]">
                     <thead>
-                        <tr className="bg-white text-center font-bold">
-                            <td className="border border-black p-1 w-8">NO</td>
-                            <td className="border border-black p-1">MATA PELAJARAN</td>
-                            <td className="border border-black p-1 w-16">NILAI AKHIR</td>
-                            <td className="border border-black p-1">CAPAIAN KOMPETENSI</td>
+                        <tr className="bg-gray-100 text-center font-bold">
+                            <td className="border border-black px-1 py-1 w-6">NO</td>
+                            <td className="border border-black px-1 py-1">MATA PELAJARAN</td>
+                            <td className="border border-black px-1 py-1 w-10">NILAI</td>
+                            <td className="border border-black px-1 py-1">CAPAIAN KOMPETENSI</td>
                         </tr>
                     </thead>
                     <tbody>
@@ -458,24 +475,25 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                                 return (
                                     <React.Fragment key={sub.key}>
                                         <tr>
-                                            <td className="border border-black p-1 text-center align-top">{idx + 1}</td>
-                                            <td className="border border-black p-1">
+                                            <td className="border border-black px-1 py-0.5 text-center align-top">{idx + 1}</td>
+                                            <td className="border border-black px-1 py-0.5">
                                                 <div>Seni dan Prakarya</div>
                                                 <div className="pl-4">a. Seni Musik</div>
                                                 <div className="pl-4">b. Seni Rupa</div>
                                             </td>
-                                            <td className="border border-black p-1 text-center align-top font-bold bg-white relative group">
+                                            <td 
+                                                className={`border border-black px-1 py-0.5 text-center align-top font-bold relative group transition-colors ${getCellClass()}`}
+                                                onClick={() => isStudent && handleOpenCorrection(sub.label, sub.full, data?.score || 0)}
+                                            >
                                                 <div className="mb-2"></div>
                                                 <div>{data?.score || '#N/A'}</div>
-                                                {userRole === 'STUDENT' && (
-                                                    <button 
-                                                        onClick={() => handleOpenCorrection(sub.label, sub.full, data?.score || 0)}
-                                                        className="absolute top-0 right-0 p-1 opacity-0 group-hover:opacity-100 text-blue-600 bg-blue-50 hover:bg-blue-200 rounded" title="Ajukan Koreksi">
-                                                        <Pencil className="w-3 h-3" />
-                                                    </button>
+                                                {isStudent && (
+                                                    <div className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <Pencil className="w-2 h-2 text-orange-600" />
+                                                    </div>
                                                 )}
                                             </td>
-                                            <td className="border border-black p-1 italic align-top">
+                                            <td className="border border-black px-1 py-0.5 italic align-top">
                                                 <div className="mb-2"></div>
                                                 <div>{data?.competency || '#N/A'}</div>
                                             </td>
@@ -486,37 +504,39 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                              if (sub.key === 'Bahasa Jawa') {
                                 return (
                                     <tr key={sub.key}>
-                                        <td className="border border-black p-1 text-center"></td>
-                                        <td className="border border-black p-1 pl-4">a. Bahasa Jawa</td>
-                                        <td className="border border-black p-1 text-center font-bold relative group">
+                                        <td className="border border-black px-1 py-0.5 text-center"></td>
+                                        <td className="border border-black px-1 py-0.5 pl-4">a. Bahasa Jawa</td>
+                                        <td 
+                                            className={`border border-black px-1 py-0.5 text-center font-bold relative group transition-colors ${getCellClass()}`}
+                                            onClick={() => isStudent && handleOpenCorrection(sub.label, sub.full, data?.score || 0)}
+                                        >
                                             {data?.score || '#N/A'}
-                                            {userRole === 'STUDENT' && (
-                                                <button 
-                                                    onClick={() => handleOpenCorrection(sub.label, sub.full, data?.score || 0)}
-                                                    className="absolute top-0 right-0 p-1 opacity-0 group-hover:opacity-100 text-blue-600 bg-blue-50 hover:bg-blue-200 rounded" title="Ajukan Koreksi">
-                                                    <Pencil className="w-3 h-3" />
-                                                </button>
+                                            {isStudent && (
+                                                <div className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <Pencil className="w-2 h-2 text-orange-600" />
+                                                </div>
                                             )}
                                         </td>
-                                        <td className="border border-black p-1 italic">{data?.competency || '#N/A'}</td>
+                                        <td className="border border-black px-1 py-0.5 italic">{data?.competency || '#N/A'}</td>
                                     </tr>
                                 )
                             }
                             return (
                                 <tr key={sub.key}>
-                                    <td className="border border-black p-1 text-center">{idx + 1}</td>
-                                    <td className="border border-black p-1">{sub.full}</td>
-                                    <td className="border border-black p-1 text-center font-bold relative group">
+                                    <td className="border border-black px-1 py-0.5 text-center">{idx + 1}</td>
+                                    <td className="border border-black px-1 py-0.5">{sub.full}</td>
+                                    <td 
+                                        className={`border border-black px-1 py-0.5 text-center font-bold relative group transition-colors ${getCellClass()}`}
+                                        onClick={() => isStudent && handleOpenCorrection(sub.label, sub.full, data?.score || 0)}
+                                    >
                                         {data?.score || '#N/A'}
-                                        {userRole === 'STUDENT' && (
-                                            <button 
-                                                onClick={() => handleOpenCorrection(sub.label, sub.full, data?.score || 0)}
-                                                className="absolute top-0 right-0 p-1 opacity-0 group-hover:opacity-100 text-blue-600 bg-blue-50 hover:bg-blue-200 rounded" title="Ajukan Koreksi">
-                                                <Pencil className="w-3 h-3" />
-                                            </button>
+                                        {isStudent && (
+                                            <div className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <Pencil className="w-2 h-2 text-orange-600" />
+                                            </div>
                                         )}
                                     </td>
-                                    <td className="border border-black p-1 italic">{data?.competency || '#N/A'}</td>
+                                    <td className="border border-black px-1 py-0.5 italic">{data?.competency || '#N/A'}</td>
                                 </tr>
                             );
                         })}
@@ -524,38 +544,38 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                 </table>
 
                 {/* B. P5 - DYNAMIC FROM CONFIG */}
-                <h3 className="font-bold mb-1 text-xs">B. DESKRIPSI NILAI P5</h3>
-                <table className="w-full border-collapse border border-black mb-4 text-[10px]">
+                <h3 className="font-bold mb-0.5 text-[8px]">B. DESKRIPSI NILAI P5</h3>
+                <table className="w-full border-collapse border border-black mb-2 text-[8px]">
                     <thead>
-                        <tr className="bg-white text-center font-bold">
-                            <td className="border border-black p-1 w-8">NO</td>
-                            <td className="border border-black p-1">TEMA</td>
-                            <td className="border border-black p-1">DESKRIPSI</td>
+                        <tr className="bg-gray-100 text-center font-bold">
+                            <td className="border border-black px-1 py-1 w-6">NO</td>
+                            <td className="border border-black px-1 py-1">TEMA</td>
+                            <td className="border border-black px-1 py-1">DESKRIPSI</td>
                         </tr>
                     </thead>
                     <tbody>
                         {p5Data.length > 0 ? p5Data.map((p5, idx) => (
                             <tr key={idx}>
-                                <td className="border border-black p-1 text-center">{idx + 1}</td>
-                                <td className="border border-black p-1">{p5.theme}</td>
-                                <td className="border border-black p-1">{p5.description}</td>
+                                <td className="border border-black px-1 py-0.5 text-center">{idx + 1}</td>
+                                <td className="border border-black px-1 py-0.5">{p5.theme}</td>
+                                <td className="border border-black px-1 py-0.5">{p5.description}</td>
                             </tr>
                         )) : (
                             <tr>
-                                <td className="border border-black p-1 text-center" colSpan={3}>Belum ada data Projek P5 untuk kelas ini.</td>
+                                <td className="border border-black px-1 py-0.5 text-center" colSpan={3}>Belum ada data Projek P5 untuk kelas ini.</td>
                             </tr>
                         )}
                     </tbody>
                 </table>
 
                 {/* C. Ekstrakurikuler */}
-                <h3 className="font-bold mb-1 text-xs">C. EKSTRAKURIKULER</h3>
-                <table className="w-full border-collapse border border-black mb-4 text-[10px]">
+                <h3 className="font-bold mb-0.5 text-[8px]">C. EKSTRAKURIKULER</h3>
+                <table className="w-full border-collapse border border-black mb-2 text-[8px]">
                     <thead>
-                        <tr className="bg-white text-center font-bold">
-                            <td className="border border-black p-1 w-8">NO</td>
-                            <td className="border border-black p-1">KEGIATAN EKSTRAKURIKULER</td>
-                            <td className="border border-black p-1 w-24">PREDIKAT</td>
+                        <tr className="bg-gray-100 text-center font-bold">
+                            <td className="border border-black px-1 py-1 w-6">NO</td>
+                            <td className="border border-black px-1 py-1">KEGIATAN EKSTRAKURIKULER</td>
+                            <td className="border border-black px-1 py-1 w-20">PREDIKAT</td>
                         </tr>
                     </thead>
                     <tbody>
@@ -563,9 +583,9 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                             const data = record?.extracurriculars?.find(e => e.name === ex);
                             return (
                                 <tr key={ex}>
-                                    <td className="border border-black p-1 text-center">{idx === 0 ? '1' : ''}</td>
-                                    <td className="border border-black p-1">{ex}</td>
-                                    <td className="border border-black p-1 text-center">{data?.score || '-'}</td>
+                                    <td className="border border-black px-1 py-0.5 text-center">{idx === 0 ? '1' : ''}</td>
+                                    <td className="border border-black px-1 py-0.5">{ex}</td>
+                                    <td className="border border-black px-1 py-0.5 text-center">{data?.score || '-'}</td>
                                 </tr>
                             );
                         })}
@@ -573,64 +593,64 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                 </table>
 
                 {/* D. Catatan & Ketidakhadiran */}
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <h3 className="font-bold mb-1 text-xs">D. CATATAN WALI KELAS</h3>
-                        <div className="border border-black p-2 text-[10px] h-24 italic flex items-center justify-center text-center">
+                <div className="grid grid-cols-3 gap-2 mb-2 text-[8px]">
+                    <div className="col-span-2">
+                        <h3 className="font-bold mb-0.5 text-[8px]">D. CATATAN WALI KELAS</h3>
+                        <div className="border border-black px-2 py-1 h-12 italic flex items-center justify-center text-center text-[8px]">
                             {record?.teacherNote || "Niat yang tulus untuk belajar terlihat jelas dari usahamu mengikuti kegiatan belajar dengan baik."}
                         </div>
                         
-                        <div className="mt-2 border border-black p-2 text-[10px]">
-                            <div className="font-bold mb-1">KENAIKAN KELAS</div>
-                            <div className="flex"><span className="w-20">Naik Kelas</span><span>: -</span></div>
-                            <div className="flex"><span className="w-20">Tanggal</span><span>: -</span></div>
+                        <div className="mt-1 border border-black px-2 py-1 flex justify-between items-center text-[8px]">
+                            <div className="font-bold">KENAIKAN KELAS</div>
+                            <div>Naik Kelas : -</div>
+                            <div>Tanggal : -</div>
                         </div>
                     </div>
-                    <div>
-                        <h3 className="font-bold mb-1 text-xs">KETIDAKHADIRAN</h3>
-                        <table className="w-full border-collapse border border-black text-[10px]">
+                    <div className="col-span-1">
+                        <h3 className="font-bold mb-0.5 text-[8px]">KETIDAKHADIRAN</h3>
+                        <table className="w-full border-collapse border border-black text-[8px]">
                             <tbody>
                                 <tr>
-                                    <td className="border border-black p-1">1. Sakit</td>
-                                    <td className="border border-black p-1 text-center w-12">{record?.attendance.sick ?? '#N/A'}</td>
-                                    <td className="border border-black p-1 w-12">Hari</td>
+                                    <td className="border border-black px-1 py-0.5">1. Sakit</td>
+                                    <td className="border border-black px-1 py-0.5 text-center w-8">{record?.attendance.sick ?? 0}</td>
+                                    <td className="border border-black px-1 py-0.5">Hari</td>
                                 </tr>
                                 <tr>
-                                    <td className="border border-black p-1">2. Ijin</td>
-                                    <td className="border border-black p-1 text-center">{record?.attendance.permitted ?? '#N/A'}</td>
-                                    <td className="border border-black p-1">Hari</td>
+                                    <td className="border border-black px-1 py-0.5">2. Ijin</td>
+                                    <td className="border border-black px-1 py-0.5 text-center">{record?.attendance.permitted ?? 0}</td>
+                                    <td className="border border-black px-1 py-0.5">Hari</td>
                                 </tr>
                                 <tr>
-                                    <td className="border border-black p-1">3. Tanpa Keterangan</td>
-                                    <td className="border border-black p-1 text-center">{record?.attendance.noReason ?? '#N/A'}</td>
-                                    <td className="border border-black p-1">Hari</td>
+                                    <td className="border border-black px-1 py-0.5">3. Alpha</td>
+                                    <td className="border border-black px-1 py-0.5 text-center">{record?.attendance.noReason ?? 0}</td>
+                                    <td className="border border-black px-1 py-0.5">Hari</td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
 
+                {/* Spacer to push signatures to bottom if needed */}
+                <div className="flex-1"></div>
+
                 {/* Signatures */}
-                <div className="flex justify-between text-[10px] mt-6 px-4 font-serif">
+                <div className="flex justify-between mt-4 px-4 font-serif text-[8px]">
                     <div className="text-center w-1/3">
-                        <p className="mb-12">Mengetahui,<br/>Orang Tua/Wali</p>
-                        <p className="font-bold border-t border-black px-4 pt-1 inline-block min-w-[120px]"></p>
+                        <p className="mb-8">Mengetahui,<br/>Orang Tua/Wali</p>
+                        <p className="font-bold border-t border-black px-2 inline-block min-w-[80px]"></p>
                     </div>
                     
-                    {/* Dummy Spacer */}
-                    <div className="w-4"></div>
-
-                    <div className="text-center w-1/3 relative">
-                        <p className="mb-1">Pacet, {titimangsaDate}</p>
-                        <p className="mb-12">WALI KELAS</p>
+                    <div className="text-center w-1/3">
+                        <p className="mb-0">Pacet, {titimangsaDate}</p>
+                        <p className="mb-8">WALI KELAS</p>
                         <p className="font-bold underline decoration-1 underline-offset-2">{waliInfo.teacher}</p>
                         <p>NIP. {waliInfo.nip}</p>
                     </div>
                 </div>
                 
-                <div className="flex justify-center text-[10px] mt-4 font-serif">
+                <div className="flex justify-center -mt-2 font-serif text-[8px]">
                     <div className="text-center">
-                        <p className="mb-12">KEPALA SEKOLAH</p>
+                        <p className="mb-8">KEPALA SEKOLAH</p>
                         <p className="font-bold underline decoration-1 underline-offset-2">DIDIK SULISTYO, M.M.Pd</p>
                         <p>NIP. 19660518198901 1 002</p>
                     </div>
