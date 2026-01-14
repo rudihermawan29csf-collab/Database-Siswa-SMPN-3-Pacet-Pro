@@ -21,12 +21,13 @@ import Login from './components/Login';
 import { MOCK_STUDENTS } from './services/mockData'; 
 import { api } from './services/api'; 
 import { Student, DocumentFile } from './types';
-import { Search, Bell, ChevronDown, LogOut, User, Loader2 } from 'lucide-react';
+import { Search, Bell, ChevronDown, LogOut, User, Loader2, Cloud, CloudOff, RefreshCw } from 'lucide-react';
 
 type UserRole = 'ADMIN' | 'STUDENT' | 'GURU';
 
 const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
+  const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [studentsData, setStudentsData] = useState<Student[]>([]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>('ADMIN');
@@ -49,22 +50,26 @@ const App: React.FC = () => {
   // FETCH DATA ON MOUNT & UPDATE
   useEffect(() => {
     const initData = async () => {
-        // HANYA set loading true jika data belum ada sama sekali (Initial Load)
-        if (studentsData.length === 0) {
-            setIsLoading(true);
-        }
+        // Show loading only on first load
+        if (studentsData.length === 0) setIsLoading(true);
 
-        // Try fetch from online API
-        const onlineData = await api.getStudents();
-        if (onlineData && onlineData.length > 0) {
+        try {
+            // Try fetch from online API
+            const onlineData = await api.getStudents();
+            
+            // If fetch success, use Cloud Data (even if empty array!)
             setStudentsData(onlineData);
-        } else {
-            console.log("Using Mock Data (API empty or failed)");
+            setIsCloudConnected(true);
+        } catch (error) {
+            console.error("Failed to connect to Cloud, using Mock Data", error);
+            setIsCloudConnected(false);
+            // Only fallback to Mock if Local Data is empty
             if (studentsData.length === 0) {
                 setStudentsData(MOCK_STUDENTS);
             }
+        } finally {
+            setIsLoading(false);
         }
-        setIsLoading(false);
     };
     initData();
   }, [dataVersion]);
@@ -94,7 +99,9 @@ const App: React.FC = () => {
       );
 
       // 2. Send to API in background
-      await api.updateStudent(student);
+      if (isCloudConnected) {
+          await api.updateStudent(student);
+      }
       
       // Note: Kita TIDAK memanggil refreshData() di sini agar data lokal yang baru saja diupdate
       // tidak tertimpa oleh data lama dari server jika server lambat merespon.
@@ -345,12 +352,6 @@ const App: React.FC = () => {
   const renderContent = () => {
     let content;
     
-    // PASS saveStudentToCloud as onUpdate prop to all views that need it
-    const handleUpdate = () => {
-        if(selectedStudent) saveStudentToCloud(selectedStudent);
-        // Also refresh general data if needed, but saveStudentToCloud handles local state
-    };
-
     if (selectedStudent && currentView === 'dapodik') {
       content = (
         <StudentDetail 
@@ -477,6 +478,21 @@ const App: React.FC = () => {
                         {currentView === 'monitoring' ? 'Monitoring Kelengkapan' :
                         currentView === 'dashboard' ? 'Dashboard Utama' : 'SiData System'}
                     </h2>
+                    
+                    {/* CONNECTION STATUS & REFRESH BUTTON */}
+                    <div className="flex items-center gap-2 ml-4">
+                        <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border transition-colors ${isCloudConnected ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
+                            {isCloudConnected ? <Cloud className="w-3 h-3" /> : <CloudOff className="w-3 h-3" />}
+                            {isCloudConnected ? 'Online (Cloud)' : 'Offline (Mock Data)'}
+                        </div>
+                        <button 
+                            onClick={refreshData} 
+                            className="p-1.5 bg-white border border-gray-200 rounded-full hover:bg-gray-100 text-gray-600 transition-all active:scale-95"
+                            title="Refresh Data dari Server"
+                        >
+                            <RefreshCw className="w-4 h-4" />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex items-center space-x-6">

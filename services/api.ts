@@ -9,12 +9,13 @@ export const api = {
     // Prevent fetching if URL is not configured
     if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('YOUR_GOOGLE_SCRIPT_URL')) {
         console.warn("Google Script URL not configured. Using mock data.");
-        return []; 
+        throw new Error("URL Not Configured"); 
     }
 
     try {
-      // mode: 'cors' diperlukan untuk request ke Google Script
-      const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getStudents`);
+      // Add timestamp to prevent browser caching (Critical for multi-device sync)
+      const timestamp = new Date().getTime();
+      const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getStudents&t=${timestamp}`);
       
       if (!response.ok) {
           throw new Error(`HTTP Status: ${response.status}`);
@@ -27,7 +28,7 @@ export const api = {
       throw new Error(result.message || 'Gagal mengambil data');
     } catch (error) {
       console.error("Error fetching data:", error);
-      return [];
+      throw error; // Throw error to let App.tsx handle fallback
     }
   },
 
@@ -107,14 +108,6 @@ export const api = {
             action: 'updateStudentsBulk', // Backend must handle this or iterate 'updateStudent'
             students: students
         };
-        
-        // If backend doesn't support bulk explicitly, we can still send one JSON and let backend loop
-        // Assuming the Google Apps Script is updated to handle 'updateStudentsBulk' OR 
-        // we use a generic data sync endpoint.
-        // For safety/compatibility with existing script structure, we might need to rely on `syncData` 
-        // if `updateStudentsBulk` isn't implemented on GAS side yet, 
-        // BUT `syncData` replaces ALL data.
-        // Let's assume we use a bulk update action.
         
         const response = await fetch(GOOGLE_SCRIPT_URL, {
             method: 'POST',
