@@ -1,12 +1,14 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Student } from '../types';
 import { Search, Trash, UploadCloud, Download, Loader2, CheckCircle2, Plus, X } from 'lucide-react';
+import { api } from '../services/api';
 
 interface DatabaseViewProps {
   students: Student[];
+  onUpdateStudents: (students: Student[]) => void;
 }
 
-const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }) => {
+const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, onUpdateStudents }) => {
   const [localStudents, setLocalStudents] = useState<Student[]>(initialStudents);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -14,6 +16,11 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [importStats, setImportStats] = useState<{ success: number; total: number } | null>(null);
+
+  // Sync with parent state when it changes
+  useEffect(() => {
+      setLocalStudents(initialStudents);
+  }, [initialStudents]);
 
   // Add Manual Student State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -28,15 +35,19 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
   );
 
   const handleDeleteAll = () => {
-    if (window.confirm("apakah anda yakin menghapus?")) {
-        setLocalStudents([]);
-        alert("Data telah dihapus.");
+    if (window.confirm("apakah anda yakin menghapus SEMUA data di tampilan ini?")) {
+        const emptyList: Student[] = [];
+        setLocalStudents(emptyList);
+        onUpdateStudents(emptyList);
+        alert("Data tampilan telah dikosongkan.");
     }
   };
 
   const handleDeleteRow = (id: string) => {
       if (window.confirm("apakah anda yakin menghapus?")) {
-          setLocalStudents(prev => prev.filter(s => s.id !== id));
+          const updatedList = localStudents.filter(s => s.id !== id);
+          setLocalStudents(updatedList);
+          onUpdateStudents(updatedList);
       }
   };
 
@@ -189,11 +200,19 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
                   };
               });
 
+              // UPDATE STATE & NOTIFY PARENT & SAVE TO CLOUD
               setTimeout(() => {
-                  setLocalStudents(prev => [...prev, ...newStudents]);
+                  const updatedList = [...localStudents, ...newStudents];
+                  setLocalStudents(updatedList);
+                  onUpdateStudents(updatedList); // Update Parent/Global State
+                  
+                  // Persist to Cloud
+                  api.updateStudentsBulk(newStudents).catch(err => console.error("Cloud sync failed", err));
+
                   setImportProgress(100);
                   setImportStats({ success: newStudents.length, total: newStudents.length });
               }, 500);
+
           } catch (error: any) {
               console.error(error);
               setIsImporting(false);
@@ -210,7 +229,6 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
           setIsImporting(false);
       };
 
-      // Use readAsArrayBuffer for better compatibility with xlsx files (avoids encoding issues)
       reader.readAsArrayBuffer(file);
 
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -245,7 +263,11 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
           status: 'AKTIF', previousSchool: '', graduationYear: 0, diplomaNumber: '', averageScore: 0, achievements: []
       };
 
-      setLocalStudents(prev => [createdStudent, ...prev]);
+      const updatedList = [createdStudent, ...localStudents];
+      setLocalStudents(updatedList);
+      onUpdateStudents(updatedList); // Update Parent/Global State
+      api.updateStudent(createdStudent).catch(err => console.error("Cloud save failed", err));
+
       setIsAddModalOpen(false);
       setNewStudent({ fullName: '', nisn: '', nis: '', className: 'VII A', gender: 'L' });
       alert("Siswa berhasil ditambahkan.");
@@ -255,7 +277,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
       try {
           // @ts-ignore
           const xlsx = window.XLSX;
-          // Full Dapodik Headers (Matching the Import Logic)
+          // Full Dapodik Headers
           const headers = [[
               'Nama Peserta Didik', 'NIS', 'NISN', 'Kelas', 'L/P', 'Tempat Lahir', 'Tanggal Lahir', 'Agama',
               'NIK', 'No KK', 'Alamat Jalan', 'RT', 'RW', 'Dusun', 'Kelurahan', 'Kecamatan', 'Kabupaten', 'Kode Pos',
@@ -273,7 +295,6 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
           let dataRows: any[] = [];
 
           if (localStudents.length > 0) {
-              // Map REAL Data if available
               dataRows = localStudents.map(s => ({
                   'Nama Peserta Didik': s.fullName, 'NIS': s.nis, 'NISN': s.nisn, 'Kelas': s.className, 'L/P': s.gender,
                   'Tempat Lahir': s.birthPlace, 'Tanggal Lahir': s.birthDate, 'Agama': s.religion,
@@ -297,7 +318,6 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
                   'No SKHUN': s.dapodik.skhun, 'No Peserta UN': s.dapodik.unExamNumber
               }));
           } else {
-              // Dummy Data Example if list is empty
               dataRows = [{
                   'Nama Peserta Didik': 'Siswa Contoh', 'NIS': '1234', 'NISN': '0012345678', 'Kelas': 'VII A', 'L/P': 'L', 
                   'Tempat Lahir': 'Mojokerto', 'Tanggal Lahir': '2010-01-01', 'Agama': 'Islam', 'NIK': '3516000000000001',
@@ -306,7 +326,6 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
           }
 
           xlsx.utils.sheet_add_json(ws, dataRows, {skipHeader: true, origin: -1});
-
           xlsx.utils.book_append_sheet(wb, ws, "Database Siswa");
           const filename = localStudents.length > 0 ? "Database_Siswa_SMPN3Pacet.xlsx" : "Template_Dapodik_Kosong.xlsx";
           xlsx.writeFile(wb, filename);

@@ -395,7 +395,8 @@ const App: React.FC = () => {
             case 'dapodik':
                 content = (userRole === 'ADMIN') ? <DapodikList students={studentsData} onSelectStudent={(s) => setSelectedStudent(s)} /> : null; break;
             case 'database':
-                content = userRole === 'ADMIN' ? <DatabaseView students={studentsData} /> : null; break;
+                // PASS setStudentsData HERE
+                content = userRole === 'ADMIN' ? <DatabaseView students={studentsData} onUpdateStudents={setStudentsData} /> : null; break;
             case 'buku-induk':
                 content = <BukuIndukView students={studentsData} />; break;
             case 'grades':
