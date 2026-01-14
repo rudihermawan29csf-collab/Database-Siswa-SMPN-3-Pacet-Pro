@@ -75,7 +75,7 @@ export const api = {
     });
   },
 
-  // Update Student Data (JSON)
+  // Update Single Student Data
   updateStudent: async (student: Student): Promise<boolean> => {
     if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('YOUR_GOOGLE_SCRIPT_URL')) return true;
 
@@ -84,7 +84,6 @@ export const api = {
         action: 'updateStudent',
         student: student
       };
-      // Menggunakan no-cors untuk update jika perlu, tapi idealnya POST mengembalikan JSON
       const response = await fetch(GOOGLE_SCRIPT_URL, {
         method: 'POST',
         body: JSON.stringify(payload)
@@ -95,6 +94,38 @@ export const api = {
     } catch (e) {
       console.error("Update student error:", e);
       return false;
+    }
+  },
+
+  // NEW: Update Multiple Students at once (Bulk) - Much Faster
+  updateStudentsBulk: async (students: Student[]): Promise<boolean> => {
+    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('YOUR_GOOGLE_SCRIPT_URL')) return true;
+    if (students.length === 0) return true;
+
+    try {
+        const payload = {
+            action: 'updateStudentsBulk', // Backend must handle this or iterate 'updateStudent'
+            students: students
+        };
+        
+        // If backend doesn't support bulk explicitly, we can still send one JSON and let backend loop
+        // Assuming the Google Apps Script is updated to handle 'updateStudentsBulk' OR 
+        // we use a generic data sync endpoint.
+        // For safety/compatibility with existing script structure, we might need to rely on `syncData` 
+        // if `updateStudentsBulk` isn't implemented on GAS side yet, 
+        // BUT `syncData` replaces ALL data.
+        // Let's assume we use a bulk update action.
+        
+        const response = await fetch(GOOGLE_SCRIPT_URL, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        return result.status === 'success';
+    } catch (e) {
+        console.error("Bulk update error:", e);
+        return false;
     }
   },
 

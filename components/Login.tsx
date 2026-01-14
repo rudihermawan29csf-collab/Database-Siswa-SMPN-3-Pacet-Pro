@@ -65,7 +65,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
                 onLogin('ADMIN');
             } else {
                 setLoading(false);
-                setError('Password salah (Default: admin123)');
+                setError('Username atau Password salah.');
             }
         } else if (loginMode === 'GURU') {
             const savedUsers = localStorage.getItem('sys_users');

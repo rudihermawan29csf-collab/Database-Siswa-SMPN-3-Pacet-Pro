@@ -67,7 +67,18 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       const sem = semesterOverride || dbSemester;
       const record = s.academicRecords?.[sem];
       if (!record) return 0;
-      const subj = record.subjects.find(sub => sub.subject.startsWith(subjKey) || (subjKey === 'PAI' && sub.subject.includes('Agama')));
+      
+      const mapItem = SUBJECT_MAP.find(m => m.key === subjKey);
+      const subj = record.subjects.find(sub => {
+           // Robust matching: Check Exact Full Name OR Starts With Key OR Special Cases
+           if (mapItem) {
+               return sub.subject === mapItem.full || 
+                      sub.subject === mapItem.key ||
+                      sub.subject.startsWith(mapItem.key) || 
+                      (mapItem.key === 'PAI' && sub.subject.includes('Agama'));
+           }
+           return sub.subject.startsWith(subjKey);
+      });
       return subj ? subj.score : 0;
   };
 
@@ -89,12 +100,24 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       }
 
       const record = s.academicRecords[dbSemester];
-      let subj = record.subjects.find(sub => sub.subject.startsWith(subjKey) || (subjKey === 'PAI' && sub.subject.includes('Agama')));
+      const mapItem = SUBJECT_MAP.find(m => m.key === subjKey);
+      
+      let subj = record.subjects.find(sub => {
+           if (mapItem) {
+               return sub.subject === mapItem.full || 
+                      sub.subject === mapItem.key ||
+                      sub.subject.startsWith(mapItem.key) || 
+                      (mapItem.key === 'PAI' && sub.subject.includes('Agama'));
+           }
+           return sub.subject.startsWith(subjKey);
+      });
       
       if (subj) {
           subj.score = val;
       } else {
-          record.subjects.push({ no: record.subjects.length + 1, subject: subjKey === 'PAI' ? 'Pendidikan Agama' : subjKey, score: val, competency: '-' });
+          // Use full name for new entries if available
+          const subjectName = mapItem ? mapItem.full : (subjKey === 'PAI' ? 'Pendidikan Agama' : subjKey);
+          record.subjects.push({ no: record.subjects.length + 1, subject: subjectName, score: val, competency: '-' });
       }
   };
 
@@ -152,6 +175,16 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
               // @ts-ignore
               const data = window.XLSX.utils.sheet_to_json(ws);
 
+              // Map untuk optimasi pencarian siswa (O(1) lookup)
+              const studentMapByNISN = new Map<string, Student>();
+              const studentMapByName = new Map<string, Student>();
+              
+              students.forEach(s => {
+                  studentMapByNISN.set(String(s.nisn).trim(), s);
+                  studentMapByName.set(s.fullName.toLowerCase().trim(), s);
+              });
+
+              const studentsToUpdate: Student[] = [];
               let updatedCount = 0;
 
               // Helper untuk membersihkan nilai string angka (misal "80,5" -> 80.5)
@@ -166,12 +199,10 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
               // Helper untuk mencocokkan key kolom dengan fleksibel
               const findValueByKey = (row: any, keys: string[]) => {
                   const rowKeys = Object.keys(row);
-                  // 1. Coba exact match trim
                   for (const key of keys) {
                       const foundKey = rowKeys.find(rk => rk.trim().toUpperCase() === key.toUpperCase());
                       if (foundKey) return row[foundKey];
                   }
-                  // 2. Coba partial match (bahaya, tapi membantu jika label sedikit beda)
                   for (const key of keys) {
                       const foundKey = rowKeys.find(rk => rk.trim().toUpperCase().includes(key.toUpperCase()));
                       if (foundKey) return row[foundKey];
@@ -179,15 +210,13 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                   return undefined;
               };
 
-              // Loop data dan update student
+              // Loop data dan collect updates
               for (const row of (data as any[])) {
-                  // NISN seringkali dibaca sebagai angka, ubah ke string
                   let nisn = String(row['NISN'] || row['Nisn'] || row['nisn'] || '').trim();
+                  let student = studentMapByNISN.get(nisn);
                   
-                  // Jika NISN kosong, coba cari berdasarkan Nama (optional fallback)
-                  let student = students.find(s => String(s.nisn).trim() === nisn);
                   if (!student && row['Nama Siswa']) {
-                      student = students.find(s => s.fullName.toLowerCase() === String(row['Nama Siswa']).toLowerCase().trim());
+                      student = studentMapByName.get(String(row['Nama Siswa']).toLowerCase().trim());
                   }
 
                   if (student) {
@@ -207,28 +236,23 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
 
                       // 2. Update Nilai Mapel
                       SUBJECT_MAP.forEach(sub => {
-                          // Cari value dengan beberapa kemungkinan nama kolom
                           const val = findValueByKey(row, [sub.label, sub.key, sub.full]);
-                          
                           if (val !== undefined) {
                               const numVal = parseScore(val);
-                              // Pastikan nilai valid (0-100)
                               if (numVal >= 0 && numVal <= 100) {
-                                  let subj = record.subjects.find(s => s.subject.startsWith(sub.key) || (sub.key === 'PAI' && s.subject.includes('Agama')));
+                                  // Fix: Match against Full Name AND Key to cover all cases (IPA/IPS issue fix)
+                                  let subj = record.subjects.find(s => 
+                                      s.subject === sub.full || 
+                                      s.subject === sub.key || 
+                                      s.subject.startsWith(sub.key) || 
+                                      (sub.key === 'PAI' && s.subject.includes('Agama'))
+                                  );
                                   
                                   if (subj) {
-                                      if (subj.score !== numVal) {
-                                          subj.score = numVal;
-                                          hasChanges = true;
-                                      }
+                                      if (subj.score !== numVal) { subj.score = numVal; hasChanges = true; }
                                   } else {
-                                      // Buat mapel baru jika belum ada
-                                      record.subjects.push({ 
-                                          no: record.subjects.length + 1, 
-                                          subject: sub.full, 
-                                          score: numVal, 
-                                          competency: '-' 
-                                      });
+                                      // Prefer Full Name for new records
+                                      record.subjects.push({ no: record.subjects.length + 1, subject: sub.full, score: numVal, competency: '-' });
                                       hasChanges = true;
                                   }
                               }
@@ -237,10 +261,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
 
                       // 3. Update Extras & Attendance
                       const extraVal = findValueByKey(row, ['Ekstrakurikuler', 'Ekskul']);
-                      if (extraVal) {
-                          record.extracurriculars = [{ name: String(extraVal), score: 'A' }];
-                          hasChanges = true;
-                      }
+                      if (extraVal) { record.extracurriculars = [{ name: String(extraVal), score: 'A' }]; hasChanges = true; }
                       
                       const sickVal = findValueByKey(row, ['Sakit', 'S']);
                       if (sickVal !== undefined) { record.attendance.sick = Number(sickVal); hasChanges = true; }
@@ -252,20 +273,25 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                       if (alfaVal !== undefined) { record.attendance.noReason = Number(alfaVal); hasChanges = true; }
                       
                       const promVal = findValueByKey(row, ['Keterangan Naik', 'Keterangan']);
-                      if (promVal) {
-                          record.promotionStatus = String(promVal);
-                          hasChanges = true;
-                      }
+                      if (promVal) { record.promotionStatus = String(promVal); hasChanges = true; }
 
-                      // 4. Simpan Perubahan ke API/Mock Data
+                      // 4. Masukkan ke antrian update jika ada perubahan
                       if (hasChanges) {
-                          await api.updateStudent(student);
+                          studentsToUpdate.push(student);
                           updatedCount++;
                       }
                   }
               }
 
-              alert(`Berhasil mengimport dan menyimpan nilai untuk ${updatedCount} siswa.`);
+              // --- BULK UPDATE ---
+              if (studentsToUpdate.length > 0) {
+                  // Gunakan fungsi bulk update yang baru di API
+                  await api.updateStudentsBulk(studentsToUpdate);
+                  alert(`Berhasil mengimport dan menyimpan nilai untuk ${updatedCount} siswa.`);
+              } else {
+                  alert("Tidak ada data siswa yang perlu diupdate.");
+              }
+
               setRenderKey(prev => prev + 1);
               if (onUpdate) onUpdate();
 
@@ -309,7 +335,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       }
       setEditingId(null);
       setRenderKey(prev => prev + 1);
-      // Panggil API update manual saat save edit
+      // Panggil API update manual saat save edit (single update is fine here)
       api.updateStudent(s).then(() => {
           if (onUpdate) onUpdate();
       });
