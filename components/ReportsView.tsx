@@ -111,7 +111,7 @@ const ReportsView: React.FC<ReportsViewProps> = ({ students, onUpdate }) => {
                   </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 overflow-auto">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 overflow-auto pb-32">
                   {/* Left: Detail Checklist */}
                   <div className="space-y-4">
                       {/* Bio Card */}
@@ -273,7 +273,7 @@ const ReportsView: React.FC<ReportsViewProps> = ({ students, onUpdate }) => {
         </div>
 
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex-1 overflow-hidden flex flex-col">
-            <div className="overflow-auto flex-1 w-full">
+            <div className="overflow-auto flex-1 w-full pb-32">
                 <table className="w-full text-left border-collapse">
                     <thead className="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase">
                         <tr>

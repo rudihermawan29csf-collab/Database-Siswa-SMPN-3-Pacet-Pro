@@ -177,7 +177,7 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
 
         {/* Table Container */}
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex-1 overflow-hidden flex flex-col">
-            <div className="overflow-auto flex-1 w-full" id="ijazah-table">
+            <div className="overflow-auto flex-1 w-full pb-32" id="ijazah-table">
                 <table className="border-collapse w-full text-xs">
                     <thead className="bg-blue-50 border-b border-blue-200 sticky top-0 z-10 shadow-sm text-blue-800 uppercase">
                         {viewDetail ? (

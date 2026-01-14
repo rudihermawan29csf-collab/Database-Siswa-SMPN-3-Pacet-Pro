@@ -134,7 +134,7 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
         </div>
 
         {/* Content Grid */}
-        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex-1 overflow-y-auto">
+        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex-1 overflow-y-auto pb-32">
             <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-sm font-bold text-gray-700 uppercase">Dokumen Semester {activeSemester}</h3>
                 <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Pastikan foto jelas dan terbaca</span>

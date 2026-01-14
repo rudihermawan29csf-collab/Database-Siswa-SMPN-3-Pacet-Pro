@@ -35,7 +35,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ students }) => {
           </div>
 
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex-1 overflow-hidden">
-              <div className="overflow-auto h-full p-4">
+              <div className="overflow-auto h-full p-4 pb-32">
                   {historyItems.length > 0 ? (
                     <table className="w-full text-left border-collapse">
                         <thead>

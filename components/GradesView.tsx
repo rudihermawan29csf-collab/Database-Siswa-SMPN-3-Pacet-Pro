@@ -381,7 +381,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       {/* Main Content */}
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex-1 overflow-hidden flex flex-col relative">
           {viewMode === 'DATABASE' ? (
-              <div className="overflow-auto flex-1 w-full">
+              <div className="overflow-auto flex-1 w-full pb-32">
                   {/* ... Database Table ... */}
                   <table className="border-collapse w-full text-sm">
                       <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10 shadow-sm text-gray-600 uppercase text-xs">
@@ -442,7 +442,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                   </table>
               </div>
           ) : (
-              <div className="overflow-auto flex-1 bg-gray-500/10 p-8 flex justify-center">{selectedStudent && <ReportView student={selectedStudent} />}</div>
+              <div className="overflow-auto flex-1 bg-gray-500/10 p-8 flex justify-center pb-32">{selectedStudent && <ReportView student={selectedStudent} />}</div>
           )}
       </div>
     </div>

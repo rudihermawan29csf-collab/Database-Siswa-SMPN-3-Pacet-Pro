@@ -108,7 +108,7 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
                     </button>
                 </div>
 
-                <div className="flex-1 p-4 overflow-y-auto bg-gray-50/50">
+                <div className="flex-1 p-4 overflow-y-auto bg-gray-50/50 pb-32">
                     {activeTab === 'DOCS' ? (
                         <FileManager 
                             documents={currentStudent.documents} 

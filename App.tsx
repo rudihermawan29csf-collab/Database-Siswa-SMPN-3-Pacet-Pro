@@ -14,7 +14,7 @@ import FileManager from './components/FileManager';
 import SettingsView from './components/SettingsView';
 import UploadRaporView from './components/UploadRaporView';
 import GradeVerificationView from './components/GradeVerificationView';
-import MonitoringView from './components/MonitoringView'; // Renamed
+import MonitoringView from './components/MonitoringView';
 import ReportsView from './components/ReportsView';
 import StudentDocsAdminView from './components/StudentDocsAdminView'; 
 import Login from './components/Login';
@@ -30,7 +30,7 @@ const App: React.FC = () => {
   const [studentsData, setStudentsData] = useState<Student[]>([]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>('ADMIN');
-  const [currentUser, setCurrentUser] = useState<{name: string, role: string} | null>(null); // New state to track logged user identity
+  const [currentUser, setCurrentUser] = useState<{name: string, role: string} | null>(null);
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   
@@ -40,7 +40,7 @@ const App: React.FC = () => {
   const [targetHighlightDoc, setTargetHighlightDoc] = useState<string | undefined>(undefined);
   const [targetVerificationStudentId, setTargetVerificationStudentId] = useState<string | undefined>(undefined); 
   
-  // Track read notifications
+  // Track read notifications (Persistent per session)
   const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(new Set());
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -67,7 +67,6 @@ const App: React.FC = () => {
       setDataVersion(prev => prev + 1);
   };
 
-  // Sync back to Cloud whenever critical update happens (Optional: Optimistic UI)
   const saveStudentToCloud = async (student: Student) => {
       await api.updateStudent(student);
       refreshData();
@@ -76,7 +75,6 @@ const App: React.FC = () => {
   const handleDocumentUpdate = async (file: File, category: string) => {
     if (!selectedStudent) return;
     
-    // Optimistic Update UI
     let newDocs = category === 'LAINNYA' ? [...selectedStudent.documents] : selectedStudent.documents.filter(d => d.category !== category);
     const tempDoc: DocumentFile = {
         id: 'temp-' + Math.random(),
@@ -91,7 +89,6 @@ const App: React.FC = () => {
     selectedStudent.documents = [...newDocs, tempDoc];
     setStudentsData(prev => prev.map(s => s.id === selectedStudent.id ? selectedStudent : s));
 
-    // Upload to Google Drive via API
     try {
         const driveUrl = await api.uploadFile(file, selectedStudent.id, category);
         if (driveUrl) {
@@ -106,7 +103,6 @@ const App: React.FC = () => {
         }
     } catch (e) {
         alert("Gagal upload file ke Google Drive.");
-        // Revert
         selectedStudent.documents = newDocs;
         refreshData();
     }
@@ -153,7 +149,6 @@ const App: React.FC = () => {
           });
       } else if (userRole === 'STUDENT' && selectedStudent) {
           selectedStudent.documents.forEach(d => {
-              // Only show if not read
               if (d.status === 'REVISION') {
                    notifs.push({
                       id: `doc-rev-${d.id}`,
@@ -217,7 +212,7 @@ const App: React.FC = () => {
           });
       }
 
-      // Filter out read notifications
+      // STRICT Filtering: Ensure notifications in 'readNotificationIds' are EXCLUDED
       return notifs.filter(n => !readNotificationIds.has(n.id));
   }, [userRole, studentsData, selectedStudent, dataVersion, readNotificationIds]);
 
@@ -225,15 +220,9 @@ const App: React.FC = () => {
       setUserRole(role);
       setIsAuthenticated(true);
       
-      // Determine Current User Name/Role for tagging
       if (role === 'ADMIN') {
           setCurrentUser({ name: 'Admin TU', role: 'ADMIN' });
       } else if (role === 'GURU') {
-          // In real app, name comes from login selection. Using generic here unless stored in session.
-          // For now assuming default if not passed, but Login component logic persists in localStorage usually.
-          // Let's assume the user selection in Login component sets it.
-          const savedUsers = localStorage.getItem('sys_users');
-          // Simple fallback
           setCurrentUser({ name: 'Guru Mapel', role: 'GURU' });
       } else {
           setCurrentUser({ name: studentData?.fullName || 'Siswa', role: 'STUDENT' });
@@ -255,12 +244,16 @@ const App: React.FC = () => {
       setTargetHighlightField(undefined);
       setTargetHighlightDoc(undefined);
       setTargetVerificationStudentId(undefined);
-      setReadNotificationIds(new Set());
+      setReadNotificationIds(new Set()); // Reset read notifications on logout
   };
 
   const handleNotificationClick = (notif: DashboardNotification) => {
-      // Mark as read to remove from dashboard
-      setReadNotificationIds(prev => new Set(prev).add(notif.id));
+      // Mark as read immediately to remove from dashboard
+      setReadNotificationIds(prev => {
+          const newSet = new Set(prev);
+          newSet.add(notif.id);
+          return newSet;
+      });
 
       if (userRole === 'ADMIN' || userRole === 'GURU') {
           if (notif.data?.student) {
@@ -302,7 +295,6 @@ const App: React.FC = () => {
   }
 
   if (!isAuthenticated) {
-    // Pass studentsData to Login
     return <Login onLogin={handleLogin} students={studentsData} />;
   }
 
@@ -317,9 +309,11 @@ const App: React.FC = () => {
   }
 
   const renderContent = () => {
-    // Shared Student Detail logic (For Profile / Buku Induk)
+    // Determine content based on view
+    let content;
+    
     if (selectedStudent && currentView === 'dapodik') {
-      return (
+      content = (
         <StudentDetail 
           student={selectedStudent} 
           onBack={() => {
@@ -338,11 +332,8 @@ const App: React.FC = () => {
           onUpdate={() => saveStudentToCloud(selectedStudent)}
         />
       );
-    }
-    
-    // Student Document View
-    if (selectedStudent && currentView === 'documents') {
-        return (
+    } else if (selectedStudent && currentView === 'documents') {
+        content = (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-full overflow-hidden flex flex-col">
                 <div className="mb-4">
                     <h3 className="text-lg font-bold text-gray-800">Dokumen Digital</h3>
@@ -356,85 +347,44 @@ const App: React.FC = () => {
                 />
             </div>
         );
+    } else {
+        switch (currentView) {
+            case 'dashboard':
+                content = <Dashboard notifications={notifications} onNotificationClick={handleNotificationClick} userRole={userRole} students={studentsData} />; break;
+            case 'dapodik':
+                content = (userRole === 'ADMIN') ? <DapodikList students={studentsData} onSelectStudent={(s) => setSelectedStudent(s)} /> : null; break;
+            case 'database':
+                content = userRole === 'ADMIN' ? <DatabaseView students={studentsData} /> : null; break;
+            case 'buku-induk':
+                content = <BukuIndukView students={studentsData} />; break;
+            case 'grades':
+                content = <GradesView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} onUpdate={refreshData} />; break;
+            case 'recap':
+                content = <RecapView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />; break;
+            case 'ijazah':
+                content = <IjazahView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />; break;
+            case 'verification':
+                content = <VerificationView students={studentsData} targetStudentId={targetVerificationStudentId} onUpdate={refreshData} currentUser={currentUser || undefined} />; break;
+            case 'history':
+                content = <HistoryView students={userRole === 'STUDENT' && selectedStudent ? [selectedStudent] : studentsData} />; break;
+            case 'monitoring':
+                content = <MonitoringView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />; break;
+            case 'reports':
+                content = <ReportsView students={studentsData} onUpdate={refreshData} />; break;
+            case 'settings':
+                content = <SettingsView />; break;
+            case 'upload-rapor':
+                content = selectedStudent ? <UploadRaporView student={selectedStudent} onUpdate={() => saveStudentToCloud(selectedStudent)} /> : null; break;
+            case 'grade-verification':
+                content = <GradeVerificationView students={studentsData} onUpdate={refreshData} currentUser={currentUser || undefined} />; break;
+            case 'student-docs':
+                content = <StudentDocsAdminView students={studentsData} onUpdate={refreshData} />; break;
+            default:
+                content = <Dashboard />;
+        }
     }
 
-    // Role-based views
-    switch (currentView) {
-    case 'dashboard':
-        return <Dashboard notifications={notifications} onNotificationClick={handleNotificationClick} userRole={userRole} students={studentsData} />;
-    case 'dapodik':
-        return (userRole === 'ADMIN') ? ( // Guru cannot access Dapodik List
-          <DapodikList 
-              students={studentsData} 
-              onSelectStudent={(s) => setSelectedStudent(s)} 
-          />
-        ) : null;
-    case 'database':
-        return userRole === 'ADMIN' ? <DatabaseView students={studentsData} /> : null;
-    case 'buku-induk':
-        return <BukuIndukView students={studentsData} />;
-    case 'grades':
-        return (
-            <GradesView 
-                students={studentsData} 
-                userRole={userRole} 
-                loggedInStudent={selectedStudent || undefined}
-                onUpdate={refreshData}
-            />
-        );
-    case 'recap':
-        return (
-            <RecapView 
-                students={studentsData} 
-                userRole={userRole} 
-                loggedInStudent={selectedStudent || undefined}
-            />
-        );
-    case 'ijazah':
-        return (
-            <IjazahView 
-                students={studentsData} 
-                userRole={userRole} 
-                loggedInStudent={selectedStudent || undefined}
-            />
-        );
-    case 'verification':
-        return (
-            <VerificationView 
-                students={studentsData} 
-                targetStudentId={targetVerificationStudentId}
-                onUpdate={refreshData}
-                currentUser={currentUser || undefined} // Pass user info
-            />
-        );
-    case 'history':
-         return <HistoryView students={userRole === 'STUDENT' && selectedStudent ? [selectedStudent] : studentsData} />;
-    case 'monitoring': // Replaced Reports
-        return (
-            <MonitoringView 
-                students={studentsData} 
-                userRole={userRole}
-                loggedInStudent={selectedStudent || undefined}
-            />
-        );
-    case 'reports': // Keeping for sidebar compatibility but renders monitoring
-         return (
-            <ReportsView 
-                students={studentsData} 
-                onUpdate={refreshData}
-            />
-        );
-    case 'settings':
-        return <SettingsView />;
-    case 'upload-rapor':
-        return selectedStudent ? <UploadRaporView student={selectedStudent} onUpdate={() => saveStudentToCloud(selectedStudent)} /> : null;
-    case 'grade-verification':
-        return <GradeVerificationView students={studentsData} onUpdate={refreshData} currentUser={currentUser || undefined} />;
-    case 'student-docs': // New Route
-        return <StudentDocsAdminView students={studentsData} onUpdate={refreshData} />;
-    default:
-        return <Dashboard />;
-    }
+    return content;
   };
 
   return (
@@ -465,38 +415,13 @@ const App: React.FC = () => {
             {/* Header */}
             <header className="h-16 flex items-center justify-between px-8 border-b border-gray-200/60 sticky top-0 z-20 print:hidden shrink-0">
                 <div className="flex items-center gap-4">
-                    {/* Header Title */}
                     <h2 className="text-xl font-bold text-gray-800 capitalize tracking-tight flex items-center gap-2 drop-shadow-sm">
-                        {selectedStudent && currentView === 'dapodik' ? (userRole === 'ADMIN' ? 'Detail Data Siswa' : 'Buku Induk Siswa') : 
-                        currentView === 'documents' ? 'Dokumen Saya' :
-                        currentView === 'database' ? 'Database Lengkap' : 
-                        currentView === 'history' ? 'Riwayat & Log' :
-                        currentView === 'buku-induk' ? 'Buku Induk Siswa' :
-                        currentView === 'grades' ? 'Nilai Siswa' :
-                        currentView === 'recap' ? 'Rekap 5 Semester' :
-                        currentView === 'ijazah' ? 'Nilai Ijazah (6 Semester)' :
-                        currentView === 'verification' ? 'Verifikasi Buku Induk' :
-                        currentView === 'settings' ? 'Pengaturan Sistem' :
-                        currentView === 'upload-rapor' ? 'Upload Rapor' :
-                        currentView === 'grade-verification' ? 'Verifikasi Nilai' :
-                        currentView === 'monitoring' ? 'Monitoring Kelengkapan' :
-                        currentView === 'student-docs' ? 'Dokumen Siswa (Admin)' :
-                        'Dashboard Utama'}
+                        {currentView === 'monitoring' ? 'Monitoring Kelengkapan' :
+                        currentView === 'dashboard' ? 'Dashboard Utama' : 'SiData System'}
                     </h2>
                 </div>
 
                 <div className="flex items-center space-x-6">
-                    {(userRole === 'ADMIN' || userRole === 'GURU') && (
-                        <div className="relative hidden md:block group">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
-                            <input 
-                                type="text" 
-                                placeholder="Pencarian Global..." 
-                                className="pl-9 pr-4 py-1.5 bg-gray-200/50 hover:bg-white rounded-lg text-sm border border-transparent focus:bg-white focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 focus:outline-none transition-all w-64 shadow-sm"
-                            />
-                        </div>
-                    )}
-                    
                     <div className="flex items-center gap-4">
                         <button className="relative p-2 text-gray-600 hover:bg-gray-200/50 rounded-full transition-colors">
                             <Bell className="w-5 h-5" />
@@ -541,6 +466,7 @@ const App: React.FC = () => {
                 </div>
             </header>
 
+            {/* Main Render Area with Scroll Fix */}
             <div className="flex-1 p-6 overflow-hidden relative">
                 {renderContent()}
             </div>

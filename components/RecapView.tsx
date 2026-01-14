@@ -135,7 +135,7 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
 
         {/* Table */}
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex-1 overflow-hidden flex flex-col">
-            <div className="overflow-auto flex-1 w-full" id="recap-5-sem-table">
+            <div className="overflow-auto flex-1 w-full pb-32" id="recap-5-sem-table">
                 <table className="border-collapse w-full text-sm">
                     <thead className="bg-purple-50 border-b border-purple-200 sticky top-0 z-10 shadow-sm text-purple-800 uppercase text-xs">
                         <tr>

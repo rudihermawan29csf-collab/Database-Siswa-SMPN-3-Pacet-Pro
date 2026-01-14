@@ -170,7 +170,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
 
         {/* TABEL DATA */}
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex-1 overflow-hidden flex flex-col">
-            <div className="overflow-auto flex-1 w-full relative">
+            <div className="overflow-auto flex-1 w-full relative pb-32">
                 <table className="border-collapse w-full min-w-max">
                     <thead className="sticky top-0 z-10 shadow-sm">
                         <tr>

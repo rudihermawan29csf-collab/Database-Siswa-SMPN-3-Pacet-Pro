@@ -144,7 +144,7 @@ const Dashboard: React.FC<DashboardProps> = ({ notifications = [], onNotificatio
   }, [filteredStudents]);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full overflow-y-auto animate-fade-in pb-20">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full overflow-y-auto animate-fade-in pb-32">
       
       {/* Left Column - Stats & Charts */}
       <div className="lg:col-span-2 space-y-6">

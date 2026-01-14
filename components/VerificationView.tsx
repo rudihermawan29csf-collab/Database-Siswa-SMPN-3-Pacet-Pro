@@ -5,12 +5,13 @@ import {
   User, Activity, BookOpen, MapPin, Users, Wallet, ExternalLink, Loader2,
   ZoomIn, ZoomOut, RotateCcw, ChevronLeft, ChevronRight, Minimize2, GripVertical, X, Save, Pencil
 } from 'lucide-react';
+import { api } from '../services/api'; // Import API
 
 interface VerificationViewProps {
   students: Student[];
   targetStudentId?: string;
   onUpdate?: () => void;
-  currentUser?: { name: string; role: string }; // New Prop
+  currentUser?: { name: string; role: string }; 
 }
 
 const DOCUMENT_TYPES = [
@@ -24,7 +25,6 @@ const DOCUMENT_TYPES = [
   { id: 'FOTO', label: 'Pas Foto' },
 ];
 
-// Helper to format Drive URLs
 const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
     if (!url) return '';
     if (url.startsWith('blob:')) return url; 
@@ -42,7 +42,6 @@ const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
     return url;
 };
 
-// ... PDFPageCanvas component same as before ...
 const PDFPageCanvas = ({ pdf, pageNum, scale }: { pdf: any, pageNum: number, scale: number }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     useEffect(() => {
@@ -70,13 +69,17 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   const [activeDataTab, setActiveDataTab] = useState<string>('DAPO_PRIBADI');
   const [isEditing, setIsEditing] = useState(false);
   const [forceUpdate, setForceUpdate] = useState(0);
+  
+  // Logic State
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionNote, setRejectionNote] = useState('');
+  const [isSaving, setIsSaving] = useState(false); // New saving state
+
+  // Viewer State
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [useFallbackViewer, setUseFallbackViewer] = useState(false);
 
-  // ... (Hooks and Effects for Filtering and Updating same as before) ...
   const uniqueClasses = Array.from(new Set(students.map(s => s.className))).sort();
   const studentsInClass = students.filter(s => s.className === selectedClass);
   const currentStudent = students.find(s => s.id === selectedStudentId);
@@ -93,7 +96,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   useEffect(() => { setZoomLevel(1.0); setUseFallbackViewer(false); }, [selectedStudentId, activeDocType]);
   
   const handleDataChange = (path: string, value: string) => {
-      // ... (Data change logic same as before) ...
       if (!currentStudent) return;
       const keys = path.split('.');
       let current: any = currentStudent;
@@ -111,7 +113,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   const SectionHeader = ({ title }: { title: string }) => ( <div className="bg-gray-100 px-2 py-1 text-[10px] font-bold text-gray-700 uppercase border-y border-gray-200 mt-4 mb-2 first:mt-0">{title}</div> );
 
-  // ... (PDF Loading Effect same as before) ...
   useEffect(() => {
     const loadPdf = async () => {
         setPdfDoc(null); setIsPdfLoading(false); setUseFallbackViewer(false);
@@ -136,52 +137,112 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
     loadPdf();
   }, [currentStudent, activeDocType]);
 
-  const handleApprove = () => { 
-      if (currentDoc) { 
+  const handleApprove = async () => { 
+      if (currentDoc && currentStudent) { 
+          setIsSaving(true);
+          // 1. Update Local Object
           currentDoc.status = 'APPROVED'; 
           currentDoc.adminNote = 'Dokumen valid.'; 
-          // Capture Verifier
           currentDoc.verifierName = currentUser?.name || 'Admin';
           currentDoc.verifierRole = currentUser?.role || 'ADMIN';
+          currentDoc.verificationDate = new Date().toISOString().split('T')[0];
+
+          // 2. Save to Cloud/API
+          await api.updateStudent(currentStudent);
+
+          // 3. Refresh UI
+          setIsSaving(false);
           setForceUpdate(prev => prev + 1); 
           if (onUpdate) onUpdate(); 
       } 
   };
   
-  const confirmReject = () => { 
-      if (currentDoc) { 
+  const confirmReject = async () => { 
+      if (currentDoc && currentStudent) { 
+          if (!rejectionNote.trim()) {
+              alert("Mohon isi alasan penolakan.");
+              return;
+          }
+          setIsSaving(true);
+          // 1. Update Local Object
           currentDoc.status = 'REVISION'; 
           currentDoc.adminNote = rejectionNote; 
-          // Capture Verifier
           currentDoc.verifierName = currentUser?.name || 'Admin';
           currentDoc.verifierRole = currentUser?.role || 'ADMIN';
+          currentDoc.verificationDate = new Date().toISOString().split('T')[0];
+
+          // 2. Save to Cloud/API
+          await api.updateStudent(currentStudent);
+
+          // 3. Refresh UI
+          setIsSaving(false);
           setRejectModalOpen(false); 
           setForceUpdate(prev => prev + 1); 
           if (onUpdate) onUpdate(); 
       } 
   };
 
-  // ... (Tab Rendering Logic same as before) ...
   const renderDataTab = () => {
-      if (!currentStudent) return null;
-      switch(activeDataTab) {
-          case 'DAPO_PRIBADI': return (
-              <div className="space-y-1">
-                  <SectionHeader title="Identitas Peserta Didik" />
-                  <FieldGroup label="1. Nama Lengkap" value={currentStudent.fullName} path="fullName" fullWidth />
-                  <div className="grid grid-cols-2 gap-2"> <FieldGroup label="2. Jenis Kelamin" value={currentStudent.gender} path="gender" /> <FieldGroup label="3. NISN" value={currentStudent.nisn} path="nisn" /> </div>
-                  <div className="grid grid-cols-2 gap-2"> <FieldGroup label="NIS" value={currentStudent.nis} path="nis" /> <FieldGroup label="7. NIK" value={currentStudent.dapodik.nik} path="dapodik.nik" /> </div>
-                  <div className="grid grid-cols-2 gap-2"> <FieldGroup label="8. Tempat Lahir" value={currentStudent.birthPlace} path="birthPlace" /> <FieldGroup label="Tgl Lahir" value={currentStudent.birthDate} path="birthDate" /> </div>
-                  <SectionHeader title="Data Akademik & Registrasi" />
-                  <FieldGroup label="4. No Seri Ijazah" value={currentStudent.diplomaNumber} path="diplomaNumber" fullWidth />
-              </div>
-          );
-          // ... (Other cases same as before) ...
-          case 'DAPO_ALAMAT': return (<div className="space-y-1"><SectionHeader title="Alamat" /><FieldGroup label="Alamat" value={currentStudent.address} path="address" fullWidth /></div>); // Simplified for this XML
-          case 'DAPO_ORTU': return (<div className="space-y-1"><SectionHeader title="Ortu" /><FieldGroup label="Ayah" value={currentStudent.father.name} path="father.name" fullWidth /></div>);
-          case 'DAPO_KIP': return (<div className="space-y-1"><SectionHeader title="Kesejahteraan" /><FieldGroup label="KIP" value={currentStudent.dapodik.kipNumber} path="dapodik.kipNumber" fullWidth /></div>);
-          default: return null;
-      }
+    if (!currentStudent) return null;
+    switch (activeDataTab) {
+      case 'DAPO_PRIBADI':
+        return (
+          <>
+            <SectionHeader title="Identitas Pribadi" />
+            <FieldGroup label="Nama Lengkap" value={currentStudent.fullName} path="fullName" fullWidth />
+            <div className="grid grid-cols-2 gap-2">
+                <FieldGroup label="NISN" value={currentStudent.nisn} path="nisn" />
+                <FieldGroup label="NIK" value={currentStudent.dapodik.nik} path="dapodik.nik" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+                <FieldGroup label="Tempat Lahir" value={currentStudent.birthPlace} path="birthPlace" />
+                <FieldGroup label="Tanggal Lahir" value={currentStudent.birthDate} path="birthDate" />
+            </div>
+            <FieldGroup label="Jenis Kelamin" value={currentStudent.gender} path="gender" />
+          </>
+        );
+      case 'DAPO_ALAMAT':
+        return (
+          <>
+            <SectionHeader title="Alamat Domisili" />
+            <FieldGroup label="Alamat Jalan" value={currentStudent.address} path="address" fullWidth />
+            <div className="grid grid-cols-2 gap-2">
+                <FieldGroup label="RT" value={currentStudent.dapodik.rt} path="dapodik.rt" />
+                <FieldGroup label="RW" value={currentStudent.dapodik.rw} path="dapodik.rw" />
+            </div>
+            <FieldGroup label="Dusun" value={currentStudent.dapodik.dusun} path="dapodik.dusun" />
+            <FieldGroup label="Kelurahan" value={currentStudent.dapodik.kelurahan} path="dapodik.kelurahan" />
+            <FieldGroup label="Kecamatan" value={currentStudent.subDistrict} path="subDistrict" />
+            <FieldGroup label="Kode Pos" value={currentStudent.postalCode} path="postalCode" />
+          </>
+        );
+      case 'DAPO_ORTU':
+        return (
+          <>
+            <SectionHeader title="Data Ayah" />
+            <FieldGroup label="Nama Ayah" value={currentStudent.father.name} path="father.name" fullWidth />
+            <FieldGroup label="NIK Ayah" value={currentStudent.father.nik} path="father.nik" />
+            <FieldGroup label="Pekerjaan Ayah" value={currentStudent.father.job} path="father.job" />
+            
+            <SectionHeader title="Data Ibu" />
+            <FieldGroup label="Nama Ibu" value={currentStudent.mother.name} path="mother.name" fullWidth />
+            <FieldGroup label="NIK Ibu" value={currentStudent.mother.nik} path="mother.nik" />
+            <FieldGroup label="Pekerjaan Ibu" value={currentStudent.mother.job} path="mother.job" />
+          </>
+        );
+      case 'DAPO_KIP':
+        return (
+          <>
+            <SectionHeader title="Kesejahteraan" />
+            <FieldGroup label="Penerima KIP" value={currentStudent.dapodik.kipReceiver} path="dapodik.kipReceiver" />
+            <FieldGroup label="Nomor KIP" value={currentStudent.dapodik.kipNumber} path="dapodik.kipNumber" fullWidth />
+            <FieldGroup label="Nama di KIP" value={currentStudent.dapodik.kipName} path="dapodik.kipName" fullWidth />
+            <FieldGroup label="Nomor KKS" value={currentStudent.dapodik.kksNumber} path="dapodik.kksNumber" fullWidth />
+          </>
+        );
+      default:
+        return null;
+    }
   };
 
   const isDriveUrl = currentDoc && (currentDoc.url.includes('drive.google.com') || currentDoc.url.includes('docs.google.com'));
@@ -192,8 +253,22 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
             <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col">
                     <h3 className="font-bold text-red-600 mb-2">Tolak Dokumen</h3>
-                    <textarea className="w-full p-2 border rounded text-sm mb-4" rows={3} value={rejectionNote} onChange={e => setRejectionNote(e.target.value)} placeholder="Alasan..." />
-                    <div className="flex justify-end gap-2"><button onClick={()=>setRejectModalOpen(false)} className="px-3 py-1 bg-gray-100 rounded">Batal</button><button onClick={confirmReject} className="px-3 py-1 bg-red-600 text-white rounded">Simpan</button></div>
+                    <p className="text-xs text-gray-500 mb-3">Berikan alasan mengapa dokumen ini ditolak agar siswa dapat memperbaikinya.</p>
+                    <textarea 
+                        className="w-full p-3 border border-gray-300 rounded-lg text-sm mb-4 focus:ring-2 focus:ring-red-500 outline-none" 
+                        rows={3} 
+                        value={rejectionNote} 
+                        onChange={e => setRejectionNote(e.target.value)} 
+                        placeholder="Contoh: Dokumen buram, Salah upload..."
+                        autoFocus
+                    />
+                    <div className="flex justify-end gap-2">
+                        <button onClick={()=>setRejectModalOpen(false)} disabled={isSaving} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-bold text-xs hover:bg-gray-200">Batal</button>
+                        <button onClick={confirmReject} disabled={isSaving} className="px-4 py-2 bg-red-600 text-white rounded-lg font-bold text-xs hover:bg-red-700 flex items-center">
+                            {isSaving && <Loader2 className="w-3 h-3 mr-2 animate-spin" />}
+                            Simpan Penolakan
+                        </button>
+                    </div>
                 </div>
             </div>
         )}
@@ -205,8 +280,8 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
         </div>
         <div className="flex overflow-x-auto gap-1">{DOCUMENT_TYPES.map(type => {
             const doc = currentStudent?.documents.find(d => d.category === type.id);
-            const color = doc?.status === 'APPROVED' ? 'text-green-600 bg-green-50' : doc?.status === 'REVISION' ? 'text-red-600 bg-red-50' : doc?.status === 'PENDING' ? 'text-yellow-600 bg-yellow-50' : 'text-gray-400';
-            return <button key={type.id} onClick={() => setActiveDocType(type.id)} className={`px-3 py-1.5 rounded-md text-xs font-bold border ${activeDocType === type.id ? 'border-blue-500' : 'border-transparent'} ${color}`}>{type.label}</button>;
+            const color = doc?.status === 'APPROVED' ? 'text-green-600 bg-green-50 border-green-200' : doc?.status === 'REVISION' ? 'text-red-600 bg-red-50 border-red-200' : doc?.status === 'PENDING' ? 'text-yellow-600 bg-yellow-50 border-yellow-200' : 'text-gray-400 border-transparent';
+            return <button key={type.id} onClick={() => setActiveDocType(type.id)} className={`px-3 py-1.5 rounded-md text-xs font-bold border ${activeDocType === type.id ? 'ring-2 ring-blue-500' : ''} ${color}`}>{type.label}</button>;
         })}</div>
       </div>
 
@@ -215,22 +290,34 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
             <div className={`bg-white rounded-xl border border-gray-200 flex flex-col shadow-sm transition-all duration-300 ${layoutMode === 'full-doc' ? 'hidden' : 'w-full lg:w-96'}`}>
                 <div className="p-3 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                     <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2"><Activity className="w-4 h-4 text-blue-600" /> Data Buku Induk</h3>
-                    <button onClick={() => setIsEditing(!isEditing)} className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-bold transition-colors ${isEditing ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600'}`}>{isEditing ? <><Save className="w-3 h-3" /> Selesai</> : <><Pencil className="w-3 h-3" /> Edit Data</>}</button>
+                    <button onClick={async () => {
+                        if (isEditing) {
+                            // Save data change
+                            setIsSaving(true);
+                            await api.updateStudent(currentStudent);
+                            setIsSaving(false);
+                            if(onUpdate) onUpdate();
+                        }
+                        setIsEditing(!isEditing);
+                    }} className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-bold transition-colors ${isEditing ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600'}`}>{isEditing ? <><Save className="w-3 h-3" /> Selesai</> : <><Pencil className="w-3 h-3" /> Edit Data</>}</button>
                 </div>
                 <div className="flex border-b border-gray-200">{['DAPO_PRIBADI', 'DAPO_ALAMAT', 'DAPO_ORTU', 'DAPO_KIP'].map(id => (<button key={id} onClick={()=>setActiveDataTab(id)} className={`flex-1 py-2 text-[10px] font-bold border-b-2 ${activeDataTab === id ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-400'}`}>{id.replace('DAPO_', '')}</button>))}</div>
-                <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50"><div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">{renderDataTab()}</div>{currentDoc?.adminNote && <div className="mt-4 p-3 bg-yellow-50 border border-yellow-100 rounded text-xs italic text-yellow-700">"Note: {currentDoc.adminNote}"</div>}</div>
+                <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50 pb-32"><div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">{renderDataTab()}</div>{currentDoc?.adminNote && <div className="mt-4 p-3 bg-yellow-50 border border-yellow-100 rounded text-xs italic text-yellow-700">"Note: {currentDoc.adminNote}"</div>}</div>
                 <div className="p-4 border-t border-gray-200 bg-gray-50 flex gap-2">
-                    <button onClick={() => { setRejectionNote(''); setRejectModalOpen(true); }} disabled={!currentDoc} className="flex-1 py-2 bg-white border border-red-200 text-red-600 rounded-lg text-sm font-bold disabled:opacity-50">Tolak</button>
-                    <button onClick={handleApprove} disabled={!currentDoc} className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-bold disabled:opacity-50">Setujui</button>
+                    <button onClick={() => { setRejectionNote(''); setRejectModalOpen(true); }} disabled={!currentDoc || isSaving} className="flex-1 py-2 bg-white border border-red-200 text-red-600 rounded-lg text-sm font-bold disabled:opacity-50 hover:bg-red-50">Tolak</button>
+                    <button onClick={handleApprove} disabled={!currentDoc || isSaving} className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-bold disabled:opacity-50 hover:bg-green-700 flex items-center justify-center">
+                        {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Setujui'}
+                    </button>
                 </div>
             </div>
-            {/* ... Viewer Part same as before ... */}
+            
+            {/* Viewer */}
             <div className={`flex flex-col bg-gray-800 rounded-xl overflow-hidden shadow-lg transition-all duration-300 ${layoutMode === 'full-doc' ? 'w-full absolute inset-0 z-20' : 'flex-1 h-full'}`}>
                  <div className="h-12 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-4 text-gray-300">
                      <span className="text-sm font-bold text-white">{currentDoc ? currentDoc.name : 'No Doc'}</span>
                      <div className="flex items-center gap-2"><button onClick={()=>setZoomLevel(z=>z-0.2)} className="p-1 hover:bg-gray-700 rounded"><ZoomOut className="w-4 h-4" /></button><span className="text-xs">{Math.round(zoomLevel*100)}%</span><button onClick={()=>setZoomLevel(z=>z+0.2)} className="p-1 hover:bg-gray-700 rounded"><ZoomIn className="w-4 h-4" /></button><button onClick={()=>setLayoutMode(m=>m==='full-doc'?'split':'full-doc')} className="p-1 hover:bg-gray-700 rounded ml-2"><Maximize2 className="w-4 h-4" /></button></div>
                  </div>
-                 <div className="flex-1 overflow-auto p-8 bg-gray-900/50 flex items-start justify-center">
+                 <div className="flex-1 overflow-auto p-8 bg-gray-900/50 flex items-start justify-center pb-32">
                      {currentDoc ? (
                          <div style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'top center', width: '100%', height: '100%', display: 'flex', justifyContent: 'center' }}>
                              {(useFallbackViewer || isDriveUrl) ? (

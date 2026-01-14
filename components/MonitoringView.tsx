@@ -71,7 +71,7 @@ const ProgressRing = ({ percent, size = 30 }: { percent: number, size?: number }
     );
 };
 
-const StudentDetailCard = ({ student }: { student: Student }) => {
+const StudentDetailCard: React.FC<{ student: Student }> = ({ student }) => {
     const analysis = analyzeStudent(student);
     return (
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-6">
@@ -182,7 +182,7 @@ const MonitoringView: React.FC<MonitoringViewProps> = ({ students, userRole, log
             )}
         </div>
 
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto pb-32">
             {userRole === 'STUDENT' ? (
                 // STUDENT VIEW
                 filteredStudents.map(s => <StudentDetailCard key={s.id} student={s} />)
@@ -224,14 +224,9 @@ const MonitoringView: React.FC<MonitoringViewProps> = ({ students, userRole, log
                                                 </details>
                                             </td>
                                         </tr>
-                                        {/* Expandable Detail Row (Logic handled by summary/details natively or could be state) */}
-                                        {/* For simplicity in this mockup, we just assume the row click opens a modal or navigates, 
-                                            but let's render the detail card ONLY if 'details' is open (requires state management for accordion).
-                                            For this 'natural language' request, I'll provide the card component above to be reused. 
-                                        */}
                                         <tr>
                                             <td colSpan={6} className="p-0 border-none">
-                                                {/* Hidden Detail Row - Implement accordion state if needed */}
+                                                {/* Hidden Detail Row */}
                                             </td>
                                         </tr>
                                     </React.Fragment>

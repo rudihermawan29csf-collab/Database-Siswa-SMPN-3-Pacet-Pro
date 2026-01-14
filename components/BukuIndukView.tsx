@@ -100,7 +100,7 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
               </div>
 
               {/* Wrapper Scrollable (Layar) */}
-              <div className="bg-white p-4 md:p-8 rounded-xl border border-gray-200 shadow-sm flex-1 overflow-auto flex justify-center bg-gray-50/50">
+              <div className="bg-white p-4 md:p-8 rounded-xl border border-gray-200 shadow-sm flex-1 overflow-auto flex justify-center bg-gray-50/50 pb-32">
                   
                   {/* === DOCUMENT CONTENT === */}
                   {/* Reduced width to 190mm to ensure proper margins in A4 PDF (210mm) */}
@@ -314,7 +314,7 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
         </div>
 
         {/* Grouped Table List */}
-        <div className="flex-1 overflow-auto bg-mac-bg space-y-6 pb-10">
+        <div className="flex-1 overflow-auto bg-mac-bg space-y-6 pb-32">
             {CLASS_LIST.map((className) => {
                 const studentsInClass = filteredStudents.filter(s => s.className === className);
                 if (studentsInClass.length === 0 && !searchTerm) return null;

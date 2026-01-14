@@ -5,6 +5,7 @@ import {
   ZoomIn, ZoomOut, RotateCcw, ChevronLeft, ChevronRight, Minimize2, Save,
   FileCheck2, Loader2, Pencil, Filter
 } from 'lucide-react';
+import { api } from '../services/api';
 
 interface GradeVerificationViewProps {
   students: Student[];
@@ -43,6 +44,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [useFallbackViewer, setUseFallbackViewer] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Dynamic Class List based on Semester
   const availableClasses = React.useMemo(() => {
@@ -55,6 +57,28 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       return allClasses.filter((c: string) => c.startsWith(level));
   }, [activeSemester, students]);
 
+  // Unified Effect for Class and Student Selection to prevent flickering
+  useEffect(() => {
+      // 1. If no class selected or class not valid for semester, pick first
+      let targetClass = selectedClass;
+      if (availableClasses.length > 0 && (!selectedClass || !availableClasses.includes(selectedClass))) {
+          targetClass = availableClasses[0];
+          setSelectedClass(targetClass);
+      }
+
+      // 2. Based on class, ensure a student is selected
+      const studentsInTargetClass = students.filter(s => s.className === targetClass);
+      if (studentsInTargetClass.length > 0) {
+          // Check if current selected student is in the target class
+          const currentValid = studentsInTargetClass.find(s => s.id === selectedStudentId);
+          if (!currentValid) {
+              setSelectedStudentId(studentsInTargetClass[0].id);
+          }
+      } else {
+          setSelectedStudentId('');
+      }
+  }, [availableClasses, students, selectedClass, selectedStudentId]);
+
   const studentsInClass = students.filter(s => s.className === selectedClass);
   const currentStudent = students.find(s => s.id === selectedStudentId);
   const currentRecord = currentStudent?.academicRecords?.[activeSemester];
@@ -64,16 +88,6 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       d.subType?.semester === activeSemester && 
       d.subType?.page === activePage
   );
-
-  useEffect(() => { 
-      if (availableClasses.length > 0) {
-          if (!availableClasses.includes(selectedClass)) {
-              setSelectedClass(availableClasses[0]); 
-          }
-      }
-  }, [availableClasses]);
-
-  useEffect(() => { if (studentsInClass.length > 0 && !selectedStudentId) setSelectedStudentId(studentsInClass[0].id); }, [studentsInClass, selectedClass]);
   
   // Document Loading Logic (Same as before)
   useEffect(() => {
@@ -100,23 +114,37 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
     loadPdf();
   }, [currentDoc]);
 
-  const handleApprove = () => { 
-      if (currentDoc) { 
+  const handleApprove = async () => { 
+      if (currentDoc && currentStudent) { 
+          setIsSaving(true);
           currentDoc.status = 'APPROVED'; 
           currentDoc.adminNote = 'Valid.'; 
           currentDoc.verifierName = currentUser?.name || 'Admin';
           currentDoc.verifierRole = currentUser?.role || 'ADMIN';
+          
+          await api.updateStudent(currentStudent);
+          setIsSaving(false);
+
           setForceUpdate(prev => prev + 1); 
           if (onUpdate) onUpdate(); 
       } 
   };
   
-  const confirmReject = () => { 
-      if (currentDoc) { 
+  const confirmReject = async () => { 
+      if (currentDoc && currentStudent) { 
+          if (!rejectionNote.trim()) {
+              alert("Isi alasan penolakan!");
+              return;
+          }
+          setIsSaving(true);
           currentDoc.status = 'REVISION'; 
           currentDoc.adminNote = rejectionNote; 
           currentDoc.verifierName = currentUser?.name || 'Admin';
           currentDoc.verifierRole = currentUser?.role || 'ADMIN';
+          
+          await api.updateStudent(currentStudent);
+          setIsSaving(false);
+
           setRejectModalOpen(false); 
           setForceUpdate(prev => prev + 1); 
           if (onUpdate) onUpdate(); 
@@ -125,6 +153,18 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
   const handleGradeChange = (subjectIndex: number, newScore: string) => {
       if (currentRecord) { currentRecord.subjects[subjectIndex].score = Number(newScore); setForceUpdate(prev => prev + 1); }
+  };
+
+  const saveGrades = async () => {
+      if (currentStudent && isEditing) {
+          setIsSaving(true);
+          await api.updateStudent(currentStudent);
+          setIsSaving(false);
+          setIsEditing(false);
+          if (onUpdate) onUpdate();
+      } else {
+          setIsEditing(true);
+      }
   };
 
   const PDFPageCanvas = ({ pdf, pageNum, scale }: any) => {
@@ -154,7 +194,12 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col">
                     <h3 className="font-bold text-red-600 mb-2">Tolak Dokumen</h3>
                     <textarea className="w-full p-2 border rounded mb-4" rows={3} value={rejectionNote} onChange={e => setRejectionNote(e.target.value)} placeholder="Alasan..." />
-                    <div className="flex justify-end gap-2"><button onClick={()=>setRejectModalOpen(false)} className="px-3 py-1 bg-gray-100 rounded">Batal</button><button onClick={confirmReject} className="px-3 py-1 bg-red-600 text-white rounded">Simpan</button></div>
+                    <div className="flex justify-end gap-2">
+                        <button onClick={()=>setRejectModalOpen(false)} className="px-3 py-1 bg-gray-100 rounded">Batal</button>
+                        <button onClick={confirmReject} disabled={isSaving} className="px-3 py-1 bg-red-600 text-white rounded flex items-center">
+                            {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Simpan'}
+                        </button>
+                    </div>
                 </div>
             </div>
         )}
@@ -185,9 +230,11 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
             <div className={`bg-white rounded-xl border border-gray-200 flex flex-col shadow-sm transition-all duration-300 ${layoutMode === 'full-doc' ? 'hidden' : 'w-full lg:w-[400px]'}`}>
                 <div className="p-3 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                     <h3 className="text-xs font-bold text-gray-700 uppercase">Data Nilai S{activeSemester}</h3>
-                    <button onClick={() => setIsEditing(!isEditing)} className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-bold ${isEditing ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{isEditing ? <><Save className="w-3 h-3" /> Simpan</> : <><Pencil className="w-3 h-3" /> Edit Nilai</>}</button>
+                    <button onClick={saveGrades} disabled={isSaving} className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-bold ${isEditing ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                        {isEditing ? (isSaving ? <Loader2 className="w-3 h-3 animate-spin"/> : <><Save className="w-3 h-3" /> Simpan</>) : <><Pencil className="w-3 h-3" /> Edit Nilai</>}
+                    </button>
                 </div>
-                <div className="flex-1 overflow-y-auto p-0">
+                <div className="flex-1 overflow-y-auto p-0 pb-32">
                     {currentRecord ? (
                         <table className="w-full text-left text-[10px]">
                             <thead className="bg-gray-50 border-b border-gray-200 text-gray-500"><tr><th className="px-3 py-2">Mapel</th><th className="px-3 py-2 w-14 text-center">Nilai</th><th className="px-3 py-2">Predikat</th></tr></thead>
@@ -204,8 +251,10 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                     ) : <div className="p-8 text-center text-gray-400 text-sm">Belum ada data nilai.</div>}
                 </div>
                 <div className="p-3 border-t bg-gray-50 flex gap-2">
-                    <button onClick={() => { setRejectionNote(''); setRejectModalOpen(true); }} disabled={!currentDoc} className="flex-1 py-1.5 border border-red-200 text-red-600 rounded bg-white text-xs font-bold disabled:opacity-50">Tolak Doc</button>
-                    <button onClick={handleApprove} disabled={!currentDoc} className="flex-1 py-1.5 bg-green-600 text-white rounded text-xs font-bold disabled:opacity-50">Setujui Doc</button>
+                    <button onClick={() => { setRejectionNote(''); setRejectModalOpen(true); }} disabled={!currentDoc || isSaving} className="flex-1 py-1.5 border border-red-200 text-red-600 rounded bg-white text-xs font-bold disabled:opacity-50 hover:bg-red-50">Tolak Doc</button>
+                    <button onClick={handleApprove} disabled={!currentDoc || isSaving} className="flex-1 py-1.5 bg-green-600 text-white rounded text-xs font-bold disabled:opacity-50 hover:bg-green-700 flex items-center justify-center">
+                        {isSaving ? <Loader2 className="w-3 h-3 animate-spin"/> : 'Setujui Doc'}
+                    </button>
                 </div>
             </div>
 
@@ -214,7 +263,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                      <div className="flex items-center gap-2"><span className="text-xs font-bold text-white">Rapor S{activeSemester}</span><div className="flex bg-gray-700 rounded p-0.5">{[1, 2, 3, 4, 5].map(p => <button key={p} onClick={() => setActivePage(p)} className={`w-6 h-6 flex items-center justify-center text-[10px] rounded ${activePage === p ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>{p}</button>)}</div></div>
                      <div className="flex items-center gap-1"><button onClick={()=>setZoomLevel(z=>z-0.2)} className="p-1 hover:bg-gray-700 rounded"><ZoomOut className="w-3 h-3" /></button><span className="text-[10px]">{Math.round(zoomLevel*100)}%</span><button onClick={()=>setZoomLevel(z=>z+0.2)} className="p-1 hover:bg-gray-700 rounded"><ZoomIn className="w-3 h-3" /></button><button onClick={()=>setLayoutMode(m=>m==='full-doc'?'split':'full-doc')} className="p-1 hover:bg-gray-700 rounded ml-2"><Maximize2 className="w-3 h-3" /></button></div>
                  </div>
-                 <div className="flex-1 overflow-auto p-4 bg-gray-900/50 flex items-start justify-center">
+                 <div className="flex-1 overflow-auto p-4 bg-gray-900/50 flex items-start justify-center pb-32">
                      {currentDoc ? (
                          <div style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'top center', width: '100%', height: '100%', display: 'flex', justifyContent: 'center' }}>
                              {(useFallbackViewer || isDriveUrl) ? (

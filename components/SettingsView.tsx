@@ -283,7 +283,7 @@ const SettingsView: React.FC = () => {
                 <TabButton id="USERS" label="Manajemen User" icon={Users} />
             </div>
 
-            <div className="p-6 flex-1 overflow-auto bg-gray-50/50">
+            <div className="p-6 flex-1 overflow-auto bg-gray-50/50 pb-32">
                 {activeTab === 'IDENTITY' && (
                     <div className="max-w-2xl space-y-4 bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
                         <div className="grid grid-cols-2 gap-4">
