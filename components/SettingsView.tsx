@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, School, Calendar, Users, Lock, Check, UploadCloud, Loader2, BookOpen, Plus, Trash2, LayoutList, Calculator, Pencil, X, Eye, EyeOff } from 'lucide-react';
+import { Save, School, Calendar, Users, Lock, Check, UploadCloud, Loader2, BookOpen, Plus, Trash2, LayoutList, Calculator, Pencil, X, Eye, EyeOff, RefreshCw, Cloud } from 'lucide-react';
 import { api } from '../services/api';
 import { MOCK_STUDENTS } from '../services/mockData';
 
@@ -32,7 +32,13 @@ const SUBJECT_MAP_CONFIG = [
 const SettingsView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'IDENTITY' | 'ACADEMIC' | 'USERS' | 'KELAS' | 'P5' | 'REKAP'>('IDENTITY');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSavingUsers, setIsSavingUsers] = useState(false);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   
+  // General Settings Loading State
+  const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+
   // Mock Data Global
   const [schoolData, setSchoolData] = useState({
       name: 'SMP Negeri 3 Pacet',
@@ -47,7 +53,7 @@ const SettingsView: React.FC = () => {
       semester: string;
       reportDate: string;
       semesterYears: Record<number, string>;
-      semesterDates: Record<number, string>; // Added for specific dates
+      semesterDates: Record<number, string>; 
   }
 
   const [academicData, setAcademicData] = useState<AcademicData>({
@@ -71,89 +77,97 @@ const SettingsView: React.FC = () => {
   const [users, setUsers] = useState<any[]>([]);
   const [editingUser, setEditingUser] = useState<any | null>(null);
   const [newUser, setNewUser] = useState({ name: '', password: '' });
-  const [showPassword, setShowPassword] = useState<string | null>(null); // Store ID of user to show password
+  const [showPassword, setShowPassword] = useState<string | null>(null);
 
   // --- CLASS & WALI KELAS SETTINGS ---
   const [selectedYearClass, setSelectedYearClass] = useState('2024/2025');
   const [selectedSemesterClass, setSelectedSemesterClass] = useState(1);
-  // Structure: { "2024/2025-1-VII A": { teacher: "", nip: "" } }
   const [classConfig, setClassConfig] = useState<Record<string, { teacher: string, nip: string }>>({});
 
   // --- P5 SETTINGS ---
   const [p5Filter, setP5Filter] = useState({ year: '2024/2025', level: 'VII', semester: 1 });
-  // Structure: { "2024/2025-VII-1": [ { theme: "", description: "" } ] }
   const [p5Config, setP5Config] = useState<Record<string, { theme: string, description: string }[]>>({});
 
   // --- REKAP 5 SEMESTER SETTINGS ---
-  const [recapSubjects, setRecapSubjects] = useState<string[]>([]);
+  const [recapSubjects, setRecapSubjects] = useState<string[]>(SUBJECT_MAP_CONFIG.map(s => s.key));
 
-  // Load from LocalStorage on mount
+  // INITIAL LOAD FROM CLOUD
   useEffect(() => {
-      const savedClassConfig = localStorage.getItem('sys_class_config');
-      if (savedClassConfig) setClassConfig(JSON.parse(savedClassConfig));
+      const initSettings = async () => {
+          setIsLoadingSettings(true);
+          try {
+              // 1. Fetch General Settings
+              const cloudSettings = await api.getAppSettings();
+              if (cloudSettings) {
+                  if (cloudSettings.schoolData) setSchoolData(cloudSettings.schoolData);
+                  
+                  if (cloudSettings.academicData) {
+                      const ad = cloudSettings.academicData;
+                      // Ensure robust fallback for deep objects
+                      if (!ad.semesterYears) ad.semesterYears = { 1: ad.year, 2: ad.year, 3: ad.year, 4: ad.year, 5: ad.year, 6: ad.year };
+                      if (!ad.semesterDates) ad.semesterDates = { 1: '', 2: '', 3: '', 4: '', 5: '', 6: '' };
+                      setAcademicData(ad);
+                  }
+                  
+                  if (cloudSettings.classConfig) setClassConfig(cloudSettings.classConfig);
+                  if (cloudSettings.p5Config) setP5Config(cloudSettings.p5Config);
+                  if (cloudSettings.recapSubjects) setRecapSubjects(cloudSettings.recapSubjects);
+              }
 
-      const savedP5Config = localStorage.getItem('sys_p5_config');
-      if (savedP5Config) setP5Config(JSON.parse(savedP5Config));
-      
-      const savedRecapConfig = localStorage.getItem('sys_recap_config');
-      if (savedRecapConfig) {
-          setRecapSubjects(JSON.parse(savedRecapConfig));
-      } else {
-          // Default all subjects checked if never saved
-          setRecapSubjects(SUBJECT_MAP_CONFIG.map(s => s.key));
-      }
+              // 2. Fetch Users
+              const onlineUsers = await api.getUsers();
+              if (onlineUsers && onlineUsers.length > 0) {
+                  setUsers(onlineUsers);
+              } else {
+                  setUsers([{ id: 'admin', username: 'admin', name: 'Administrator', password: 'admin123', role: 'ADMIN' }]);
+              }
 
-      const savedAcademic = localStorage.getItem('sys_academic_data');
-      if (savedAcademic) {
-          const parsed = JSON.parse(savedAcademic);
-          // Ensure semesterYears exists for backward compatibility
-          if (!parsed.semesterYears) {
-              parsed.semesterYears = {
-                  1: parsed.year || '2024/2025', 2: parsed.year || '2024/2025',
-                  3: parsed.year || '2024/2025', 4: parsed.year || '2024/2025',
-                  5: parsed.year || '2024/2025', 6: parsed.year || '2024/2025',
-              };
+          } catch (e) {
+              console.error("Failed to load settings", e);
+              alert("Gagal mengambil pengaturan dari server. Menggunakan default.");
+          } finally {
+              setIsLoadingSettings(false);
+              setIsLoadingUsers(false);
           }
-          // Ensure semesterDates exists
-          if (!parsed.semesterDates) {
-              parsed.semesterDates = { 1: parsed.reportDate, 2: '', 3: '', 4: '', 5: '', 6: '' };
-          }
-          setAcademicData(parsed);
-      }
+      };
 
-      const savedUsers = localStorage.getItem('sys_users');
-      if (savedUsers) {
-          setUsers(JSON.parse(savedUsers));
-      } else {
-          // Initialize with Admin
-          setUsers([{ id: 'admin', username: 'admin', name: 'Administrator', password: 'admin123', role: 'ADMIN' }]);
-      }
+      initSettings();
   }, []);
 
-  const handleSave = () => {
-      // Save all configs
-      localStorage.setItem('sys_class_config', JSON.stringify(classConfig));
-      localStorage.setItem('sys_p5_config', JSON.stringify(p5Config));
-      localStorage.setItem('sys_recap_config', JSON.stringify(recapSubjects));
-      localStorage.setItem('sys_academic_data', JSON.stringify(academicData));
-      localStorage.setItem('sys_users', JSON.stringify(users));
-      alert("Pengaturan berhasil disimpan.");
+  // SAVE ALL SETTINGS TO CLOUD
+  const handleSave = async () => {
+      setIsSavingSettings(true);
+      const settingsPayload = {
+          schoolData,
+          academicData,
+          classConfig,
+          p5Config,
+          recapSubjects
+      };
+
+      const success = await api.saveAppSettings(settingsPayload);
+      setIsSavingSettings(false);
+
+      if (success) {
+          alert("✅ Semua pengaturan berhasil disimpan ke Cloud!");
+      } else {
+          alert("❌ Gagal menyimpan pengaturan. Periksa koneksi.");
+      }
   };
 
   const handleInitialSync = async () => {
-      if(!window.confirm("Ini akan menimpa data di Google Sheets dengan Data Mockup lokal. Lanjutkan?")) return;
+      if(!window.confirm("Ini akan menimpa data SISWA di Google Sheets dengan Data Mockup lokal. Lanjutkan?")) return;
       
       setIsSyncing(true);
       const success = await api.syncInitialData(MOCK_STUDENTS);
       setIsSyncing(false);
       
-      if (success) alert("Sinkronisasi Berhasil!");
+      if (success) alert("Sinkronisasi Data Siswa Berhasil!");
       else alert("Sinkronisasi Gagal. Cek Console.");
   };
 
   // Class Config Handlers
   const handleWaliChange = (className: string, field: 'teacher' | 'nip', value: string) => {
-      // Key format: YEAR-SEMESTER-CLASS (allows different teachers per semester if needed)
       const key = `${selectedYearClass}-${selectedSemesterClass}-${className}`;
       setClassConfig(prev => ({
           ...prev,
@@ -210,6 +224,24 @@ const SettingsView: React.FC = () => {
   };
 
   // --- USER MANAGEMENT HANDLERS ---
+  const fetchUsers = async () => {
+      setIsLoadingUsers(true);
+      const onlineUsers = await api.getUsers();
+      if (onlineUsers && onlineUsers.length > 0) setUsers(onlineUsers);
+      setIsLoadingUsers(false);
+  };
+
+  const saveUsersToCloud = async (updatedUsers: any[]) => {
+      setIsSavingUsers(true);
+      const success = await api.updateUsers(updatedUsers);
+      setIsSavingUsers(false);
+      if (success) {
+          setUsers(updatedUsers);
+      } else {
+          alert("Gagal menyimpan data user ke Cloud.");
+      }
+  };
+
   const handleAddUser = () => {
       if (!newUser.name || !newUser.password) {
           alert('Nama dan Password harus diisi');
@@ -223,24 +255,21 @@ const SettingsView: React.FC = () => {
           role: 'GURU'
       };
       const updatedUsers = [...users, newGuru];
-      setUsers(updatedUsers);
-      localStorage.setItem('sys_users', JSON.stringify(updatedUsers));
+      saveUsersToCloud(updatedUsers);
       setNewUser({ name: '', password: '' });
   };
 
   const handleDeleteUser = (id: string) => {
       if (window.confirm('Hapus user ini?')) {
           const updatedUsers = users.filter(u => u.id !== id);
-          setUsers(updatedUsers);
-          localStorage.setItem('sys_users', JSON.stringify(updatedUsers));
+          saveUsersToCloud(updatedUsers);
       }
   };
 
   const handleUpdateUser = () => {
       if (!editingUser) return;
       const updatedUsers = users.map(u => u.id === editingUser.id ? editingUser : u);
-      setUsers(updatedUsers);
-      localStorage.setItem('sys_users', JSON.stringify(updatedUsers));
+      saveUsersToCloud(updatedUsers);
       setEditingUser(null);
   };
 
@@ -254,10 +283,21 @@ const SettingsView: React.FC = () => {
       </button>
   );
 
+  if (isLoadingSettings) {
+      return (
+          <div className="flex items-center justify-center h-full flex-col text-gray-500">
+              <Loader2 className="w-10 h-10 animate-spin mb-4 text-blue-500" />
+              <p>Menyinkronkan Pengaturan dari Cloud...</p>
+          </div>
+      );
+  }
+
   return (
     <div className="flex flex-col h-full animate-fade-in space-y-4">
         <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
-            <h2 className="text-lg font-bold text-gray-800">Pengaturan Sistem</h2>
+            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                Pengaturan Sistem <Cloud className="w-4 h-4 text-green-500" />
+            </h2>
             <div className="flex gap-2">
                 <button 
                     onClick={handleInitialSync} 
@@ -265,10 +305,11 @@ const SettingsView: React.FC = () => {
                     className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium shadow-sm transition-transform active:scale-95 disabled:opacity-50"
                 >
                     {isSyncing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <UploadCloud className="w-4 h-4 mr-2" />}
-                    Sync Data Awal
+                    Sync Data Siswa
                 </button>
-                <button onClick={handleSave} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium shadow-sm transition-transform active:scale-95">
-                    <Save className="w-4 h-4 mr-2" /> Simpan Perubahan
+                <button onClick={handleSave} disabled={isSavingSettings} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium shadow-sm transition-transform active:scale-95 disabled:opacity-50">
+                    {isSavingSettings ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />} 
+                    Simpan Config
                 </button>
             </div>
         </div>
@@ -284,6 +325,7 @@ const SettingsView: React.FC = () => {
             </div>
 
             <div className="p-6 flex-1 overflow-auto bg-gray-50/50 pb-32">
+                {/* ... (IDENTITY, ACADEMIC, KELAS, P5, REKAP tabs remain unchanged) ... */}
                 {activeTab === 'IDENTITY' && (
                     <div className="max-w-2xl space-y-4 bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
                         <div className="grid grid-cols-2 gap-4">
@@ -387,7 +429,6 @@ const SettingsView: React.FC = () => {
                     </div>
                 )}
 
-                {/* --- TAB DATA KELAS --- */}
                 {activeTab === 'KELAS' && (
                     <div className="space-y-4">
                         <div className="flex flex-col md:flex-row items-center gap-3 bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
@@ -458,7 +499,6 @@ const SettingsView: React.FC = () => {
                     </div>
                 )}
 
-                {/* --- TAB KONFIGURASI P5 --- */}
                 {activeTab === 'P5' && (
                     <div className="space-y-4">
                         <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm flex flex-col md:flex-row gap-4 items-center">
@@ -558,7 +598,6 @@ const SettingsView: React.FC = () => {
                     </div>
                 )}
 
-                {/* --- TAB REKAP 5 SEMESTER (NEW) --- */}
                 {activeTab === 'REKAP' && (
                     <div className="max-w-4xl space-y-4">
                         <div className="bg-purple-50 p-4 rounded-lg border border-purple-100 mb-4">
@@ -596,7 +635,13 @@ const SettingsView: React.FC = () => {
                 {activeTab === 'USERS' && (
                     <div className="space-y-4 bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
                          <div className="flex justify-between items-center mb-4">
-                             <h3 className="text-sm font-bold text-gray-700">Manajemen User (Guru)</h3>
+                             <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                                 Manajemen User (Guru) 
+                                 <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                                     {isLoadingUsers ? 'Loading...' : `${users.length} Users`}
+                                 </span>
+                             </h3>
+                             <button onClick={fetchUsers} className="p-1 hover:bg-gray-100 rounded text-gray-500" title="Refresh Users"><RefreshCw className="w-4 h-4" /></button>
                          </div>
                          
                          {/* Form Tambah Guru */}
@@ -623,66 +668,72 @@ const SettingsView: React.FC = () => {
                                         onChange={e => setNewUser({...newUser, password: e.target.value})}
                                      />
                                  </div>
-                                 <button onClick={handleAddUser} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 w-full md:w-auto">
-                                     Tambah
+                                 <button onClick={handleAddUser} disabled={isSavingUsers} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 w-full md:w-auto flex items-center justify-center">
+                                     {isSavingUsers ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Tambah'}
                                  </button>
                              </div>
                          </div>
 
                          {/* List User */}
-                         <table className="w-full text-left border-collapse text-sm">
-                             <thead className="bg-gray-50 border-b">
-                                 <tr>
-                                     <th className="p-3">Nama</th>
-                                     <th className="p-3">Username</th>
-                                     <th className="p-3">Role</th>
-                                     <th className="p-3">Password</th>
-                                     <th className="p-3 text-right">Aksi</th>
-                                 </tr>
-                             </thead>
-                             <tbody className="divide-y divide-gray-100">
-                                 {users.map(u => (
-                                     <tr key={u.id} className="hover:bg-gray-50">
-                                         <td className="p-3">
-                                             {editingUser?.id === u.id ? (
-                                                 <input className="border p-1 rounded w-full" value={editingUser.name} onChange={e => setEditingUser({...editingUser, name: e.target.value})} />
-                                             ) : (
-                                                 <span className="font-medium text-gray-800">{u.name}</span>
-                                             )}
-                                         </td>
-                                         <td className="p-3 text-gray-500">{u.username}</td>
-                                         <td className="p-3"><span className={`px-2 py-0.5 rounded text-xs font-bold ${u.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{u.role}</span></td>
-                                         <td className="p-3 font-mono text-xs">
-                                             {editingUser?.id === u.id ? (
-                                                 <input className="border p-1 rounded w-full" value={editingUser.password} onChange={e => setEditingUser({...editingUser, password: e.target.value})} />
-                                             ) : (
-                                                 <div className="flex items-center gap-2">
-                                                     <span>{showPassword === u.id ? u.password : '••••••'}</span>
-                                                     <button onClick={() => setShowPassword(showPassword === u.id ? null : u.id)} className="text-gray-400 hover:text-gray-600">
-                                                         {showPassword === u.id ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                                                     </button>
-                                                 </div>
-                                             )}
-                                         </td>
-                                         <td className="p-3 text-right flex justify-end gap-2">
-                                             {u.role !== 'ADMIN' && (
-                                                 <>
-                                                     {editingUser?.id === u.id ? (
-                                                         <>
-                                                            <button onClick={handleUpdateUser} className="text-green-600 hover:bg-green-50 p-1 rounded"><Check className="w-4 h-4" /></button>
-                                                            <button onClick={() => setEditingUser(null)} className="text-gray-600 hover:bg-gray-50 p-1 rounded"><X className="w-4 h-4" /></button>
-                                                         </>
-                                                     ) : (
-                                                         <button onClick={() => setEditingUser(u)} className="text-blue-600 hover:bg-blue-50 p-1 rounded"><Pencil className="w-4 h-4" /></button>
-                                                     )}
-                                                     <button onClick={() => handleDeleteUser(u.id)} className="text-red-600 hover:bg-red-50 p-1 rounded"><Trash2 className="w-4 h-4" /></button>
-                                                 </>
-                                             )}
-                                         </td>
+                         <div className="overflow-x-auto">
+                             <table className="w-full text-left border-collapse text-sm">
+                                 <thead className="bg-gray-50 border-b">
+                                     <tr>
+                                         <th className="p-3">Nama</th>
+                                         <th className="p-3">Username</th>
+                                         <th className="p-3">Role</th>
+                                         <th className="p-3">Password</th>
+                                         <th className="p-3 text-right">Aksi</th>
                                      </tr>
-                                 ))}
-                             </tbody>
-                         </table>
+                                 </thead>
+                                 <tbody className="divide-y divide-gray-100">
+                                     {isLoadingUsers ? (
+                                         <tr><td colSpan={5} className="p-8 text-center text-gray-500"><Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />Memuat data user...</td></tr>
+                                     ) : (
+                                         users.map(u => (
+                                             <tr key={u.id} className="hover:bg-gray-50">
+                                                 <td className="p-3">
+                                                     {editingUser?.id === u.id ? (
+                                                         <input className="border p-1 rounded w-full" value={editingUser.name} onChange={e => setEditingUser({...editingUser, name: e.target.value})} />
+                                                     ) : (
+                                                         <span className="font-medium text-gray-800">{u.name}</span>
+                                                     )}
+                                                 </td>
+                                                 <td className="p-3 text-gray-500">{u.username}</td>
+                                                 <td className="p-3"><span className={`px-2 py-0.5 rounded text-xs font-bold ${u.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{u.role}</span></td>
+                                                 <td className="p-3 font-mono text-xs">
+                                                     {editingUser?.id === u.id ? (
+                                                         <input className="border p-1 rounded w-full" value={editingUser.password} onChange={e => setEditingUser({...editingUser, password: e.target.value})} />
+                                                     ) : (
+                                                         <div className="flex items-center gap-2">
+                                                             <span>{showPassword === u.id ? u.password : '••••••'}</span>
+                                                             <button onClick={() => setShowPassword(showPassword === u.id ? null : u.id)} className="text-gray-400 hover:text-gray-600">
+                                                                 {showPassword === u.id ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                                             </button>
+                                                         </div>
+                                                     )}
+                                                 </td>
+                                                 <td className="p-3 text-right flex justify-end gap-2">
+                                                     {u.role !== 'ADMIN' && (
+                                                         <>
+                                                             {editingUser?.id === u.id ? (
+                                                                 <>
+                                                                    <button onClick={handleUpdateUser} disabled={isSavingUsers} className="text-green-600 hover:bg-green-50 p-1 rounded">{isSavingUsers ? <Loader2 className="w-4 h-4 animate-spin"/> : <Check className="w-4 h-4" />}</button>
+                                                                    <button onClick={() => setEditingUser(null)} className="text-gray-600 hover:bg-gray-50 p-1 rounded"><X className="w-4 h-4" /></button>
+                                                                 </>
+                                                             ) : (
+                                                                 <button onClick={() => setEditingUser(u)} className="text-blue-600 hover:bg-blue-50 p-1 rounded"><Pencil className="w-4 h-4" /></button>
+                                                             )}
+                                                             <button onClick={() => handleDeleteUser(u.id)} disabled={isSavingUsers} className="text-red-600 hover:bg-red-50 p-1 rounded"><Trash2 className="w-4 h-4" /></button>
+                                                         </>
+                                                     )}
+                                                 </td>
+                                             </tr>
+                                         ))
+                                     )}
+                                 </tbody>
+                             </table>
+                         </div>
                     </div>
                 )}
             </div>

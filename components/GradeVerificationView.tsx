@@ -281,16 +281,36 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   const handleReviewDecision = async (decision: 'APPROVED' | 'REJECTED') => {
       if (!selectedRequest || !currentStudent || !currentRecord) return;
       setIsSaving(true);
-      selectedRequest.status = decision;
-      selectedRequest.verifierName = currentUser?.name || 'Admin';
-      selectedRequest.processedDate = new Date().toISOString().split('T')[0];
-      selectedRequest.adminNote = adminReviewNote;
-      if (decision === 'APPROVED') {
-          const subjectName = selectedRequest.fieldKey.split('_').slice(2).join('_');
-          const targetSubject = currentRecord.subjects.find(s => s.subject === subjectName || selectedRequest.fieldName.includes(s.subject));
-          if (targetSubject) { targetSubject.score = Number(selectedRequest.proposedValue); } 
-          else { const altTarget = currentRecord.subjects.find(s => selectedRequest.fieldName.includes(s.subject)); if(altTarget) altTarget.score = Number(selectedRequest.proposedValue); }
+      
+      // Update the request object
+      const updatedRequest: CorrectionRequest = {
+          ...selectedRequest,
+          status: decision,
+          verifierName: currentUser?.name || 'Admin',
+          processedDate: new Date().toISOString().split('T')[0],
+          adminNote: adminReviewNote
+      };
+
+      // Update student data
+      if (currentStudent.correctionRequests) {
+          currentStudent.correctionRequests = currentStudent.correctionRequests.map(req => 
+              req.id === updatedRequest.id ? updatedRequest : req
+          );
       }
+
+      if (decision === 'APPROVED') {
+          const subjectName = updatedRequest.fieldKey.split('_').slice(2).join('_');
+          const targetSubject = currentRecord.subjects.find(s => s.subject === subjectName || updatedRequest.fieldName.includes(s.subject));
+          const newScore = Number(updatedRequest.proposedValue);
+          
+          if (targetSubject) { 
+              targetSubject.score = newScore;
+          } else { 
+              const altTarget = currentRecord.subjects.find(s => updatedRequest.fieldName.includes(s.subject)); 
+              if(altTarget) altTarget.score = newScore;
+          }
+      }
+      
       await api.updateStudent(currentStudent);
       setIsSaving(false);
       setReviewModalOpen(false);

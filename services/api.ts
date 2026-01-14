@@ -1,19 +1,17 @@
 import { Student, DocumentFile } from '../types';
 
 // URL Deployment Google Apps Script
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwvhwFPtmdzw07pusXUmW9dslD_fRg0ObD4j10eIFrGRRORgFyP4LSestGpAJSMD-Dn6g/exec';
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxdJ-8ZAhkZSi4Q21jab9ZvROpeIOurf_ER-ajpRhOF4Y-rUvEXvy9zRgEgafXFa_D6/exec';
 
 export const api = {
   // Fetch all students
   getStudents: async (): Promise<Student[]> => {
-    // Prevent fetching if URL is not configured
     if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('YOUR_GOOGLE_SCRIPT_URL')) {
         console.warn("Google Script URL not configured. Using mock data.");
         throw new Error("URL Not Configured"); 
     }
 
     try {
-      // Add timestamp to prevent browser caching (Critical for multi-device sync)
       const timestamp = new Date().getTime();
       const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getStudents&t=${timestamp}`);
       
@@ -28,14 +26,91 @@ export const api = {
       throw new Error(result.message || 'Gagal mengambil data');
     } catch (error) {
       console.error("Error fetching data:", error);
-      throw error; // Throw error to let App.tsx handle fallback
+      throw error;
     }
+  },
+
+  // Fetch Users (Teachers/Admins)
+  getUsers: async (): Promise<any[]> => {
+    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('YOUR_GOOGLE_SCRIPT_URL')) return [];
+
+    try {
+      const timestamp = new Date().getTime();
+      const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getUsers&t=${timestamp}`);
+      const result = await response.json();
+      if (result.status === 'success') {
+        return result.data;
+      }
+      return [];
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      return [];
+    }
+  },
+
+  // Update Users List
+  updateUsers: async (users: any[]): Promise<boolean> => {
+    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('YOUR_GOOGLE_SCRIPT_URL')) return true;
+
+    try {
+        const payload = {
+            action: 'updateUsers',
+            users: users
+        };
+        const response = await fetch(GOOGLE_SCRIPT_URL, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        return result.status === 'success';
+    } catch (e) {
+        console.error("Error saving users:", e);
+        return false;
+    }
+  },
+
+  // NEW: Fetch Global App Settings
+  getAppSettings: async (): Promise<any> => {
+    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('YOUR_GOOGLE_SCRIPT_URL')) return null;
+
+    try {
+        const timestamp = new Date().getTime();
+        const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getSettings&t=${timestamp}`);
+        const result = await response.json();
+        if (result.status === 'success') {
+            return result.data; // Object containing all configs
+        }
+        return null;
+    } catch (e) {
+        console.error("Error fetching settings:", e);
+        return null;
+    }
+  },
+
+  // NEW: Save Global App Settings
+  saveAppSettings: async (settings: any): Promise<boolean> => {
+      if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('YOUR_GOOGLE_SCRIPT_URL')) return true;
+
+      try {
+          const payload = {
+              action: 'saveSettings',
+              settings: settings
+          };
+          const response = await fetch(GOOGLE_SCRIPT_URL, {
+              method: 'POST',
+              body: JSON.stringify(payload)
+          });
+          const result = await response.json();
+          return result.status === 'success';
+      } catch (e) {
+          console.error("Error saving settings:", e);
+          return false;
+      }
   },
 
   // Upload file (Convert to Base64 first)
   uploadFile: async (file: File, studentId: string, category: string): Promise<string | null> => {
     if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('YOUR_GOOGLE_SCRIPT_URL')) {
-        // Fallback mock upload
         return new Promise(resolve => setTimeout(() => resolve(URL.createObjectURL(file)), 1000));
     }
 
@@ -98,14 +173,14 @@ export const api = {
     }
   },
 
-  // NEW: Update Multiple Students at once (Bulk) - Much Faster
+  // Update Multiple Students at once (Bulk)
   updateStudentsBulk: async (students: Student[]): Promise<boolean> => {
     if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('YOUR_GOOGLE_SCRIPT_URL')) return true;
     if (students.length === 0) return true;
 
     try {
         const payload = {
-            action: 'updateStudentsBulk', // Backend must handle this or iterate 'updateStudent'
+            action: 'updateStudentsBulk', 
             students: students
         };
         

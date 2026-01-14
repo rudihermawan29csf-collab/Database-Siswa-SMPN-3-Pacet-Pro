@@ -4,7 +4,7 @@ import { Search, FileSpreadsheet, Award, LayoutList, TableProperties } from 'luc
 
 interface IjazahViewProps {
   students: Student[];
-  userRole?: 'ADMIN' | 'STUDENT';
+  userRole?: 'ADMIN' | 'STUDENT' | 'GURU';
   loggedInStudent?: Student;
 }
 

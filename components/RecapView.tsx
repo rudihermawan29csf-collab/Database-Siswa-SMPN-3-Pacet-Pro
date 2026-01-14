@@ -4,7 +4,7 @@ import { Search, FileSpreadsheet, FileText, Calculator } from 'lucide-react';
 
 interface RecapViewProps {
   students: Student[];
-  userRole?: 'ADMIN' | 'STUDENT';
+  userRole?: 'ADMIN' | 'STUDENT' | 'GURU';
   loggedInStudent?: Student;
 }
 

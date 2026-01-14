@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { GraduationCap, Loader2, UserCog, User, ChevronDown, School, ArrowRight, BookOpen } from 'lucide-react';
 import { Student } from '../types';
+import { api } from '../services/api';
 
 interface LoginProps {
   onLogin: (role: 'ADMIN' | 'GURU' | 'STUDENT', studentData?: Student) => void;
@@ -9,6 +10,7 @@ interface LoginProps {
 
 const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
   const [loading, setLoading] = useState(false);
+  const [loadingTeachers, setLoadingTeachers] = useState(false);
   const [loginMode, setLoginMode] = useState<'ADMIN' | 'GURU' | 'STUDENT'>('ADMIN');
   const [error, setError] = useState('');
 
@@ -24,13 +26,27 @@ const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
   // Teachers List
   const [teachers, setTeachers] = useState<any[]>([]);
 
+  // Fetch Users (Teachers) from Cloud on Mount or Mode Change
   useEffect(() => {
-      // Load teachers from localStorage
-      const savedUsers = localStorage.getItem('sys_users');
-      if (savedUsers) {
-          const allUsers = JSON.parse(savedUsers);
-          setTeachers(allUsers.filter((u: any) => u.role === 'GURU'));
-      }
+      const fetchTeachers = async () => {
+          if (loginMode === 'GURU') {
+              setLoadingTeachers(true);
+              try {
+                  const users = await api.getUsers();
+                  if (users && users.length > 0) {
+                      setTeachers(users.filter((u: any) => u.role === 'GURU'));
+                  } else {
+                      setTeachers([]);
+                  }
+              } catch (e) {
+                  console.error("Gagal memuat data guru:", e);
+              } finally {
+                  setLoadingTeachers(false);
+              }
+          }
+      };
+
+      fetchTeachers();
       
       // Auto-fill admin username
       if (loginMode === 'ADMIN') {
@@ -68,9 +84,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
                 setError('Username atau Password salah.');
             }
         } else if (loginMode === 'GURU') {
-            const savedUsers = localStorage.getItem('sys_users');
-            const allUsers = savedUsers ? JSON.parse(savedUsers) : [];
-            const guru = allUsers.find((u: any) => u.id === selectedGuruId && u.role === 'GURU');
+            const guru = teachers.find(u => u.id === selectedGuruId);
             
             if (guru && guru.password === password) {
                 setLoading(false);
@@ -176,12 +190,14 @@ const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
                                 value={selectedGuruId}
                                 onChange={(e) => setSelectedGuruId(e.target.value)}
                                 className="w-full pl-10 pr-4 py-3 appearance-none rounded-xl bg-white/50 border border-gray-200 focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all text-sm font-medium cursor-pointer"
+                                disabled={loadingTeachers}
                             >
-                                <option value="" disabled>-- Pilih Nama Anda --</option>
+                                <option value="" disabled>{loadingTeachers ? 'Memuat data guru...' : '-- Pilih Nama Anda --'}</option>
                                 {teachers.map(t => (
                                     <option key={t.id} value={t.id}>{t.name}</option>
                                 ))}
                             </select>
+                            {loadingTeachers && <Loader2 className="absolute right-8 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-blue-500" />}
                             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                         </div>
                     </div>
