@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Student } from '../types';
 import { 
   CheckCircle2, Activity, MapPin, Users, Wallet, Loader2,
-  ZoomIn, ZoomOut, Maximize2, Save, Pencil, AlertCircle
+  ZoomIn, ZoomOut, Maximize2, Save, Pencil, AlertCircle, XCircle, RefreshCw
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -10,6 +10,7 @@ interface VerificationViewProps {
   students: Student[];
   targetStudentId?: string;
   onUpdate?: () => void;
+  onSave?: (student: Student) => void;
   currentUser?: { name: string; role: string }; 
 }
 
@@ -58,7 +59,7 @@ const PDFPageCanvas = ({ pdf, pageNum, scale }: { pdf: any, pageNum: number, sca
     return <canvas ref={canvasRef} className="shadow-lg bg-white" />;
 };
 
-const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStudentId, onUpdate, currentUser }) => {
+const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStudentId, onUpdate, onSave, currentUser }) => {
   const [selectedClass, setSelectedClass] = useState<string>('');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [activeDocType, setActiveDocType] = useState<string>('IJAZAH');
@@ -149,16 +150,33 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   const handleApprove = async () => { 
       if (currentDoc && currentStudent) { 
           setIsSaving(true);
-          // Mutate local object directly to ensure immediate feedback
-          currentDoc.status = 'APPROVED'; 
-          currentDoc.adminNote = 'Dokumen valid.'; 
-          currentDoc.verifierName = currentUser?.name || 'Admin';
-          currentDoc.verifierRole = currentUser?.role || 'ADMIN';
-          currentDoc.verificationDate = new Date().toISOString().split('T')[0];
           
-          await api.updateStudent(currentStudent);
+          // IMMUTABLE UPDATE: Create a new student object with updated documents
+          const updatedDocs = currentStudent.documents.map(d => 
+              d.id === currentDoc.id 
+              ? {
+                  ...d,
+                  status: 'APPROVED' as const,
+                  adminNote: 'Dokumen valid.',
+                  verifierName: currentUser?.name || 'Admin',
+                  verifierRole: currentUser?.role || 'ADMIN',
+                  verificationDate: new Date().toISOString().split('T')[0]
+              }
+              : d
+          );
+          
+          const updatedStudent = {
+              ...currentStudent,
+              documents: updatedDocs
+          };
+          
+          if (onSave) {
+              await onSave(updatedStudent);
+          } else {
+              await api.updateStudent(updatedStudent);
+          }
+          
           setIsSaving(false);
-          setForceUpdate(prev => prev + 1); 
           if (onUpdate) onUpdate(); 
       } 
   };
@@ -168,30 +186,65 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           if (!rejectionNote.trim()) { alert("Mohon isi alasan penolakan."); return; }
           setIsSaving(true);
           
-          // CRITICAL FIX: Ensure object update happens on the specific document instance in the array
-          // to guarantee reference consistency.
-          const docIndex = currentStudent.documents.findIndex(d => d.id === currentDoc.id);
-          if (docIndex !== -1) {
-              currentStudent.documents[docIndex] = {
-                  ...currentStudent.documents[docIndex],
-                  status: 'REVISION',
+          // IMMUTABLE UPDATE
+          const updatedDocs = currentStudent.documents.map(d => 
+              d.id === currentDoc.id 
+              ? {
+                  ...d,
+                  status: 'REVISION' as const,
                   adminNote: rejectionNote,
                   verifierName: currentUser?.name || 'Admin',
                   verifierRole: currentUser?.role || 'ADMIN',
                   verificationDate: new Date().toISOString().split('T')[0]
-              };
-          }
+              }
+              : d
+          );
 
-          // Save to API
-          await api.updateStudent(currentStudent);
+          const updatedStudent = {
+              ...currentStudent,
+              documents: updatedDocs
+          };
+
+          if (onSave) {
+              await onSave(updatedStudent);
+          } else {
+              await api.updateStudent(updatedStudent);
+          }
           
           setIsSaving(false);
           setRejectModalOpen(false); 
-          setRejectionNote(''); // Clear note after sending
+          setRejectionNote(''); 
           
-          setForceUpdate(prev => prev + 1); 
           if (onUpdate) onUpdate(); 
       } 
+  };
+
+  const resetToPending = async () => {
+      if (currentDoc && currentStudent && window.confirm("Reset status dokumen ke MENUNGGU?")) {
+          setIsSaving(true);
+          
+          // IMMUTABLE UPDATE
+          const updatedDocs = currentStudent.documents.map(d => 
+              d.id === currentDoc.id 
+              ? {
+                  ...d,
+                  status: 'PENDING' as const,
+                  adminNote: '',
+                  verifierName: '',
+                  verifierRole: '',
+                  verificationDate: ''
+              }
+              : d
+          );
+
+          const updatedStudent = {
+              ...currentStudent,
+              documents: updatedDocs
+          };
+
+          if (onSave) await onSave(updatedStudent); else await api.updateStudent(updatedStudent);
+          setIsSaving(false);
+      }
   };
 
   const renderDataTab = () => {
@@ -344,7 +397,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                     <button onClick={async () => {
                         if (isEditing) {
                             setIsSaving(true);
-                            await api.updateStudent(currentStudent);
+                            if (onSave) await onSave(currentStudent); else await api.updateStudent(currentStudent);
                             setIsSaving(false);
                             if(onUpdate) onUpdate();
                         }
@@ -363,13 +416,40 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                 )}
                 </div>
                 
-                {/* BUTTONS VISIBLE FOR ADMIN/GURU */}
-                <div className="p-4 border-t border-gray-200 bg-gray-50 flex gap-2">
-                    <button onClick={() => { setRejectionNote(''); setRejectModalOpen(true); }} disabled={!currentDoc || isSaving} className="flex-1 py-2 bg-white border border-red-200 text-red-600 rounded-lg text-sm font-bold disabled:opacity-50 hover:bg-red-50">Tolak</button>
-                    <button onClick={handleApprove} disabled={!currentDoc || isSaving} className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-bold disabled:opacity-50 hover:bg-green-700 flex items-center justify-center">
-                        {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Setujui'}
-                    </button>
-                </div>
+                {/* ACTION BUTTONS (DYNAMIC) */}
+                {currentDoc ? (
+                    currentDoc.status === 'PENDING' ? (
+                        <div className="p-4 border-t border-gray-200 bg-gray-50 flex gap-2">
+                            <button onClick={() => { setRejectionNote(''); setRejectModalOpen(true); }} disabled={isSaving} className="flex-1 py-2 bg-white border border-red-200 text-red-600 rounded-lg text-sm font-bold disabled:opacity-50 hover:bg-red-50">Tolak</button>
+                            <button onClick={handleApprove} disabled={isSaving} className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-bold disabled:opacity-50 hover:bg-green-700 flex items-center justify-center">
+                                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Setujui'}
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="p-4 border-t border-gray-200 bg-gray-50 flex flex-col items-center justify-center gap-2">
+                            {currentDoc.status === 'APPROVED' ? (
+                                <div className="text-green-700 font-bold text-sm flex items-center gap-2 bg-green-100 px-3 py-1.5 rounded-full border border-green-200">
+                                    <CheckCircle2 className="w-4 h-4" /> Disetujui oleh {currentDoc.verifierName || 'Admin'}
+                                </div>
+                            ) : (
+                                <div className="text-red-700 font-bold text-sm flex items-center gap-2 bg-red-100 px-3 py-1.5 rounded-full border border-red-200">
+                                    <XCircle className="w-4 h-4" /> Ditolak oleh {currentDoc.verifierName || 'Admin'}
+                                </div>
+                            )}
+                            
+                            <button 
+                                onClick={resetToPending}
+                                className="flex items-center gap-1 text-[10px] font-bold text-gray-400 hover:text-blue-600 mt-1 transition-colors"
+                            >
+                                <RefreshCw className="w-3 h-3" /> Ubah / Reset Status
+                            </button>
+                        </div>
+                    )
+                ) : (
+                    <div className="p-4 border-t border-gray-200 bg-gray-50 text-center text-xs text-gray-400 italic">
+                        Tidak ada file untuk diverifikasi.
+                    </div>
+                )}
             </div>
             
             <div className={`flex flex-col bg-gray-800 rounded-xl overflow-hidden shadow-lg transition-all duration-300 ${layoutMode === 'full-doc' ? 'w-full absolute inset-0 z-20' : 'flex-1 h-full'}`}>

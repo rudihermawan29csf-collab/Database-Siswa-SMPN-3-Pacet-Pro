@@ -73,7 +73,9 @@ const App: React.FC = () => {
   useEffect(() => {
       if (selectedStudent && studentsData.length > 0) {
           const updatedStudent = studentsData.find(s => s.id === selectedStudent.id);
-          if (updatedStudent && updatedStudent !== selectedStudent) {
+          // Only update if the object reference is different to avoid loops, 
+          // but ensure we capture updates.
+          if (updatedStudent && JSON.stringify(updatedStudent) !== JSON.stringify(selectedStudent)) {
               setSelectedStudent(updatedStudent);
           }
       }
@@ -412,19 +414,12 @@ const App: React.FC = () => {
             case 'ijazah':
                 content = <IjazahView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />; break;
             case 'verification':
-                // Pass saveStudentToCloud wrapper as onUpdate to ensure local state persists
+                // Pass saveStudentToCloud as onSave to ensure local state persists
                 content = <VerificationView 
                     students={studentsData} 
                     targetStudentId={targetVerificationStudentId} 
-                    onUpdate={() => {
-                        // Find current student in verification view logic and save it
-                        // Since VerificationView manages selection internally, 
-                        // we pass a refresh trigger that calls saveStudentToCloud if we could access it,
-                        // but VerificationView will call api.updateStudent itself.
-                        // We need VerificationView to update `studentsData` in App. 
-                        // However, simpler is passing refreshData but ensuring VerificationView handles optimistically.
-                        refreshData();
-                    }} 
+                    onUpdate={refreshData}
+                    onSave={saveStudentToCloud} // NEW: Direct state update prop
                     currentUser={currentUser || undefined} 
                 />; 
                 break;
