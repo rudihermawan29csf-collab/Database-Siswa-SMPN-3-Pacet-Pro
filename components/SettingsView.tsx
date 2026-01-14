@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, School, Calendar, Users, Lock, Check, UploadCloud, Loader2, BookOpen, Plus, Trash2, LayoutList } from 'lucide-react';
+import { Save, School, Calendar, Users, Lock, Check, UploadCloud, Loader2, BookOpen, Plus, Trash2, LayoutList, Calculator, Pencil, X, Eye, EyeOff } from 'lucide-react';
 import { api } from '../services/api';
 import { MOCK_STUDENTS } from '../services/mockData';
 
@@ -15,8 +15,22 @@ const THEMES_LIST = [
     'Kebekerjaan'
 ];
 
+const SUBJECT_MAP_CONFIG = [
+    { key: 'PAI', label: 'PAI', full: 'Pendidikan Agama dan Budi Pekerti' },
+    { key: 'Pendidikan Pancasila', label: 'PPKn', full: 'Pendidikan Pancasila' },
+    { key: 'Bahasa Indonesia', label: 'BIN', full: 'Bahasa Indonesia' },
+    { key: 'Matematika', label: 'MTK', full: 'Matematika' },
+    { key: 'IPA', label: 'IPA', full: 'Ilmu Pengetahuan Alam' },
+    { key: 'IPS', label: 'IPS', full: 'Ilmu Pengetahuan Sosial' },
+    { key: 'Bahasa Inggris', label: 'BIG', full: 'Bahasa Inggris' },
+    { key: 'PJOK', label: 'PJOK', full: 'PJOK' },
+    { key: 'Informatika', label: 'INF', full: 'Informatika' },
+    { key: 'Seni dan Prakarya', label: 'SENI', full: 'Seni dan Prakarya' },
+    { key: 'Bahasa Jawa', label: 'B.JAWA', full: 'Bahasa Jawa' },
+];
+
 const SettingsView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'IDENTITY' | 'ACADEMIC' | 'USERS' | 'KELAS' | 'P5'>('IDENTITY');
+  const [activeTab, setActiveTab] = useState<'IDENTITY' | 'ACADEMIC' | 'USERS' | 'KELAS' | 'P5' | 'REKAP'>('IDENTITY');
   const [isSyncing, setIsSyncing] = useState(false);
   
   // Mock Data Global
@@ -53,6 +67,12 @@ const SettingsView: React.FC = () => {
       }
   });
 
+  // --- USER MANAGEMENT ---
+  const [users, setUsers] = useState<any[]>([]);
+  const [editingUser, setEditingUser] = useState<any | null>(null);
+  const [newUser, setNewUser] = useState({ name: '', password: '' });
+  const [showPassword, setShowPassword] = useState<string | null>(null); // Store ID of user to show password
+
   // --- CLASS & WALI KELAS SETTINGS ---
   const [selectedYearClass, setSelectedYearClass] = useState('2024/2025');
   const [selectedSemesterClass, setSelectedSemesterClass] = useState(1);
@@ -64,6 +84,9 @@ const SettingsView: React.FC = () => {
   // Structure: { "2024/2025-VII-1": [ { theme: "", description: "" } ] }
   const [p5Config, setP5Config] = useState<Record<string, { theme: string, description: string }[]>>({});
 
+  // --- REKAP 5 SEMESTER SETTINGS ---
+  const [recapSubjects, setRecapSubjects] = useState<string[]>([]);
+
   // Load from LocalStorage on mount
   useEffect(() => {
       const savedClassConfig = localStorage.getItem('sys_class_config');
@@ -72,6 +95,14 @@ const SettingsView: React.FC = () => {
       const savedP5Config = localStorage.getItem('sys_p5_config');
       if (savedP5Config) setP5Config(JSON.parse(savedP5Config));
       
+      const savedRecapConfig = localStorage.getItem('sys_recap_config');
+      if (savedRecapConfig) {
+          setRecapSubjects(JSON.parse(savedRecapConfig));
+      } else {
+          // Default all subjects checked if never saved
+          setRecapSubjects(SUBJECT_MAP_CONFIG.map(s => s.key));
+      }
+
       const savedAcademic = localStorage.getItem('sys_academic_data');
       if (savedAcademic) {
           const parsed = JSON.parse(savedAcademic);
@@ -89,13 +120,23 @@ const SettingsView: React.FC = () => {
           }
           setAcademicData(parsed);
       }
+
+      const savedUsers = localStorage.getItem('sys_users');
+      if (savedUsers) {
+          setUsers(JSON.parse(savedUsers));
+      } else {
+          // Initialize with Admin
+          setUsers([{ id: 'admin', username: 'admin', name: 'Administrator', password: 'admin123', role: 'ADMIN' }]);
+      }
   }, []);
 
   const handleSave = () => {
       // Save all configs
       localStorage.setItem('sys_class_config', JSON.stringify(classConfig));
       localStorage.setItem('sys_p5_config', JSON.stringify(p5Config));
+      localStorage.setItem('sys_recap_config', JSON.stringify(recapSubjects));
       localStorage.setItem('sys_academic_data', JSON.stringify(academicData));
+      localStorage.setItem('sys_users', JSON.stringify(users));
       alert("Pengaturan berhasil disimpan.");
   };
 
@@ -130,6 +171,13 @@ const SettingsView: React.FC = () => {
       return p5Config[getCurrentP5Key()] || [];
   };
 
+  const getSemestersForLevel = (level: string) => {
+      if (level === 'VII') return [1, 2];
+      if (level === 'VIII') return [3, 4];
+      if (level === 'IX') return [5, 6];
+      return [1, 2, 3, 4, 5, 6];
+  }
+
   const addP5Project = () => {
       const key = getCurrentP5Key();
       const currentList = p5Config[key] || [];
@@ -151,6 +199,49 @@ const SettingsView: React.FC = () => {
       const list = [...(p5Config[key] || [])];
       list.splice(index, 1);
       setP5Config({ ...p5Config, [key]: list });
+  };
+
+  const toggleRecapSubject = (key: string) => {
+      if (recapSubjects.includes(key)) {
+          setRecapSubjects(prev => prev.filter(k => k !== key));
+      } else {
+          setRecapSubjects(prev => [...prev, key]);
+      }
+  };
+
+  // --- USER MANAGEMENT HANDLERS ---
+  const handleAddUser = () => {
+      if (!newUser.name || !newUser.password) {
+          alert('Nama dan Password harus diisi');
+          return;
+      }
+      const newGuru = {
+          id: Math.random().toString(36).substr(2, 9),
+          username: newUser.name.toLowerCase().replace(/\s+/g, ''),
+          name: newUser.name,
+          password: newUser.password,
+          role: 'GURU'
+      };
+      const updatedUsers = [...users, newGuru];
+      setUsers(updatedUsers);
+      localStorage.setItem('sys_users', JSON.stringify(updatedUsers));
+      setNewUser({ name: '', password: '' });
+  };
+
+  const handleDeleteUser = (id: string) => {
+      if (window.confirm('Hapus user ini?')) {
+          const updatedUsers = users.filter(u => u.id !== id);
+          setUsers(updatedUsers);
+          localStorage.setItem('sys_users', JSON.stringify(updatedUsers));
+      }
+  };
+
+  const handleUpdateUser = () => {
+      if (!editingUser) return;
+      const updatedUsers = users.map(u => u.id === editingUser.id ? editingUser : u);
+      setUsers(updatedUsers);
+      localStorage.setItem('sys_users', JSON.stringify(updatedUsers));
+      setEditingUser(null);
   };
 
   const TabButton = ({ id, label, icon: Icon }: any) => (
@@ -185,9 +276,10 @@ const SettingsView: React.FC = () => {
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col flex-1">
             <div className="flex border-b border-gray-200 overflow-x-auto">
                 <TabButton id="IDENTITY" label="Identitas Sekolah" icon={School} />
-                <TabButton id="ACADEMIC" label="Tahun Ajaran (Rapor)" icon={Calendar} />
+                <TabButton id="ACADEMIC" label="Tahun Ajaran" icon={Calendar} />
                 <TabButton id="KELAS" label="Data Kelas & Wali" icon={BookOpen} />
                 <TabButton id="P5" label="Setting P5" icon={LayoutList} />
+                <TabButton id="REKAP" label="Rekap 5 Semester" icon={Calculator} />
                 <TabButton id="USERS" label="Manajemen User" icon={Users} />
             </div>
 
@@ -385,7 +477,15 @@ const SettingsView: React.FC = () => {
                                 <select 
                                     className="p-2 border rounded-lg text-sm bg-gray-50"
                                     value={p5Filter.level}
-                                    onChange={(e) => setP5Filter({...p5Filter, level: e.target.value})}
+                                    onChange={(e) => {
+                                        const newLevel = e.target.value;
+                                        setP5Filter(prev => ({
+                                            ...prev, 
+                                            level: newLevel,
+                                            // Reset semester to first valid option for new level
+                                            semester: getSemestersForLevel(newLevel)[0]
+                                        }));
+                                    }}
                                 >
                                     <option value="VII">Kelas VII (Fase D)</option>
                                     <option value="VIII">Kelas VIII (Fase D)</option>
@@ -399,7 +499,9 @@ const SettingsView: React.FC = () => {
                                     value={p5Filter.semester}
                                     onChange={(e) => setP5Filter({...p5Filter, semester: Number(e.target.value)})}
                                 >
-                                    {[1,2,3,4,5,6].map(s => <option key={s} value={s}>Semester {s}</option>)}
+                                    {getSemestersForLevel(p5Filter.level).map(s => (
+                                        <option key={s} value={s}>Semester {s}</option>
+                                    ))}
                                 </select>
                             </div>
                         </div>
@@ -456,34 +558,129 @@ const SettingsView: React.FC = () => {
                     </div>
                 )}
 
+                {/* --- TAB REKAP 5 SEMESTER (NEW) --- */}
+                {activeTab === 'REKAP' && (
+                    <div className="max-w-4xl space-y-4">
+                        <div className="bg-purple-50 p-4 rounded-lg border border-purple-100 mb-4">
+                             <p className="text-sm text-purple-800 font-medium">
+                                Pilih Mata Pelajaran yang akan ditampilkan pada menu <strong>Rekap 5 Semester</strong>.
+                                Hanya mata pelajaran yang dicentang yang akan muncul di tabel rekap.
+                             </p>
+                        </div>
+                        
+                        <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+                            <h3 className="font-bold text-gray-800 mb-4 border-b pb-2">Daftar Mata Pelajaran</h3>
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                {SUBJECT_MAP_CONFIG.map(sub => (
+                                    <label key={sub.key} className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-all ${recapSubjects.includes(sub.key) ? 'bg-blue-50 border-blue-200 shadow-sm' : 'bg-white hover:bg-gray-50'}`}>
+                                        <input 
+                                            type="checkbox" 
+                                            className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
+                                            checked={recapSubjects.includes(sub.key)}
+                                            onChange={() => toggleRecapSubject(sub.key)}
+                                        />
+                                        <div className="flex flex-col">
+                                            <span className="text-sm font-bold text-gray-800">{sub.label}</span>
+                                            <span className="text-[10px] text-gray-500">{sub.full}</span>
+                                        </div>
+                                    </label>
+                                ))}
+                            </div>
+                            <div className="mt-6 flex justify-end">
+                                <span className="text-xs text-gray-500 self-center mr-4">{recapSubjects.length} Mapel Dipilih</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {activeTab === 'USERS' && (
                     <div className="space-y-4 bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
                          <div className="flex justify-between items-center mb-4">
-                             <h3 className="text-sm font-bold text-gray-700">Akun Terdaftar</h3>
-                             <button className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded border">Reset Password Masal</button>
+                             <h3 className="text-sm font-bold text-gray-700">Manajemen User (Guru)</h3>
                          </div>
+                         
+                         {/* Form Tambah Guru */}
+                         <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
+                             <h4 className="text-xs font-bold text-gray-500 uppercase mb-3">Tambah Guru Baru</h4>
+                             <div className="flex flex-col md:flex-row gap-4 items-end">
+                                 <div className="flex-1 w-full">
+                                     <label className="block text-xs font-medium text-gray-600 mb-1">Nama Guru</label>
+                                     <input 
+                                        type="text" 
+                                        className="w-full p-2 border rounded-lg text-sm"
+                                        placeholder="Contoh: Budi Santoso, S.Pd"
+                                        value={newUser.name}
+                                        onChange={e => setNewUser({...newUser, name: e.target.value})}
+                                     />
+                                 </div>
+                                 <div className="flex-1 w-full">
+                                     <label className="block text-xs font-medium text-gray-600 mb-1">Password</label>
+                                     <input 
+                                        type="text" 
+                                        className="w-full p-2 border rounded-lg text-sm"
+                                        placeholder="Password"
+                                        value={newUser.password}
+                                        onChange={e => setNewUser({...newUser, password: e.target.value})}
+                                     />
+                                 </div>
+                                 <button onClick={handleAddUser} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 w-full md:w-auto">
+                                     Tambah
+                                 </button>
+                             </div>
+                         </div>
+
+                         {/* List User */}
                          <table className="w-full text-left border-collapse text-sm">
                              <thead className="bg-gray-50 border-b">
                                  <tr>
+                                     <th className="p-3">Nama</th>
                                      <th className="p-3">Username</th>
                                      <th className="p-3">Role</th>
-                                     <th className="p-3">Status</th>
+                                     <th className="p-3">Password</th>
                                      <th className="p-3 text-right">Aksi</th>
                                  </tr>
                              </thead>
-                             <tbody>
-                                 <tr className="border-b">
-                                     <td className="p-3">admin@smpn3pacet.sch.id</td>
-                                     <td className="p-3"><span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-bold">ADMIN</span></td>
-                                     <td className="p-3 text-green-600 flex items-center gap-1"><Check className="w-3 h-3" /> Aktif</td>
-                                     <td className="p-3 text-right"><button className="text-blue-600 hover:underline text-xs">Ubah Password</button></td>
-                                 </tr>
-                                 <tr className="border-b">
-                                     <td className="p-3">siswa (All Students)</td>
-                                     <td className="p-3"><span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-bold">STUDENT</span></td>
-                                     <td className="p-3 text-green-600 flex items-center gap-1"><Check className="w-3 h-3" /> Aktif</td>
-                                     <td className="p-3 text-right"><button className="text-blue-600 hover:underline text-xs">Reset Default</button></td>
-                                 </tr>
+                             <tbody className="divide-y divide-gray-100">
+                                 {users.map(u => (
+                                     <tr key={u.id} className="hover:bg-gray-50">
+                                         <td className="p-3">
+                                             {editingUser?.id === u.id ? (
+                                                 <input className="border p-1 rounded w-full" value={editingUser.name} onChange={e => setEditingUser({...editingUser, name: e.target.value})} />
+                                             ) : (
+                                                 <span className="font-medium text-gray-800">{u.name}</span>
+                                             )}
+                                         </td>
+                                         <td className="p-3 text-gray-500">{u.username}</td>
+                                         <td className="p-3"><span className={`px-2 py-0.5 rounded text-xs font-bold ${u.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{u.role}</span></td>
+                                         <td className="p-3 font-mono text-xs">
+                                             {editingUser?.id === u.id ? (
+                                                 <input className="border p-1 rounded w-full" value={editingUser.password} onChange={e => setEditingUser({...editingUser, password: e.target.value})} />
+                                             ) : (
+                                                 <div className="flex items-center gap-2">
+                                                     <span>{showPassword === u.id ? u.password : '••••••'}</span>
+                                                     <button onClick={() => setShowPassword(showPassword === u.id ? null : u.id)} className="text-gray-400 hover:text-gray-600">
+                                                         {showPassword === u.id ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                                     </button>
+                                                 </div>
+                                             )}
+                                         </td>
+                                         <td className="p-3 text-right flex justify-end gap-2">
+                                             {u.role !== 'ADMIN' && (
+                                                 <>
+                                                     {editingUser?.id === u.id ? (
+                                                         <>
+                                                            <button onClick={handleUpdateUser} className="text-green-600 hover:bg-green-50 p-1 rounded"><Check className="w-4 h-4" /></button>
+                                                            <button onClick={() => setEditingUser(null)} className="text-gray-600 hover:bg-gray-50 p-1 rounded"><X className="w-4 h-4" /></button>
+                                                         </>
+                                                     ) : (
+                                                         <button onClick={() => setEditingUser(u)} className="text-blue-600 hover:bg-blue-50 p-1 rounded"><Pencil className="w-4 h-4" /></button>
+                                                     )}
+                                                     <button onClick={() => handleDeleteUser(u.id)} className="text-red-600 hover:bg-red-50 p-1 rounded"><Trash2 className="w-4 h-4" /></button>
+                                                 </>
+                                             )}
+                                         </td>
+                                     </tr>
+                                 ))}
                              </tbody>
                          </table>
                     </div>

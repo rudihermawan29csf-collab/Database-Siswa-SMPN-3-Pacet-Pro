@@ -9,13 +9,13 @@ interface FileManagerProps {
   highlightDocumentId?: string; // New prop for visual highlighting
 }
 
+// SKL Removed from list
 const REQUIRED_DOCS = [
   { id: 'IJAZAH', label: 'Ijazah SD', required: true, desc: 'PDF/JPG' },
   { id: 'AKTA', label: 'Akta Kelahiran', required: true, desc: 'Scan Asli' },
   { id: 'KK', label: 'Kartu Keluarga', required: true, desc: 'Terbaru' },
   { id: 'KTP_AYAH', label: 'KTP Ayah', required: true, desc: 'Scan' },
   { id: 'KTP_IBU', label: 'KTP Ibu', required: true, desc: 'Scan' },
-  { id: 'SKL', label: 'Surat Keterangan Lulus', required: true, desc: 'Asli' },
   { id: 'FOTO', label: 'Pas Foto Siswa', required: true, desc: '3x4 Warna' },
   { id: 'KARTU_PELAJAR', label: 'Kartu Pelajar', required: true, desc: 'Depan Belakang' },
   { id: 'KIP', label: 'KIP / PKH', required: false, desc: 'Jika ada' },
