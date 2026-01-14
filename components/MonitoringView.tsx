@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Student } from '../types';
-import { Search, Filter, AlertCircle, CheckCircle2, ChevronRight, BookOpen, ClipboardList, FolderOpen, FileText, ArrowLeft, Calendar, UserCheck, LayoutDashboard } from 'lucide-react';
+import { Search, Filter, AlertCircle, CheckCircle2, ChevronRight, BookOpen, ClipboardList, FolderOpen, FileText, ArrowLeft, Calendar, UserCheck, LayoutDashboard, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface MonitoringViewProps {
   students: Student[];
@@ -10,7 +10,6 @@ interface MonitoringViewProps {
 
 const REQUIRED_DOCS_ID = ['IJAZAH', 'AKTA', 'KK', 'KTP_AYAH', 'KTP_IBU', 'FOTO'];
 
-// Analyze completeness for a student
 const analyzeStudent = (student: Student) => {
     // 1. Bio (Buku Induk)
     const missingBioFields = [];
@@ -21,12 +20,12 @@ const analyzeStudent = (student: Student) => {
     if (!student.mother.name || student.mother.name === 'Nama Ibu') missingBioFields.push('Nama Ibu');
     const bioPercent = Math.round(((5 - missingBioFields.length) / 5) * 100);
 
-    // 2. Grades (Check ALL semesters relevant to class)
-    // Simple logic: if class VII, check sem 1-2. VIII check 1-4.
+    // Determine Expected Semesters based on Class Level
     let expectedSemesters = [1, 2];
     if (student.className.startsWith('VIII')) expectedSemesters = [1, 2, 3, 4];
     if (student.className.startsWith('IX')) expectedSemesters = [1, 2, 3, 4, 5, 6];
-    
+
+    // 2. Grades
     const missingGradesSemesters = expectedSemesters.filter(sem => {
         return !(student.academicRecords && student.academicRecords[sem] && student.academicRecords[sem].subjects.length > 0);
     });
@@ -36,11 +35,18 @@ const analyzeStudent = (student: Student) => {
     const missingDocs = REQUIRED_DOCS_ID.filter(id => !student.documents.find(d => d.category === id && d.status !== 'REVISION'));
     const docPercent = Math.round(((REQUIRED_DOCS_ID.length - missingDocs.length) / REQUIRED_DOCS_ID.length) * 100);
 
-    // 4. Rapor Pages (Check active semester only for simplicity in matrix, or all for detail)
-    // Checking for current active semester (e.g., 1)
-    const currentSem = 1;
-    const uploadedPages = student.documents.filter(d => d.category === 'RAPOR' && d.subType?.semester === currentSem).length;
-    const raporPercent = Math.round((uploadedPages / 5) * 100);
+    // 4. Rapor Pages (Check ALL Semesters)
+    // Assumption: Each semester has 5 pages.
+    const totalExpectedPages = expectedSemesters.length * 5;
+    let totalUploadedPages = 0;
+
+    expectedSemesters.forEach(sem => {
+        const uploadedForSem = student.documents.filter(d => d.category === 'RAPOR' && d.subType?.semester === sem).length;
+        totalUploadedPages += uploadedForSem;
+    });
+
+    const raporPercent = Math.round((totalUploadedPages / totalExpectedPages) * 100);
+    const missingRaporPages = totalExpectedPages - totalUploadedPages;
 
     return {
         bioPercent,
@@ -50,7 +56,8 @@ const analyzeStudent = (student: Student) => {
         missingBioFields,
         missingDocs,
         missingGradesSemesters,
-        missingRaporPages: 5 - uploadedPages
+        missingRaporPages,
+        expectedSemesters // Pass for display if needed
     };
 };
 
@@ -86,7 +93,6 @@ const StudentDetailCard: React.FC<{ student: Student }> = ({ student }) => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Bio Status */}
                 <div className={`p-4 rounded-lg border ${analysis.bioPercent === 100 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                     <div className="flex justify-between items-center mb-2">
                         <h4 className="font-bold text-gray-700 flex items-center gap-2"><BookOpen className="w-4 h-4" /> Buku Induk</h4>
@@ -99,7 +105,6 @@ const StudentDetailCard: React.FC<{ student: Student }> = ({ student }) => {
                     ) : <div className="text-xs text-green-700 font-medium flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Lengkap</div>}
                 </div>
 
-                {/* Grades Status */}
                 <div className={`p-4 rounded-lg border ${analysis.gradePercent === 100 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                     <div className="flex justify-between items-center mb-2">
                         <h4 className="font-bold text-gray-700 flex items-center gap-2"><ClipboardList className="w-4 h-4" /> Nilai Siswa</h4>
@@ -112,7 +117,6 @@ const StudentDetailCard: React.FC<{ student: Student }> = ({ student }) => {
                     ) : <div className="text-xs text-green-700 font-medium flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Lengkap</div>}
                 </div>
 
-                {/* Docs Status */}
                 <div className={`p-4 rounded-lg border ${analysis.docPercent === 100 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                     <div className="flex justify-between items-center mb-2">
                         <h4 className="font-bold text-gray-700 flex items-center gap-2"><FolderOpen className="w-4 h-4" /> Dokumen</h4>
@@ -125,14 +129,13 @@ const StudentDetailCard: React.FC<{ student: Student }> = ({ student }) => {
                     ) : <div className="text-xs text-green-700 font-medium flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Lengkap</div>}
                 </div>
 
-                {/* Rapor Status */}
                 <div className={`p-4 rounded-lg border ${analysis.raporPercent === 100 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                     <div className="flex justify-between items-center mb-2">
-                        <h4 className="font-bold text-gray-700 flex items-center gap-2"><FileText className="w-4 h-4" /> Rapor S1</h4>
+                        <h4 className="font-bold text-gray-700 flex items-center gap-2"><FileText className="w-4 h-4" /> Rapor (S1-S6)</h4>
                         <span className="text-xs font-bold">{analysis.raporPercent}%</span>
                     </div>
                     {analysis.missingRaporPages > 0 ? (
-                        <div className="text-xs text-red-700">Kurang {analysis.missingRaporPages} Halaman lagi</div>
+                        <div className="text-xs text-red-700">Kurang {analysis.missingRaporPages} Halaman (Total)</div>
                     ) : <div className="text-xs text-green-700 font-medium flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Lengkap</div>}
                 </div>
             </div>
@@ -141,10 +144,18 @@ const StudentDetailCard: React.FC<{ student: Student }> = ({ student }) => {
 };
 
 const MonitoringView: React.FC<MonitoringViewProps> = ({ students, userRole, loggedInStudent }) => {
-  const [selectedClass, setSelectedClass] = useState<string>('VII A');
+  const [selectedClass, setSelectedClass] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
   
   const uniqueClasses = Array.from(new Set(students.map(s => s.className))).sort();
+
+  // Initialize selectedClass immediately
+  useEffect(() => {
+      if (uniqueClasses.length > 0 && !selectedClass) {
+          setSelectedClass(uniqueClasses[0]);
+      }
+  }, [uniqueClasses]);
 
   const filteredStudents = useMemo(() => {
       if (userRole === 'STUDENT' && loggedInStudent) {
@@ -184,10 +195,8 @@ const MonitoringView: React.FC<MonitoringViewProps> = ({ students, userRole, log
 
         <div className="flex-1 overflow-auto pb-32">
             {userRole === 'STUDENT' ? (
-                // STUDENT VIEW
                 filteredStudents.map(s => <StudentDetailCard key={s.id} student={s} />)
             ) : (
-                // ADMIN/GURU VIEW - TABLE MATRIX + EXPANDABLE
                 <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                     <table className="w-full text-left border-collapse">
                         <thead className="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase">
@@ -196,7 +205,7 @@ const MonitoringView: React.FC<MonitoringViewProps> = ({ students, userRole, log
                                 <th className="px-6 py-4 text-center">Buku Induk</th>
                                 <th className="px-6 py-4 text-center">Nilai (Akumulasi)</th>
                                 <th className="px-6 py-4 text-center">Dokumen</th>
-                                <th className="px-6 py-4 text-center">Rapor (S1)</th>
+                                <th className="px-6 py-4 text-center">Rapor (Total)</th>
                                 <th className="px-6 py-4 text-right">Detail</th>
                             </tr>
                         </thead>
@@ -204,9 +213,11 @@ const MonitoringView: React.FC<MonitoringViewProps> = ({ students, userRole, log
                             {filteredStudents.length > 0 ? filteredStudents.map((s) => {
                                 const analysis = analyzeStudent(s);
                                 const totalPercent = Math.round((analysis.bioPercent + analysis.gradePercent + analysis.docPercent + analysis.raporPercent) / 4);
+                                const isExpanded = expandedStudentId === s.id;
+
                                 return (
                                     <React.Fragment key={s.id}>
-                                        <tr className="hover:bg-blue-50/50 group cursor-pointer">
+                                        <tr className={`hover:bg-blue-50/50 group cursor-pointer transition-colors ${isExpanded ? 'bg-blue-50/30' : ''}`} onClick={() => setExpandedStudentId(isExpanded ? null : s.id)}>
                                             <td className="px-6 py-3">
                                                 <div className="font-bold text-gray-800 text-sm">{s.fullName}</div>
                                                 <div className="text-xs text-gray-500">{s.nisn}</div>
@@ -217,18 +228,48 @@ const MonitoringView: React.FC<MonitoringViewProps> = ({ students, userRole, log
                                             <td className="px-6 py-3"><div className="flex justify-center"><ProgressRing percent={analysis.docPercent} /></div></td>
                                             <td className="px-6 py-3"><div className="flex justify-center"><ProgressRing percent={analysis.raporPercent} /></div></td>
                                             <td className="px-6 py-3 text-right">
-                                                <details className="group">
-                                                    <summary className="list-none cursor-pointer text-xs font-bold text-blue-600 border border-blue-200 px-3 py-1 rounded bg-white hover:bg-blue-600 hover:text-white transition-colors inline-block">
-                                                        Lihat Detail
-                                                    </summary>
-                                                </details>
+                                                <button className="text-xs font-bold text-blue-600 border border-blue-200 px-3 py-1 rounded bg-white hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-1 ml-auto">
+                                                    {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                                    Detail
+                                                </button>
                                             </td>
                                         </tr>
-                                        <tr>
-                                            <td colSpan={6} className="p-0 border-none">
-                                                {/* Hidden Detail Row */}
-                                            </td>
-                                        </tr>
+                                        {isExpanded && (
+                                            <tr>
+                                                <td colSpan={6} className="p-4 bg-gray-50 border-b border-gray-200">
+                                                    <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                                                        <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2"><LayoutDashboard className="w-4 h-4"/> Detail Kelengkapan: {s.fullName}</h4>
+                                                        
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                                                            <div>
+                                                                <p className="font-bold mb-1 text-gray-600">Buku Induk</p>
+                                                                {analysis.missingBioFields.length > 0 ? (
+                                                                    <ul className="list-disc pl-4 text-red-600">{analysis.missingBioFields.map(f => <li key={f}>{f}</li>)}</ul>
+                                                                ) : <span className="text-green-600 font-medium">Lengkap</span>}
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-bold mb-1 text-gray-600">Nilai</p>
+                                                                {analysis.missingGradesSemesters.length > 0 ? (
+                                                                    <ul className="list-disc pl-4 text-red-600">{analysis.missingGradesSemesters.map(s => <li key={s}>Semester {s}</li>)}</ul>
+                                                                ) : <span className="text-green-600 font-medium">Lengkap</span>}
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-bold mb-1 text-gray-600">Dokumen</p>
+                                                                {analysis.missingDocs.length > 0 ? (
+                                                                    <ul className="list-disc pl-4 text-red-600">{analysis.missingDocs.map(d => <li key={d}>{d}</li>)}</ul>
+                                                                ) : <span className="text-green-600 font-medium">Lengkap</span>}
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-bold mb-1 text-gray-600">Rapor (S1-S6)</p>
+                                                                {analysis.missingRaporPages > 0 ? (
+                                                                    <span className="text-red-600">Kurang {analysis.missingRaporPages} Halaman (Total)</span>
+                                                                ) : <span className="text-green-600 font-medium">Lengkap</span>}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
                                     </React.Fragment>
                                 );
                             }) : (

@@ -34,7 +34,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, onLogout, isCol
       { id: 'dapodik', label: 'Buku Induk', icon: Book, visible: true }, 
       { id: 'documents', label: 'Dokumen Saya', icon: FolderOpen, visible: true },
       { id: 'upload-rapor', label: 'Upload Rapor', icon: Upload, visible: true },
-      { id: 'grades', label: 'Nilai Siswa', icon: ClipboardList, visible: true },
+      { id: 'grades', label: 'Nilai Saya', icon: ClipboardList, visible: true }, // Renamed here
       { id: 'recap', label: 'Rekap 5 Semester', icon: Calculator, visible: true },
       { id: 'ijazah', label: 'Nilai Ijazah', icon: Award, visible: true },
       { id: 'history', label: 'Riwayat', icon: History, visible: true },

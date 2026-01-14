@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, User, Users, BookOpen, FolderOpen, Save, MapPin, Activity, Wallet, Check, AlertTriangle, X, Pencil, CheckCircle, UploadCloud, Paperclip, ExternalLink, Eye, Loader2, History, FileText, XCircle } from 'lucide-react';
-import { Student, DocumentFile, CorrectionRequest } from '../types';
-import FileManager from './FileManager';
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, Save, Pencil, AlertTriangle, X } from 'lucide-react';
+import { Student, CorrectionRequest } from '../types';
 
 interface StudentDetailProps {
   student: Student;
@@ -13,107 +12,26 @@ interface StudentDetailProps {
   onUpdate?: () => void;
 }
 
-// ... (Helper functions getDriveUrl, PDFPage, setNestedValue remain same - abbreviated for brevity) ...
-const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
-    if (!url) return '';
-    if (url.startsWith('blob:')) return url;
-    if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
-        let id = '';
-        const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-        if (match && match[1]) id = match[1];
-        else { try { const urlObj = new URL(url); id = urlObj.searchParams.get('id') || ''; } catch (e) {} }
-        if (id) {
-            if (type === 'preview') return `https://drive.google.com/file/d/${id}/preview`;
-            if (type === 'direct') return `https://drive.google.com/uc?export=view&id=${id}`;
-        }
-    }
-    return url;
-};
-
-// Tabs matching VerificationView
-const TABS = [
-    { id: 'DAPO_PRIBADI', label: '1. Identitas', icon: User },
-    { id: 'DAPO_ALAMAT', label: '2. Alamat', icon: MapPin },
-    { id: 'DAPO_ORTU', label: '3. Ortu/Wali', icon: Users },
-    { id: 'DAPO_PERIODIK', label: '4. Periodik', icon: Activity },
-    { id: 'DAPO_KIP', label: '5. Kesejahteraan', icon: Wallet },
-    { id: 'DOCS', label: 'Dokumen', icon: FolderOpen }, 
-];
-
-const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode, readOnly = false, highlightFieldKey, highlightDocumentId, onUpdate }) => {
-  const [activeTab, setActiveTab] = useState<string>('DAPO_PRIBADI');
-  const [studentDocuments, setStudentDocuments] = useState<DocumentFile[]>(student.documents);
-  
+const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode, readOnly = false, highlightFieldKey, onUpdate }) => {
   // Correction State
   const [correctionModalOpen, setCorrectionModalOpen] = useState(false);
   const [targetField, setTargetField] = useState<{key: string, label: string, currentValue: string} | null>(null);
   const [proposedValue, setProposedValue] = useState('');
-  const [studentReason, setStudentReason] = useState(''); // NEW: Reason instead of file
-  const [forceUpdate, setForceUpdate] = useState(0); 
-
-  // Rejection Logic
-  const [rejectModalOpen, setRejectModalOpen] = useState(false);
-  const [requestToReject, setRequestToReject] = useState<CorrectionRequest | null>(null);
-  const [rejectionNote, setRejectionNote] = useState('');
-
-  // Evidence Viewer State
-  const [evidenceViewer, setEvidenceViewer] = useState<{url: string, type: 'IMAGE' | 'PDF', title: string} | null>(null);
-
-  useEffect(() => {
-    setStudentDocuments(student.documents);
-  }, [student]);
-
-  // Auto-scroll to highlighted field
+  const [studentReason, setStudentReason] = useState('');
+  
+  // Auto-scroll logic kept for compatibility
   useEffect(() => {
     if (highlightFieldKey) {
-        let targetTab = 'DAPO_PRIBADI';
-        if (highlightFieldKey.includes('address') || highlightFieldKey.includes('dapodik.rt')) targetTab = 'DAPO_ALAMAT';
-        if (highlightFieldKey.includes('father') || highlightFieldKey.includes('mother')) targetTab = 'DAPO_ORTU';
-        if (highlightFieldKey.includes('height') || highlightFieldKey.includes('weight')) targetTab = 'DAPO_PERIODIK';
-        if (highlightFieldKey.includes('kip') || highlightFieldKey.includes('bank')) targetTab = 'DAPO_KIP';
-        
-        setActiveTab(targetTab);
         setTimeout(() => {
             const element = document.getElementById(`field-${highlightFieldKey}`);
             if (element) {
                 element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                element.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
-                setTimeout(() => element.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2'), 2500);
+                element.classList.add('ring-2', 'ring-blue-500');
+                setTimeout(() => element.classList.remove('ring-2', 'ring-blue-500'), 2500);
             }
         }, 300);
     }
   }, [highlightFieldKey]);
-
-  const handleUpload = (file: File, category: string) => {
-    setStudentDocuments(prev => {
-        let newDocs = category === 'LAINNYA' ? [...prev] : prev.filter(d => d.category !== category);
-        const newDoc: DocumentFile = {
-            id: Math.random().toString(36).substr(2, 9),
-            name: file.name,
-            type: file.type.includes('pdf') ? 'PDF' : 'IMAGE',
-            url: URL.createObjectURL(file), 
-            category: category as any,
-            uploadDate: new Date().toISOString().split('T')[0],
-            size: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
-            status: 'PENDING', 
-            adminNote: undefined
-        };
-        student.documents = [...newDocs, newDoc];
-        if (onUpdate) setTimeout(onUpdate, 100);
-        return [...newDocs, newDoc];
-    });
-  };
-
-  const handleDeleteDocument = (docId: string) => {
-      if(window.confirm("Apakah Anda yakin ingin menghapus dokumen ini?")) {
-          setStudentDocuments(prev => {
-            const next = prev.filter(d => d.id !== docId);
-            student.documents = next;
-            if (onUpdate) setTimeout(onUpdate, 100);
-            return next;
-          });
-      }
-  };
 
   const handleOpenCorrection = (key: string, label: string, value: string) => {
       setTargetField({ key, label, currentValue: value });
@@ -134,261 +52,201 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
           fieldName: targetField.label,
           originalValue: targetField.currentValue,
           proposedValue: proposedValue,
-          studentReason: studentReason, // Submit reason
+          studentReason: studentReason,
           status: 'PENDING',
           requestDate: new Date().toISOString(),
       };
       
       if (!student.correctionRequests) student.correctionRequests = [];
-      // Remove existing pending request for same field
       student.correctionRequests = student.correctionRequests.filter(
           r => !(r.fieldKey === targetField.key && r.status === 'PENDING')
       );
       
       student.correctionRequests.push(newRequest);
       setCorrectionModalOpen(false);
-      setForceUpdate(prev => prev + 1);
       if (onUpdate) onUpdate();
       alert("✅ Usulan perbaikan berhasil dikirim. Menunggu verifikasi admin.");
   };
 
-  // ... (Approving/Rejecting functions mostly for Admin view - keeping basic logic)
-  const handleApproveCorrection = (req: CorrectionRequest) => {
-      // Helper function 'setNestedValue' assumed to exist in scope or imported
-      // setNestedValue(student, req.fieldKey, req.proposedValue);
-      req.status = 'APPROVED';
-      req.processedDate = new Date().toISOString().split('T')[0];
-      req.verifierName = "Admin/Guru"; // Should be passed as prop for better accuracy
-      setForceUpdate(prev => prev + 1);
-      if (onUpdate) onUpdate();
-      alert(`✅ Data ${req.fieldName} berhasil diperbarui.`);
-  };
-
-  const triggerRejectCorrection = (req: CorrectionRequest) => {
-      setRequestToReject(req);
-      setRejectionNote('');
-      setRejectModalOpen(true);
-  };
-
-  const confirmRejectCorrection = () => {
-      if (requestToReject) {
-          requestToReject.status = 'REJECTED';
-          requestToReject.processedDate = new Date().toISOString().split('T')[0];
-          requestToReject.adminNote = rejectionNote || 'Data ditolak oleh admin.';
-          requestToReject.verifierName = "Admin/Guru"; // Should be passed
-          setForceUpdate(prev => prev + 1);
-          setRejectModalOpen(false);
-          setRequestToReject(null);
-          if (onUpdate) onUpdate();
-          alert(`Data ${requestToReject.fieldName} ditolak.`);
-      }
-  };
-
-  const FieldGroup = ({ label, value, fieldKey, className = "" }: { label: string, value: string | number, fieldKey?: string, className?: string }) => {
+  // Reusable Compact Field Group (Matches Admin Verification View)
+  const FieldGroup = ({ label, value, fieldKey, fullWidth = false }: { label: string, value: string | number, fieldKey?: string, fullWidth?: boolean }) => {
     const displayValue = (value !== null && value !== undefined && value !== '') ? value : '-';
     const stringValue = String(displayValue);
-    
     const pendingReq = fieldKey ? student.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING') : null;
-    const approvedReq = fieldKey ? student.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'APPROVED') : null;
 
     return (
-        <div id={fieldKey ? `field-${fieldKey}` : undefined} className={`mb-4 ${className} relative group transition-all duration-500 rounded-lg p-1 ${highlightFieldKey === fieldKey ? 'bg-blue-50/50' : ''}`}>
-            <div className="flex justify-between items-end mb-1 px-1">
-                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</label>
-                {pendingReq && readOnly && (
-                    <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded-full flex items-center font-bold">
-                        <Activity className="w-3 h-3 mr-1" /> Menunggu Verifikasi
-                    </span>
-                )}
-                 {approvedReq && readOnly && (
-                    <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full flex items-center font-bold animate-fade-in">
-                        <CheckCircle className="w-3 h-3 mr-1" /> Disetujui
-                    </span>
-                )}
+        <div id={fieldKey ? `field-${fieldKey}` : undefined} className={`mb-2 ${fullWidth ? 'w-full' : ''} relative group`}>
+            <div className="flex justify-between items-center mb-0.5">
+                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide">{label}</label>
+                {pendingReq && <span className="text-[9px] text-yellow-600 bg-yellow-50 px-1 rounded border border-yellow-200">Menunggu</span>}
             </div>
-            <div className={`relative p-2.5 bg-gray-50 border rounded-lg text-gray-800 text-sm font-medium min-h-[42px] break-words transition-all ${pendingReq ? 'border-yellow-300 ring-1 ring-yellow-100' : 'border-gray-200'}`}>
-                {stringValue}
+            <div className={`relative p-2 bg-gray-50 border rounded text-gray-900 text-sm font-medium break-words min-h-[36px] flex items-center ${pendingReq ? 'border-yellow-400 bg-yellow-50/30' : 'border-gray-300'}`}>
+                {pendingReq ? pendingReq.proposedValue : stringValue}
+                
+                {/* Edit Button visible on hover */}
                 {readOnly && fieldKey && !pendingReq && (
                     <button 
                         onClick={() => handleOpenCorrection(fieldKey, label, stringValue)}
-                        className="absolute right-2 top-2 p-1.5 bg-white rounded-md shadow-sm border border-gray-200 text-gray-400 hover:text-blue-600 hover:border-blue-200 opacity-0 group-hover:opacity-100 transition-all"
-                        title="Laporkan Kesalahan Data"
+                        className="absolute right-1 top-1 p-1 bg-white rounded shadow border border-gray-200 text-gray-400 hover:text-blue-600 hover:border-blue-300 opacity-0 group-hover:opacity-100 transition-all z-10"
+                        title="Ajukan Perbaikan"
                     >
                         <Pencil className="w-3 h-3" />
                     </button>
                 )}
             </div>
-            {pendingReq && (
-                <div className="mt-2 p-3 bg-yellow-50 rounded-lg border border-yellow-100 text-xs animate-fade-in">
-                    <div className="flex items-start gap-2">
-                        <AlertTriangle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
-                        <div className="flex-1 w-full">
-                            <p className="font-semibold text-yellow-800 mb-1">
-                                {readOnly ? "Usulan Perbaikan Anda:" : "Siswa Mengusulkan Perubahan:"}
-                            </p>
-                            <div className="bg-white p-2 rounded border border-yellow-200 text-gray-700 mb-2 font-medium">
-                                {pendingReq.proposedValue}
-                            </div>
-                            <div className="text-[10px] text-gray-600 bg-white/50 p-2 rounded border border-yellow-100">
-                                <span className="font-bold">Alasan:</span> "{pendingReq.studentReason || '-'}"
-                            </div>
-                            {!readOnly && (
-                                <div className="flex gap-2 mt-2 justify-end pt-2 border-t border-yellow-200/50">
-                                    <button onClick={() => triggerRejectCorrection(pendingReq)} className="px-3 py-1 bg-white border border-red-200 text-red-600 rounded hover:bg-red-50 font-medium transition-colors">Tolak</button>
-                                    <button onClick={() => handleApproveCorrection(pendingReq)} className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 font-medium shadow-sm transition-colors">Setujui & Ubah</button>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
   };
 
   const SectionHeader = ({ title }: { title: string }) => (
-    <div className="bg-gray-100 px-3 py-2 text-xs font-bold text-gray-700 uppercase border-y border-gray-200 mt-6 mb-4 first:mt-0 rounded-md">
+    <div className="bg-gray-100 px-3 py-1.5 text-xs font-bold text-gray-800 uppercase border-y border-gray-300 mt-6 mb-3 first:mt-0 rounded-sm">
         {title}
     </div>
   );
 
-  const FG = (props: { label: string, value: string | number, fieldKey?: string, className?: string }) => <FieldGroup {...props} />;
-  const currentTabs = viewMode === 'student' ? TABS.filter(t => t.id !== 'DOCS') : TABS;
-
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[calc(100vh-140px)] relative">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[calc(100vh-140px)] relative">
       
-      {/* Evidence Viewer (Kept for compatibility if needed elsewhere, though student correction uses reason now) */}
-      {evidenceViewer && (
-        <div className="absolute inset-0 z-[60] bg-black/90 backdrop-blur-md flex flex-col animate-fade-in">
-             <div className="flex justify-between items-center p-4 bg-black/50 text-white">
-                 <h3 className="font-bold flex items-center gap-2"><FileText className="w-5 h-5 text-blue-400" /> {evidenceViewer.title}</h3>
-                 <button onClick={() => setEvidenceViewer(null)} className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors"><X className="w-6 h-6" /></button>
-             </div>
-             <div className="flex-1 overflow-y-auto p-8 flex justify-center items-start">
-                 <div className="max-w-4xl w-full bg-white/5 rounded-lg p-1 min-h-[50vh] flex flex-col items-center justify-center">
-                    <img src={getDriveUrl(evidenceViewer.url, 'direct')} alt="Evidence" className="max-w-full h-auto rounded shadow-2xl" /> 
-                 </div>
-             </div>
-        </div>
-      )}
-
-      {/* Rejection Modal */}
-      {rejectModalOpen && (
-          <div className="absolute inset-0 z-[55] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-              <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 transform scale-100 transition-transform flex flex-col">
-                  <h3 className="text-lg font-bold text-red-600 mb-2">Tolak Perubahan Data</h3>
-                  <p className="text-sm text-gray-600 mb-4">Menolak pengajuan: <span className="font-bold">{requestToReject?.fieldName}</span>.</p>
-                  <textarea className="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg text-sm mb-4" rows={4} value={rejectionNote} onChange={(e) => setRejectionNote(e.target.value)} placeholder="Alasan penolakan..." autoFocus />
-                  <div className="flex justify-end gap-3 mt-auto">
-                      <button onClick={() => setRejectModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">Batal</button>
-                      <button onClick={confirmRejectCorrection} className="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-lg text-sm font-medium shadow-sm">Simpan Penolakan</button>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {/* Correction Modal - UPDATED */}
+      {/* Correction Modal */}
       {correctionModalOpen && (
           <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-              <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 transform scale-100 transition-transform flex flex-col max-h-[90vh]">
-                  <div className="flex justify-between items-center mb-4">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col max-h-[90vh]">
+                  <div className="flex justify-between items-center mb-4 border-b pb-2">
                       <h3 className="text-lg font-bold text-gray-900">Pembetulan Data</h3>
-                      <button onClick={() => setCorrectionModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+                      <button onClick={() => setCorrectionModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>
                   </div>
-                  <div className="mb-4 bg-blue-50 p-3 rounded-lg border border-blue-100">
-                      <p className="text-xs font-semibold text-gray-500 uppercase">Bagian yang dibetulkan</p>
-                      <p className="text-sm font-bold text-blue-700 mt-1">{targetField?.label}</p>
-                      <p className="text-xs text-gray-400 mt-1">Data saat ini: <span className="text-gray-600">{targetField?.currentValue || '-'}</span></p>
+                  <div className="mb-4 bg-blue-50 p-3 rounded border border-blue-100">
+                      <p className="text-xs text-gray-500 uppercase">Data Lama</p>
+                      <p className="text-sm font-bold text-gray-700">{targetField?.currentValue || '-'}</p>
                   </div>
-                  <div className="mb-4">
-                      <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Data Seharusnya</label>
-                      <textarea className="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" rows={2} value={proposedValue} onChange={(e) => setProposedValue(e.target.value)} placeholder="Tuliskan data yang benar..."></textarea>
+                  <div className="space-y-3">
+                      <div>
+                          <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Data Baru</label>
+                          <input className="w-full p-2 border rounded text-sm" value={proposedValue} onChange={(e) => setProposedValue(e.target.value)} />
+                      </div>
+                      <div>
+                          <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Alasan Perubahan</label>
+                          <textarea className="w-full p-2 border rounded text-sm" rows={2} value={studentReason} onChange={(e) => setStudentReason(e.target.value)} placeholder="Wajib diisi..." />
+                      </div>
                   </div>
-                   <div className="mb-6">
-                      <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Alasan Perubahan</label>
-                      <textarea 
-                        className="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
-                        rows={3} 
-                        value={studentReason} 
-                        onChange={(e) => setStudentReason(e.target.value)}
-                        placeholder="Contoh: Salah ketik saat input, Data di KK baru berubah, dll."
-                      ></textarea>
-                      <p className="text-[10px] text-gray-400 mt-1">Wajib diisi sebagai dasar verifikasi admin.</p>
-                  </div>
-                  <div className="flex justify-end gap-3 mt-auto">
-                      <button onClick={() => setCorrectionModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">Batal</button>
-                      <button onClick={submitCorrection} className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-medium shadow-lg shadow-blue-500/30">Kirim Pembetulan</button>
+                  <div className="flex justify-end gap-2 mt-6">
+                      <button onClick={() => setCorrectionModalOpen(false)} className="px-4 py-2 bg-gray-100 rounded text-sm font-bold text-gray-600">Batal</button>
+                      <button onClick={submitCorrection} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-bold hover:bg-blue-700">Kirim</button>
                   </div>
               </div>
           </div>
       )}
 
-       {/* Toolbar / Header within Detail View */}
-       <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50/50">
+       {/* Header */}
+       <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
             <div className="flex items-center gap-3">
                  <button onClick={onBack} className="p-2 hover:bg-gray-200 rounded-full transition-colors"><ArrowLeft className="w-5 h-5 text-gray-600" /></button>
                  <div>
-                     <h2 className="text-lg font-bold text-gray-800">{student.fullName}</h2>
-                     <p className="text-xs text-gray-500 flex items-center gap-2">
-                         <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-mono">{student.nis} / {student.nisn}</span>
-                         <span>•</span>
-                         <span>Kelas {student.className}</span>
-                     </p>
+                     <h2 className="text-lg font-bold text-gray-800">Buku Induk Siswa</h2>
+                     <p className="text-xs text-gray-500">{student.fullName} • {student.className}</p>
                  </div>
             </div>
+            {readOnly && (
+                <div className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full border border-blue-200">
+                    Mode Siswa
+                </div>
+            )}
        </div>
 
-       {/* Tabs Navigation */}
-       <div className="flex overflow-x-auto border-b border-gray-200 bg-white px-2 no-scrollbar">
-            {currentTabs.map(tab => (
-                <button 
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
-                        ${activeTab === tab.id ? 'border-blue-500 text-blue-600 bg-blue-50/30' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'}
-                    `}
-                >
-                    <tab.icon className={`w-4 h-4 mr-2 ${activeTab === tab.id ? 'text-blue-500' : 'text-gray-400'}`} />
-                    {tab.label}
-                </button>
-            ))}
-       </div>
+       {/* Scrollable Content - Single Vertical View */}
+       <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-white">
+            <div className="max-w-3xl mx-auto space-y-1">
+                {/* 1. IDENTITAS */}
+                <SectionHeader title="1. Identitas Peserta Didik" />
+                <FieldGroup label="Nama Lengkap" value={student.fullName} fieldKey="fullName" fullWidth />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FieldGroup label="NISN" value={student.nisn} fieldKey="nisn" />
+                    <FieldGroup label="NIK" value={student.dapodik.nik} fieldKey="dapodik.nik" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FieldGroup label="Tempat Lahir" value={student.birthPlace} fieldKey="birthPlace" />
+                    <FieldGroup label="Tanggal Lahir" value={student.birthDate} fieldKey="birthDate" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FieldGroup label="Jenis Kelamin" value={student.gender === 'L' ? 'Laki-laki' : 'Perempuan'} fieldKey="gender" />
+                    <FieldGroup label="Agama" value={student.religion} fieldKey="religion" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FieldGroup label="Anak Ke" value={student.childOrder} fieldKey="childOrder" />
+                    <FieldGroup label="Jml Saudara" value={student.siblingCount} fieldKey="siblingCount" />
+                </div>
 
-       {/* Content Area - Uses reusable FieldGroup with highlight support */}
-       <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50">
-            <div className="max-w-5xl mx-auto bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                {activeTab === 'DAPO_PRIBADI' && (
-                    <div className="animate-fade-in">
-                        <SectionHeader title="Identitas Peserta Didik" />
-                        <FG label="1. Nama Lengkap" value={student.fullName} fieldKey="fullName" />
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                             <FG label="2. Jenis Kelamin" value={student.gender === 'L' ? 'Laki-laki' : 'Perempuan'} fieldKey="gender" />
-                             <FG label="3. NISN" value={student.nisn} fieldKey="nisn" />
-                        </div>
-                        {/* ... Rest of fields mapped similarly to original ... */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                             <FG label="NIS" value={student.nis} fieldKey="nis" />
-                             <FG label="7. NIK" value={student.dapodik.nik} fieldKey="dapodik.nik" />
-                        </div>
-                        <FG label="8. Tempat, Tgl Lahir" value={`${student.birthPlace}, ${student.birthDate}`} fieldKey="birthDate" />
-                        <FG label="11. Alamat" value={student.address} fieldKey="address" />
+                {/* 2. ALAMAT */}
+                <SectionHeader title="2. Alamat Tempat Tinggal" />
+                <FieldGroup label="Alamat Jalan" value={student.address} fieldKey="address" fullWidth />
+                <div className="grid grid-cols-3 gap-4">
+                    <FieldGroup label="RT" value={student.dapodik.rt} fieldKey="dapodik.rt" />
+                    <FieldGroup label="RW" value={student.dapodik.rw} fieldKey="dapodik.rw" />
+                    <FieldGroup label="Kode Pos" value={student.postalCode} fieldKey="postalCode" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FieldGroup label="Dusun" value={student.dapodik.dusun} fieldKey="dapodik.dusun" />
+                    <FieldGroup label="Kelurahan/Desa" value={student.dapodik.kelurahan} fieldKey="dapodik.kelurahan" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FieldGroup label="Kecamatan" value={student.subDistrict} fieldKey="subDistrict" />
+                    <FieldGroup label="Kabupaten" value={student.district} fieldKey="district" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FieldGroup label="Transportasi" value={student.dapodik.transportation} fieldKey="dapodik.transportation" />
+                    <FieldGroup label="Jenis Tinggal" value={student.dapodik.livingStatus} fieldKey="dapodik.livingStatus" />
+                </div>
+
+                {/* 3. ORTU */}
+                <SectionHeader title="3. Data Orang Tua / Wali" />
+                <div className="bg-gray-50 p-3 rounded border border-gray-200 mb-2">
+                    <h4 className="text-xs font-bold text-gray-500 uppercase mb-2 border-b border-gray-300 pb-1">Data Ayah</h4>
+                    <FieldGroup label="Nama Ayah" value={student.father.name} fieldKey="father.name" fullWidth />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FieldGroup label="NIK Ayah" value={student.father.nik} fieldKey="father.nik" />
+                        <FieldGroup label="Tahun Lahir" value={student.father.birthPlaceDate} fieldKey="father.birthPlaceDate" />
                     </div>
-                )}
-                {/* ... Other tabs follow similar FG pattern ... */}
-                {activeTab === 'DAPO_ALAMAT' && (
-                     <div className="animate-fade-in">
-                        <SectionHeader title="Alamat Tempat Tinggal" />
-                        <FG label="11. Alamat Jalan" value={student.address} fieldKey="address" />
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <FG label="RT" value={student.dapodik.rt} fieldKey="dapodik.rt" />
-                            <FG label="RW" value={student.dapodik.rw} fieldKey="dapodik.rw" />
-                        </div>
-                     </div>
-                )}
-                {activeTab === 'DOCS' && (
-                    <FileManager documents={studentDocuments} onUpload={handleUpload} onDelete={handleDeleteDocument} highlightDocumentId={highlightDocumentId} />
-                )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FieldGroup label="Pekerjaan" value={student.father.job} fieldKey="father.job" />
+                        <FieldGroup label="Penghasilan" value={student.father.income} fieldKey="father.income" />
+                    </div>
+                </div>
+                <div className="bg-gray-50 p-3 rounded border border-gray-200 mb-2">
+                    <h4 className="text-xs font-bold text-gray-500 uppercase mb-2 border-b border-gray-300 pb-1">Data Ibu</h4>
+                    <FieldGroup label="Nama Ibu" value={student.mother.name} fieldKey="mother.name" fullWidth />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FieldGroup label="NIK Ibu" value={student.mother.nik} fieldKey="mother.nik" />
+                        <FieldGroup label="Tahun Lahir" value={student.mother.birthPlaceDate} fieldKey="mother.birthPlaceDate" />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FieldGroup label="Pekerjaan" value={student.mother.job} fieldKey="mother.job" />
+                        <FieldGroup label="Penghasilan" value={student.mother.income} fieldKey="mother.income" />
+                    </div>
+                </div>
+
+                {/* 4. PERIODIK */}
+                <SectionHeader title="4. Data Periodik" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FieldGroup label="Tinggi Badan (cm)" value={student.height} fieldKey="height" />
+                    <FieldGroup label="Berat Badan (kg)" value={student.weight} fieldKey="weight" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FieldGroup label="Jarak Sekolah" value={student.dapodik.distanceToSchool} fieldKey="dapodik.distanceToSchool" />
+                    <FieldGroup label="Waktu Tempuh (Menit)" value={student.dapodik.travelTimeMinutes} fieldKey="dapodik.travelTimeMinutes" />
+                </div>
+
+                {/* 5. KESEJAHTERAAN */}
+                <SectionHeader title="5. Kesejahteraan Peserta Didik" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FieldGroup label="Penerima KIP" value={student.dapodik.kipReceiver} fieldKey="dapodik.kipReceiver" />
+                    <FieldGroup label="Nomor KIP" value={student.dapodik.kipNumber} fieldKey="dapodik.kipNumber" />
+                </div>
+                <FieldGroup label="Nama Tertera di KIP" value={student.dapodik.kipName} fieldKey="dapodik.kipName" fullWidth />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FieldGroup label="Penerima KPS" value={student.dapodik.kpsReceiver} fieldKey="dapodik.kpsReceiver" />
+                    <FieldGroup label="Nomor KPS" value={student.dapodik.kpsNumber} fieldKey="dapodik.kpsNumber" />
+                </div>
+                <FieldGroup label="Nomor KKS (Kartu Keluarga Sejahtera)" value={student.dapodik.kksNumber} fieldKey="dapodik.kksNumber" fullWidth />
             </div>
        </div>
     </div>

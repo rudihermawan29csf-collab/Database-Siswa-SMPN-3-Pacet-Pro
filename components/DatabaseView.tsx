@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Student } from '../types';
-import { Search, Trash, UploadCloud, Download, Loader2, CheckCircle2 } from 'lucide-react';
+import { Search, Trash, UploadCloud, Download, Loader2, CheckCircle2, Plus, X } from 'lucide-react';
 import { MOCK_STUDENTS } from '../services/mockData';
 
 interface DatabaseViewProps {
@@ -8,28 +8,29 @@ interface DatabaseViewProps {
 }
 
 const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }) => {
-  // Gunakan local state agar perubahan UI instan
   const [localStudents, setLocalStudents] = useState<Student[]>(initialStudents);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Import State
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [importStats, setImportStats] = useState<{ success: number; total: number } | null>(null);
 
-  // Filter Logic
+  // Add Manual Student State
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newStudent, setNewStudent] = useState<Partial<Student>>({
+      fullName: '', nisn: '', nis: '', className: 'VII A', gender: 'L'
+  });
+
   const filteredStudents = localStudents.filter(s => 
     s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     s.nis.includes(searchTerm) || 
     s.nisn.includes(searchTerm)
   );
 
-  // --- FUNGSI HAPUS (FIXED) ---
   const handleDeleteAll = () => {
-    // Pesan persis sesuai permintaan
     if (window.confirm("apakah anda yakin menghapus?")) {
-        setLocalStudents([]); // Kosongkan state lokal
+        setLocalStudents([]);
         alert("Data telah dihapus.");
     }
   };
@@ -40,7 +41,6 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
       }
   };
 
-  // --- FUNGSI IMPORT (FIXED) ---
   const handleImportClick = () => {
       if (fileInputRef.current) fileInputRef.current.click();
   };
@@ -49,41 +49,235 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
       const file = e.target.files?.[0];
       if (!file) return;
 
-      // Reset
       setIsImporting(true);
-      setImportProgress(0);
+      setImportProgress(10);
       setImportStats(null);
 
-      // Simulasi Proses Import
-      const totalRows = 50; // Anggap ada 50 data di excel
+      const reader = new FileReader();
       
-      for (let i = 0; i <= totalRows; i++) {
-          // Delay buatan agar progress bar terlihat jalan
-          await new Promise(resolve => setTimeout(resolve, 30));
-          
-          const percent = Math.round((i / totalRows) * 100);
-          setImportProgress(percent);
-      }
+      reader.onload = (evt) => {
+          try {
+              const buffer = evt.target?.result;
+              // @ts-ignore
+              const wb = window.XLSX.read(buffer, { type: 'array' });
+              const wsname = wb.SheetNames[0];
+              const ws = wb.Sheets[wsname];
+              // @ts-ignore
+              const data = window.XLSX.utils.sheet_to_json(ws);
+              
+              setImportProgress(50);
 
-      // Tambahkan Data Dummy sebagai hasil import
-      const newDummyStudent: Student = {
-          ...MOCK_STUDENTS[0],
-          id: `imp-${Date.now()}`,
-          fullName: `Siswa Import ${Date.now()}`,
-          nis: '9999'
+              // Process Data dengan Mapping Lengkap & Robust Key Handling
+              const newStudents: Student[] = data.map((rawRow: any) => {
+                  // Normalize Keys (Trim spaces & Handle variasi nama kolom)
+                  const row: any = {};
+                  Object.keys(rawRow).forEach(k => row[k.trim()] = rawRow[k]);
+
+                  // Helper untuk ambil value dari beberapa kemungkinan key
+                  const getVal = (keys: string[], def: any = '') => {
+                      for (const k of keys) {
+                          if (row[k] !== undefined) return row[k];
+                      }
+                      return def;
+                  };
+
+                  return {
+                      id: Math.random().toString(36).substr(2, 9),
+                      // 1. Identitas
+                      fullName: getVal(['Nama Peserta Didik', 'Nama Lengkap', 'Nama'], ''),
+                      nis: String(getVal(['NIS', 'NIPD'], '')),
+                      nisn: String(getVal(['NISN'], '')),
+                      className: getVal(['Kelas', 'Rombel', 'Tingkat Pendidikan'], 'VII A'),
+                      gender: (getVal(['L/P', 'Jenis Kelamin']) === 'L' || getVal(['L/P', 'Jenis Kelamin']) === 'Laki-laki') ? 'L' : 'P',
+                      birthPlace: getVal(['Tempat Lahir'], ''),
+                      birthDate: getVal(['Tanggal Lahir'], ''),
+                      religion: getVal(['Agama'], 'Islam'),
+                      nationality: 'WNI',
+                      
+                      // 2. Alamat
+                      address: getVal(['Alamat Jalan', 'Alamat'], ''),
+                      postalCode: String(getVal(['Kode Pos'], '')),
+                      subDistrict: getVal(['Kecamatan'], ''),
+                      district: getVal(['Kabupaten', 'Kabupaten/Kota'], ''),
+                      
+                      // 3. Periodik
+                      childOrder: Number(getVal(['Anak Ke'], 1)),
+                      siblingCount: Number(getVal(['Jml Saudara', 'Jumlah Saudara Kandung'], 0)),
+                      height: Number(getVal(['Tinggi Badan'], 0)),
+                      weight: Number(getVal(['Berat Badan'], 0)),
+                      bloodType: getVal(['Golongan Darah'], '-'),
+                      entryYear: new Date().getFullYear(),
+                      status: 'AKTIF',
+                      previousSchool: getVal(['Sekolah Asal'], ''),
+                      graduationYear: 0,
+                      diplomaNumber: getVal(['No Seri Ijazah'], ''),
+                      averageScore: 0,
+                      achievements: [],
+
+                      // 4. Orang Tua
+                      father: { 
+                          name: getVal(['Nama Ayah'], ''), 
+                          nik: String(getVal(['NIK Ayah'], '')), 
+                          birthPlaceDate: String(getVal(['Tahun Lahir Ayah'], '')), 
+                          education: getVal(['Pendidikan Ayah'], ''), 
+                          job: getVal(['Pekerjaan Ayah'], ''), 
+                          income: getVal(['Penghasilan Ayah'], ''), 
+                          phone: String(getVal(['No HP', 'Nomor Telepon', 'No Handphone'], '')) 
+                      },
+                      mother: { 
+                          name: getVal(['Nama Ibu', 'Nama Ibu Kandung'], ''), 
+                          nik: String(getVal(['NIK Ibu'], '')), 
+                          birthPlaceDate: String(getVal(['Tahun Lahir Ibu'], '')), 
+                          education: getVal(['Pendidikan Ibu'], ''), 
+                          job: getVal(['Pekerjaan Ibu'], ''), 
+                          income: getVal(['Penghasilan Ibu'], ''), 
+                          phone: '' 
+                      },
+                      guardian: {
+                          name: getVal(['Nama Wali'], ''),
+                          nik: '',
+                          birthPlaceDate: String(getVal(['Tahun Lahir Wali'], '')),
+                          education: getVal(['Pendidikan Wali'], ''),
+                          job: getVal(['Pekerjaan Wali'], ''),
+                          income: getVal(['Penghasilan Wali'], ''),
+                          phone: ''
+                      },
+
+                      // 5. Dapodik Detail
+                      dapodik: {
+                          nik: String(getVal(['NIK', 'NIK Peserta Didik'], '')),
+                          noKK: String(getVal(['No KK'], '')),
+                          rt: String(getVal(['RT'], '')),
+                          rw: String(getVal(['RW'], '')),
+                          dusun: getVal(['Dusun'], ''),
+                          kelurahan: getVal(['Kelurahan', 'Desa/Kelurahan'], ''),
+                          kecamatan: getVal(['Kecamatan'], ''),
+                          kodePos: String(getVal(['Kode Pos'], '')),
+                          livingStatus: getVal(['Jenis Tinggal'], ''),
+                          transportation: getVal(['Alat Transportasi'], ''),
+                          email: getVal(['Email'], ''),
+                          skhun: getVal(['No SKHUN'], ''),
+                          kpsReceiver: getVal(['Penerima KPS', 'Penerima KPH'], 'Tidak'),
+                          kpsNumber: String(getVal(['No KPS'], '')),
+                          kipReceiver: getVal(['Penerima KIP'], 'Tidak'),
+                          kipNumber: String(getVal(['No KIP'], '')),
+                          kipName: getVal(['Nama di KIP', 'Nama KIP'], ''),
+                          kksNumber: String(getVal(['No KKS'], '')),
+                          birthRegNumber: String(getVal(['No Reg Akta', 'No Registrasi Akta Lahir'], '')),
+                          bank: getVal(['Bank'], ''),
+                          bankAccount: String(getVal(['No Rekening'], '')),
+                          bankAccountName: getVal(['Atas Nama Rekening'], ''),
+                          pipEligible: getVal(['Layak PIP'], 'Tidak'),
+                          pipReason: getVal(['Alasan Layak PIP'], ''),
+                          specialNeeds: getVal(['Kebutuhan Khusus'], 'Tidak'),
+                          latitude: String(getVal(['Lintang'], '')),
+                          longitude: String(getVal(['Bujur'], '')),
+                          headCircumference: Number(getVal(['Lingkar Kepala'], 0)),
+                          distanceToSchool: getVal(['Jarak Rumah', 'Jarak Tempat Tinggal ke Sekolah'], ''),
+                          unExamNumber: getVal(['No Peserta UN'], ''),
+                          travelTimeHours: 0,
+                          travelTimeMinutes: Number(getVal(['Waktu Tempuh (Menit)', 'Waktu Tempuh'], 0)),
+                      },
+                      documents: [],
+                      correctionRequests: [],
+                  };
+              });
+
+              setTimeout(() => {
+                  setLocalStudents(prev => [...prev, ...newStudents]);
+                  setImportProgress(100);
+                  setImportStats({ success: newStudents.length, total: newStudents.length });
+              }, 500);
+          } catch (error: any) {
+              console.error(error);
+              setIsImporting(false);
+              if (error.message?.includes("Unsupported ZIP encryption")) {
+                  alert("Gagal: File Excel dilindungi password. Harap hilangkan password sebelum upload.");
+              } else {
+                  alert("Gagal memproses file Excel. Pastikan format valid.");
+              }
+          }
       };
-      
-      setLocalStudents(prev => [...prev, newDummyStudent]);
-      setImportStats({ success: totalRows, total: totalRows });
+
+      reader.onerror = () => {
+          alert("Gagal membaca file.");
+          setIsImporting(false);
+      };
+
+      // Use readAsArrayBuffer for better compatibility with xlsx files (avoids encoding issues)
+      reader.readAsArrayBuffer(file);
 
       if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleDownloadTemplate = () => {
-      alert("Mendownload Template Dapodik 69 Kolom...");
+  const handleAddStudent = () => {
+      if (!newStudent.fullName || !newStudent.nisn) {
+          alert("Nama dan NISN wajib diisi!");
+          return;
+      }
+
+      const createdStudent: Student = {
+          id: Math.random().toString(36).substr(2, 9),
+          fullName: newStudent.fullName || '',
+          nis: newStudent.nis || '',
+          nisn: newStudent.nisn || '',
+          className: newStudent.className || 'VII A',
+          gender: newStudent.gender as 'L' | 'P',
+          birthPlace: '', birthDate: '', address: '',
+          father: { name: '', nik: '', birthPlaceDate: '', education: '', job: '', income: '', phone: '' },
+          mother: { name: '', nik: '', birthPlaceDate: '', education: '', job: '', income: '', phone: '' },
+          dapodik: {
+              nik: '', noKK: '', rt: '', rw: '', dusun: '', kelurahan: '', kecamatan: '', kodePos: '',
+              livingStatus: '', transportation: '', email: '', skhun: '', kpsReceiver: 'Tidak', kpsNumber: '',
+              kipReceiver: 'Tidak', kipNumber: '', kipName: '', kksNumber: '', birthRegNumber: '', bank: '',
+              bankAccount: '', bankAccountName: '', pipEligible: 'Tidak', pipReason: '', specialNeeds: 'Tidak',
+              latitude: '', longitude: '', headCircumference: 0, distanceToSchool: '', unExamNumber: ''
+          },
+          documents: [], correctionRequests: [],
+          religion: 'Islam', nationality: 'WNI', subDistrict: '', district: '', postalCode: '',
+          childOrder: 1, siblingCount: 0, height: 0, weight: 0, bloodType: '-', entryYear: new Date().getFullYear(),
+          status: 'AKTIF', previousSchool: '', graduationYear: 0, diplomaNumber: '', averageScore: 0, achievements: []
+      };
+
+      setLocalStudents(prev => [createdStudent, ...prev]);
+      setIsAddModalOpen(false);
+      setNewStudent({ fullName: '', nisn: '', nis: '', className: 'VII A', gender: 'L' });
+      alert("Siswa berhasil ditambahkan.");
   };
 
-  // Header Table Helper
+  const handleDownloadTemplate = () => {
+      try {
+          // @ts-ignore
+          const xlsx = window.XLSX;
+          // Full Dapodik Headers (Matching the Import Logic)
+          const headers = [[
+              'Nama Peserta Didik', 'NIS', 'NISN', 'Kelas', 'L/P', 'Tempat Lahir', 'Tanggal Lahir', 'Agama',
+              'NIK', 'No KK', 'Alamat Jalan', 'RT', 'RW', 'Dusun', 'Kelurahan', 'Kecamatan', 'Kabupaten', 'Kode Pos',
+              'Anak Ke', 'Jml Saudara', 'Tinggi Badan', 'Berat Badan', 'Lingkar Kepala', 'Jarak Rumah', 'Waktu Tempuh (Menit)',
+              'Jenis Tinggal', 'Alat Transportasi', 'Email', 'No HP',
+              'Nama Ayah', 'NIK Ayah', 'Tahun Lahir Ayah', 'Pendidikan Ayah', 'Pekerjaan Ayah', 'Penghasilan Ayah',
+              'Nama Ibu', 'NIK Ibu', 'Tahun Lahir Ibu', 'Pendidikan Ibu', 'Pekerjaan Ibu', 'Penghasilan Ibu',
+              'Nama Wali', 'Tahun Lahir Wali', 'Pendidikan Wali', 'Pekerjaan Wali', 'Penghasilan Wali',
+              'Penerima KPS', 'No KPS', 'Penerima KIP', 'No KIP', 'Nama di KIP', 'No KKS', 'Layak PIP', 'Alasan Layak PIP',
+              'Bank', 'No Rekening', 'Atas Nama Rekening', 'No Reg Akta', 'Sekolah Asal', 'No Seri Ijazah', 'No SKHUN', 'No Peserta UN'
+          ]];
+          const wb = xlsx.utils.book_new();
+          const ws = xlsx.utils.aoa_to_sheet(headers);
+          
+          // Dummy Data Example
+          xlsx.utils.sheet_add_json(ws, [{
+              'Nama Peserta Didik': 'Siswa Contoh', 'NIS': '1234', 'NISN': '0012345678', 'Kelas': 'VII A', 'L/P': 'L', 
+              'Tempat Lahir': 'Mojokerto', 'Tanggal Lahir': '2010-01-01', 'Agama': 'Islam', 'NIK': '3516000000000001',
+              'Alamat Jalan': 'Jl. Raya Pacet', 'RT': '01', 'RW': '02', 'Kecamatan': 'Pacet'
+          }], {skipHeader: true, origin: -1});
+
+          xlsx.utils.book_append_sheet(wb, ws, "Format Lengkap Dapodik");
+          xlsx.writeFile(wb, "Template_Dapodik_Lengkap.xlsx");
+      } catch (e) {
+          alert("Gagal download template. Pastikan library XLSX dimuat.");
+      }
+  };
+
   const Th = ({ children, rowSpan = 1, colSpan = 1 }: any) => (
     <th rowSpan={rowSpan} colSpan={colSpan} className="px-3 py-2 bg-gray-100 text-[10px] font-bold text-gray-700 uppercase border border-gray-300 text-center whitespace-nowrap">
       {children}
@@ -106,13 +300,10 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
                     {!importStats ? (
                         <>
                             <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
-                            <h3 className="text-lg font-bold text-gray-800">Sedang Import...</h3>
-                            <p className="text-sm text-gray-500 mb-4">Mohon tunggu sebentar</p>
-                            
-                            <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden mb-2">
+                            <h3 className="text-lg font-bold text-gray-800">Memproses Data...</h3>
+                            <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden mb-2 mt-4">
                                 <div className="bg-blue-600 h-full transition-all duration-100" style={{ width: `${importProgress}%` }}></div>
                             </div>
-                            <span className="text-sm font-bold text-blue-600">{importProgress}%</span>
                         </>
                     ) : (
                         <>
@@ -120,7 +311,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
                             <h3 className="text-lg font-bold text-gray-800">Import Berhasil</h3>
                             <div className="bg-green-50 p-4 rounded w-full text-center my-4 border border-green-100">
                                 <p className="text-2xl font-bold text-green-700">{importStats.success} Data</p>
-                                <p className="text-xs text-gray-500">Telah berhasil masuk ke database</p>
+                                <p className="text-xs text-gray-500">Telah ditambahkan.</p>
                             </div>
                             <button onClick={() => setIsImporting(false)} className="w-full py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700">
                                 Tutup
@@ -131,44 +322,70 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
             </div>
         )}
 
-        {/* TOOLBAR */}
+        {/* MODAL ADD STUDENT */}
+        {isAddModalOpen && (
+            <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col">
+                    <div className="flex justify-between items-center mb-4 border-b pb-2">
+                        <h3 className="font-bold text-gray-800 text-lg">Tambah Siswa Baru</h3>
+                        <button onClick={() => setIsAddModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>
+                    </div>
+                    <div className="space-y-3">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nama Lengkap</label>
+                            <input type="text" className="w-full p-2 border rounded" value={newStudent.fullName} onChange={(e) => setNewStudent({...newStudent, fullName: e.target.value})} placeholder="Nama Siswa" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">NISN</label>
+                                <input type="text" className="w-full p-2 border rounded" value={newStudent.nisn} onChange={(e) => setNewStudent({...newStudent, nisn: e.target.value})} placeholder="NISN" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">NIS</label>
+                                <input type="text" className="w-full p-2 border rounded" value={newStudent.nis} onChange={(e) => setNewStudent({...newStudent, nis: e.target.value})} placeholder="NIS Lokal" />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Kelas</label>
+                                <select className="w-full p-2 border rounded" value={newStudent.className} onChange={(e) => setNewStudent({...newStudent, className: e.target.value})}>
+                                    {['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'].map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Gender</label>
+                                <select className="w-full p-2 border rounded" value={newStudent.gender} onChange={(e) => setNewStudent({...newStudent, gender: e.target.value as 'L'|'P'})}>
+                                    <option value="L">Laki-Laki</option>
+                                    <option value="P">Perempuan</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <button onClick={handleAddStudent} className="mt-6 w-full py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700">Simpan Data</button>
+                </div>
+            </div>
+        )}
+
         <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col xl:flex-row justify-between items-center gap-4">
              <div className="flex items-center gap-3">
                 <h2 className="text-lg font-bold text-gray-800">Database Dapodik</h2>
                 <div className="flex gap-2">
-                    {/* TOMBOL KOSONGKAN */}
-                    <button 
-                        onClick={handleDeleteAll} 
-                        className="px-4 py-2 bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-bold hover:bg-red-200 transition-colors"
-                    >
-                        Kosongkan
+                    <button onClick={() => setIsAddModalOpen(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 flex items-center gap-2 shadow-sm">
+                        <Plus className="w-4 h-4" /> Tambah Siswa
                     </button>
-
-                    <button onClick={handleDownloadTemplate} className="px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-xs font-bold hover:bg-blue-100">
-                        Template
-                    </button>
-                    
-                    {/* TOMBOL IMPORT */}
-                    <button onClick={handleImportClick} className="px-4 py-2 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 flex items-center gap-2 shadow-sm">
-                        <UploadCloud className="w-4 h-4" /> Import Data
-                    </button>
+                    <button onClick={handleDeleteAll} className="px-4 py-2 bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-bold hover:bg-red-200 transition-colors">Kosongkan</button>
+                    <button onClick={handleDownloadTemplate} className="px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-xs font-bold hover:bg-blue-100 flex items-center gap-2"><Download className="w-4 h-4"/> Template</button>
+                    <button onClick={handleImportClick} className="px-4 py-2 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 flex items-center gap-2 shadow-sm"><UploadCloud className="w-4 h-4" /> Import Excel</button>
                     <input type="file" ref={fileInputRef} className="hidden" accept=".csv,.xlsx" onChange={handleFileChange} />
                 </div>
              </div>
              
              <div className="relative w-full md:w-80">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input 
-                    type="text" 
-                    placeholder="Cari Siswa..." 
-                    className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-lg text-sm outline-none focus:bg-white border border-transparent focus:border-blue-300"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                />
+                <input type="text" placeholder="Cari Siswa..." className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-lg text-sm outline-none focus:bg-white border border-transparent focus:border-blue-300" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
              </div>
         </div>
 
-        {/* TABEL DATA */}
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex-1 overflow-hidden flex flex-col">
             <div className="overflow-auto flex-1 w-full relative pb-32">
                 <table className="border-collapse w-full min-w-max">
@@ -191,13 +408,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
                         {filteredStudents.length > 0 ? filteredStudents.map((s, idx) => (
                             <tr key={s.id || idx} className="hover:bg-blue-50">
                                 <td className="px-2 py-2 text-center border border-gray-200">
-                                    <button 
-                                        onClick={() => handleDeleteRow(s.id)}
-                                        className="p-1.5 bg-red-100 text-red-600 rounded hover:bg-red-200"
-                                        title="Hapus Baris Ini"
-                                    >
-                                        <Trash className="w-4 h-4" />
-                                    </button>
+                                    <button onClick={() => handleDeleteRow(s.id)} className="p-1.5 bg-red-100 text-red-600 rounded hover:bg-red-200"><Trash className="w-4 h-4" /></button>
                                 </td>
                                 <Td className="text-center font-bold">{idx + 1}</Td>
                                 <Td className="font-semibold text-gray-800">{s.fullName}</Td>
@@ -211,18 +422,12 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
                                 <Td>{s.address}</Td>
                             </tr>
                         )) : (
-                            <tr>
-                                <td colSpan={20} className="p-8 text-center text-gray-500 italic">
-                                    Database kosong. Silakan Import Data.
-                                </td>
-                            </tr>
+                            <tr><td colSpan={20} className="p-8 text-center text-gray-500 italic">Database kosong. Silakan Import Data atau Tambah Manual.</td></tr>
                         )}
                     </tbody>
                 </table>
             </div>
-            <div className="p-3 bg-gray-50 border-t text-xs text-gray-500">
-                Total Data: {filteredStudents.length}
-            </div>
+            <div className="p-3 bg-gray-50 border-t text-xs text-gray-500">Total Data: {filteredStudents.length}</div>
         </div>
     </div>
   );

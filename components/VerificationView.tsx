@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Student } from '../types';
 import { 
-  CheckCircle2, XCircle, FileText, ChevronDown, Maximize2, AlertCircle, 
-  User, Activity, BookOpen, MapPin, Users, Wallet, ExternalLink, Loader2,
-  ZoomIn, ZoomOut, RotateCcw, ChevronLeft, ChevronRight, Minimize2, GripVertical, X, Save, Pencil
+  CheckCircle2, Activity, MapPin, Users, Wallet, Loader2,
+  ZoomIn, ZoomOut, Maximize2, Save, Pencil
 } from 'lucide-react';
-import { api } from '../services/api'; // Import API
+import { api } from '../services/api';
 
 interface VerificationViewProps {
   students: Student[];
@@ -28,7 +27,6 @@ const DOCUMENT_TYPES = [
 const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
     if (!url) return '';
     if (url.startsWith('blob:')) return url; 
-
     if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
         let id = '';
         const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
@@ -65,17 +63,15 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [activeDocType, setActiveDocType] = useState<string>('IJAZAH');
   const [zoomLevel, setZoomLevel] = useState<number>(1.0); 
-  const [layoutMode, setLayoutMode] = useState<'split' | 'full-doc' | 'full-data'>('split');
+  const [layoutMode, setLayoutMode] = useState<'split' | 'full-doc'>('split');
   const [activeDataTab, setActiveDataTab] = useState<string>('DAPO_PRIBADI');
   const [isEditing, setIsEditing] = useState(false);
   const [forceUpdate, setForceUpdate] = useState(0);
   
-  // Logic State
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionNote, setRejectionNote] = useState('');
-  const [isSaving, setIsSaving] = useState(false); // New saving state
+  const [isSaving, setIsSaving] = useState(false); 
 
-  // Viewer State
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [useFallbackViewer, setUseFallbackViewer] = useState(false);
@@ -140,17 +136,12 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   const handleApprove = async () => { 
       if (currentDoc && currentStudent) { 
           setIsSaving(true);
-          // 1. Update Local Object
           currentDoc.status = 'APPROVED'; 
           currentDoc.adminNote = 'Dokumen valid.'; 
           currentDoc.verifierName = currentUser?.name || 'Admin';
           currentDoc.verifierRole = currentUser?.role || 'ADMIN';
           currentDoc.verificationDate = new Date().toISOString().split('T')[0];
-
-          // 2. Save to Cloud/API
           await api.updateStudent(currentStudent);
-
-          // 3. Refresh UI
           setIsSaving(false);
           setForceUpdate(prev => prev + 1); 
           if (onUpdate) onUpdate(); 
@@ -159,22 +150,14 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   
   const confirmReject = async () => { 
       if (currentDoc && currentStudent) { 
-          if (!rejectionNote.trim()) {
-              alert("Mohon isi alasan penolakan.");
-              return;
-          }
+          if (!rejectionNote.trim()) { alert("Mohon isi alasan penolakan."); return; }
           setIsSaving(true);
-          // 1. Update Local Object
           currentDoc.status = 'REVISION'; 
           currentDoc.adminNote = rejectionNote; 
           currentDoc.verifierName = currentUser?.name || 'Admin';
           currentDoc.verifierRole = currentUser?.role || 'ADMIN';
           currentDoc.verificationDate = new Date().toISOString().split('T')[0];
-
-          // 2. Save to Cloud/API
           await api.updateStudent(currentStudent);
-
-          // 3. Refresh UI
           setIsSaving(false);
           setRejectModalOpen(false); 
           setForceUpdate(prev => prev + 1); 
@@ -188,7 +171,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       case 'DAPO_PRIBADI':
         return (
           <>
-            <SectionHeader title="Identitas Pribadi" />
+            <SectionHeader title="Identitas Peserta Didik" />
             <FieldGroup label="Nama Lengkap" value={currentStudent.fullName} path="fullName" fullWidth />
             <div className="grid grid-cols-2 gap-2">
                 <FieldGroup label="NISN" value={currentStudent.nisn} path="nisn" />
@@ -198,7 +181,12 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                 <FieldGroup label="Tempat Lahir" value={currentStudent.birthPlace} path="birthPlace" />
                 <FieldGroup label="Tanggal Lahir" value={currentStudent.birthDate} path="birthDate" />
             </div>
-            <FieldGroup label="Jenis Kelamin" value={currentStudent.gender} path="gender" />
+            <div className="grid grid-cols-2 gap-2">
+                <FieldGroup label="Jenis Kelamin" value={currentStudent.gender} path="gender" />
+                <FieldGroup label="Agama" value={currentStudent.religion} path="religion" />
+            </div>
+            <FieldGroup label="Anak Ke" value={currentStudent.childOrder} path="childOrder" />
+            <FieldGroup label="Jml Saudara" value={currentStudent.siblingCount} path="siblingCount" />
           </>
         );
       case 'DAPO_ALAMAT':
@@ -213,7 +201,8 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
             <FieldGroup label="Dusun" value={currentStudent.dapodik.dusun} path="dapodik.dusun" />
             <FieldGroup label="Kelurahan" value={currentStudent.dapodik.kelurahan} path="dapodik.kelurahan" />
             <FieldGroup label="Kecamatan" value={currentStudent.subDistrict} path="subDistrict" />
-            <FieldGroup label="Kode Pos" value={currentStudent.postalCode} path="postalCode" />
+            <FieldGroup label="Jarak Sekolah" value={currentStudent.dapodik.distanceToSchool} path="dapodik.distanceToSchool" />
+            <FieldGroup label="Transportasi" value={currentStudent.dapodik.transportation} path="dapodik.transportation" />
           </>
         );
       case 'DAPO_ORTU':
@@ -222,13 +211,35 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
             <SectionHeader title="Data Ayah" />
             <FieldGroup label="Nama Ayah" value={currentStudent.father.name} path="father.name" fullWidth />
             <FieldGroup label="NIK Ayah" value={currentStudent.father.nik} path="father.nik" />
-            <FieldGroup label="Pekerjaan Ayah" value={currentStudent.father.job} path="father.job" />
+            <FieldGroup label="Tahun Lahir" value={currentStudent.father.birthPlaceDate} path="father.birthPlaceDate" />
+            <FieldGroup label="Pekerjaan" value={currentStudent.father.job} path="father.job" />
+            <FieldGroup label="Pendidikan" value={currentStudent.father.education} path="father.education" />
+            <FieldGroup label="Penghasilan" value={currentStudent.father.income} path="father.income" />
             
             <SectionHeader title="Data Ibu" />
             <FieldGroup label="Nama Ibu" value={currentStudent.mother.name} path="mother.name" fullWidth />
             <FieldGroup label="NIK Ibu" value={currentStudent.mother.nik} path="mother.nik" />
-            <FieldGroup label="Pekerjaan Ibu" value={currentStudent.mother.job} path="mother.job" />
+            <FieldGroup label="Tahun Lahir" value={currentStudent.mother.birthPlaceDate} path="mother.birthPlaceDate" />
+            <FieldGroup label="Pekerjaan" value={currentStudent.mother.job} path="mother.job" />
+            <FieldGroup label="Pendidikan" value={currentStudent.mother.education} path="mother.education" />
+            <FieldGroup label="Penghasilan" value={currentStudent.mother.income} path="mother.income" />
+
+            <SectionHeader title="Data Wali (Jika Ada)" />
+            <FieldGroup label="Nama Wali" value={currentStudent.guardian?.name || '-'} path="guardian.name" fullWidth />
+            <FieldGroup label="Pekerjaan" value={currentStudent.guardian?.job || '-'} path="guardian.job" />
           </>
+        );
+      case 'DAPO_PERIODIK':
+        return (
+            <>
+                <SectionHeader title="Data Periodik" />
+                <div className="grid grid-cols-2 gap-2">
+                    <FieldGroup label="Tinggi Badan (cm)" value={currentStudent.height} path="height" />
+                    <FieldGroup label="Berat Badan (kg)" value={currentStudent.weight} path="weight" />
+                </div>
+                <FieldGroup label="Lingkar Kepala" value={currentStudent.dapodik.headCircumference} path="dapodik.headCircumference" />
+                <FieldGroup label="Waktu Tempuh (Menit)" value={currentStudent.dapodik.travelTimeMinutes} path="dapodik.travelTimeMinutes" />
+            </>
         );
       case 'DAPO_KIP':
         return (
@@ -238,6 +249,8 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
             <FieldGroup label="Nomor KIP" value={currentStudent.dapodik.kipNumber} path="dapodik.kipNumber" fullWidth />
             <FieldGroup label="Nama di KIP" value={currentStudent.dapodik.kipName} path="dapodik.kipName" fullWidth />
             <FieldGroup label="Nomor KKS" value={currentStudent.dapodik.kksNumber} path="dapodik.kksNumber" fullWidth />
+            <FieldGroup label="Penerima KPS" value={currentStudent.dapodik.kpsReceiver} path="dapodik.kpsReceiver" />
+            <FieldGroup label="Nomor KPS" value={currentStudent.dapodik.kpsNumber} path="dapodik.kpsNumber" fullWidth />
           </>
         );
       default:
@@ -253,7 +266,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
             <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col">
                     <h3 className="font-bold text-red-600 mb-2">Tolak Dokumen</h3>
-                    <p className="text-xs text-gray-500 mb-3">Berikan alasan mengapa dokumen ini ditolak agar siswa dapat memperbaikinya.</p>
+                    <p className="text-xs text-gray-500 mb-3">Berikan alasan mengapa dokumen ini ditolak.</p>
                     <textarea 
                         className="w-full p-3 border border-gray-300 rounded-lg text-sm mb-4 focus:ring-2 focus:ring-red-500 outline-none" 
                         rows={3} 
@@ -292,7 +305,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                     <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2"><Activity className="w-4 h-4 text-blue-600" /> Data Buku Induk</h3>
                     <button onClick={async () => {
                         if (isEditing) {
-                            // Save data change
                             setIsSaving(true);
                             await api.updateStudent(currentStudent);
                             setIsSaving(false);
@@ -301,8 +313,12 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                         setIsEditing(!isEditing);
                     }} className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-bold transition-colors ${isEditing ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600'}`}>{isEditing ? <><Save className="w-3 h-3" /> Selesai</> : <><Pencil className="w-3 h-3" /> Edit Data</>}</button>
                 </div>
-                <div className="flex border-b border-gray-200">{['DAPO_PRIBADI', 'DAPO_ALAMAT', 'DAPO_ORTU', 'DAPO_KIP'].map(id => (<button key={id} onClick={()=>setActiveDataTab(id)} className={`flex-1 py-2 text-[10px] font-bold border-b-2 ${activeDataTab === id ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-400'}`}>{id.replace('DAPO_', '')}</button>))}</div>
+                <div className="flex border-b border-gray-200 overflow-x-auto no-scrollbar">
+                    {['DAPO_PRIBADI', 'DAPO_ALAMAT', 'DAPO_ORTU', 'DAPO_PERIODIK', 'DAPO_KIP'].map(id => (<button key={id} onClick={()=>setActiveDataTab(id)} className={`px-3 py-2 text-[10px] font-bold border-b-2 whitespace-nowrap ${activeDataTab === id ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-400'}`}>{id.replace('DAPO_', '')}</button>))}
+                </div>
                 <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50 pb-32"><div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">{renderDataTab()}</div>{currentDoc?.adminNote && <div className="mt-4 p-3 bg-yellow-50 border border-yellow-100 rounded text-xs italic text-yellow-700">"Note: {currentDoc.adminNote}"</div>}</div>
+                
+                {/* BUTTONS VISIBLE FOR ADMIN/GURU */}
                 <div className="p-4 border-t border-gray-200 bg-gray-50 flex gap-2">
                     <button onClick={() => { setRejectionNote(''); setRejectModalOpen(true); }} disabled={!currentDoc || isSaving} className="flex-1 py-2 bg-white border border-red-200 text-red-600 rounded-lg text-sm font-bold disabled:opacity-50 hover:bg-red-50">Tolak</button>
                     <button onClick={handleApprove} disabled={!currentDoc || isSaving} className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-bold disabled:opacity-50 hover:bg-green-700 flex items-center justify-center">
@@ -311,7 +327,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                 </div>
             </div>
             
-            {/* Viewer */}
             <div className={`flex flex-col bg-gray-800 rounded-xl overflow-hidden shadow-lg transition-all duration-300 ${layoutMode === 'full-doc' ? 'w-full absolute inset-0 z-20' : 'flex-1 h-full'}`}>
                  <div className="h-12 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-4 text-gray-300">
                      <span className="text-sm font-bold text-white">{currentDoc ? currentDoc.name : 'No Doc'}</span>

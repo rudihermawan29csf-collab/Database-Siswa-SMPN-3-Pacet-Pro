@@ -358,7 +358,18 @@ const App: React.FC = () => {
             case 'buku-induk':
                 content = <BukuIndukView students={studentsData} />; break;
             case 'grades':
-                content = <GradesView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} onUpdate={refreshData} />; break;
+                // IF STUDENT, SHOW GRADE VERIFICATION VIEW (Read Only) to mimic Admin Verify view
+                if (userRole === 'STUDENT' && selectedStudent) {
+                    content = <GradeVerificationView 
+                        students={[selectedStudent]} 
+                        onUpdate={refreshData} 
+                        currentUser={currentUser || undefined}
+                        userRole={userRole} 
+                    />;
+                } else {
+                    content = <GradesView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} onUpdate={refreshData} />; 
+                }
+                break;
             case 'recap':
                 content = <RecapView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />; break;
             case 'ijazah':
@@ -376,7 +387,7 @@ const App: React.FC = () => {
             case 'upload-rapor':
                 content = selectedStudent ? <UploadRaporView student={selectedStudent} onUpdate={() => saveStudentToCloud(selectedStudent)} /> : null; break;
             case 'grade-verification':
-                content = <GradeVerificationView students={studentsData} onUpdate={refreshData} currentUser={currentUser || undefined} />; break;
+                content = <GradeVerificationView students={studentsData} onUpdate={refreshData} currentUser={currentUser || undefined} userRole={userRole} />; break;
             case 'student-docs':
                 content = <StudentDocsAdminView students={studentsData} onUpdate={refreshData} />; break;
             default:
