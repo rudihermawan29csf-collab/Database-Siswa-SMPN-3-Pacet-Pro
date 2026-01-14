@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Save, Pencil, AlertTriangle, X } from 'lucide-react';
+import { ArrowLeft, Save, Pencil, AlertTriangle, X, CheckCircle2, XCircle, MessageSquare, Loader2 } from 'lucide-react';
 import { Student, CorrectionRequest } from '../types';
 
 interface StudentDetailProps {
@@ -10,15 +10,21 @@ interface StudentDetailProps {
   highlightFieldKey?: string;
   highlightDocumentId?: string;
   onUpdate?: () => void;
+  currentUser?: { name: string; role: string };
 }
 
-const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode, readOnly = false, highlightFieldKey, onUpdate }) => {
+const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode, readOnly = false, highlightFieldKey, onUpdate, currentUser }) => {
   // Correction State
   const [correctionModalOpen, setCorrectionModalOpen] = useState(false);
   const [targetField, setTargetField] = useState<{key: string, label: string, currentValue: string} | null>(null);
   const [proposedValue, setProposedValue] = useState('');
   const [studentReason, setStudentReason] = useState('');
   
+  // Rejection Modal State
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectionNote, setRejectionNote] = useState('');
+  const [requestToReject, setRequestToReject] = useState<CorrectionRequest | null>(null);
+
   // Auto-scroll logic kept for compatibility
   useEffect(() => {
     if (highlightFieldKey) {
@@ -68,12 +74,109 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
       alert("✅ Usulan perbaikan berhasil dikirim. Menunggu verifikasi admin.");
   };
 
+  // ADMIN ACTION: Verify Request
+  const handleVerifyRequest = (request: CorrectionRequest, status: 'APPROVED' | 'REJECTED', note?: string) => {
+      if (!request) return;
+      
+      request.status = status;
+      request.verifierName = currentUser?.name || 'Admin';
+      request.processedDate = new Date().toISOString();
+
+      if (status === 'APPROVED') {
+          // Update Actual Data dynamically
+          const keys = request.fieldKey.split('.');
+          let current: any = student;
+          // Traverse to the parent object
+          for (let i = 0; i < keys.length - 1; i++) {
+               if (!current[keys[i]]) current[keys[i]] = {};
+               current = current[keys[i]];
+          }
+          // Set the value
+          current[keys[keys.length - 1]] = request.proposedValue;
+          
+          request.adminNote = note || "Perubahan data disetujui.";
+      } else {
+          request.adminNote = note || "Perubahan data ditolak.";
+      }
+
+      if (onUpdate) onUpdate();
+  };
+
+  const openRejectModal = (req: CorrectionRequest) => {
+      setRequestToReject(req);
+      setRejectionNote('');
+      setRejectModalOpen(true);
+  };
+
+  const confirmRejection = () => {
+      if (requestToReject) {
+          if (!rejectionNote.trim()) {
+              alert("Mohon isi alasan penolakan.");
+              return;
+          }
+          handleVerifyRequest(requestToReject, 'REJECTED', rejectionNote);
+          setRejectModalOpen(false);
+          setRequestToReject(null);
+      }
+  };
+
   // Reusable Compact Field Group (Matches Admin Verification View)
   const FieldGroup = ({ label, value, fieldKey, fullWidth = false }: { label: string, value: string | number, fieldKey?: string, fullWidth?: boolean }) => {
     const displayValue = (value !== null && value !== undefined && value !== '') ? value : '-';
     const stringValue = String(displayValue);
     const pendingReq = fieldKey ? student.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING') : null;
 
+    // IF ADMIN VIEW & PENDING REQUEST EXISTS -> SHOW APPROVAL UI
+    if (!readOnly && pendingReq) {
+        return (
+            <div id={fieldKey ? `field-${fieldKey}` : undefined} className={`mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg relative ${fullWidth ? 'w-full' : ''} shadow-sm animate-pulse`}>
+                <div className="flex justify-between items-start mb-2">
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide">{label}</label>
+                    <span className="text-[9px] font-bold text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full border border-yellow-200">
+                        Verifikasi Diperlukan
+                    </span>
+                </div>
+                
+                <div className="flex flex-col gap-2">
+                    {/* Comparison */}
+                    <div className="flex items-center gap-2 text-sm">
+                        <div className="bg-white px-2 py-1 rounded border border-gray-200 text-gray-400 line-through decoration-red-400" title="Data Lama">
+                            {stringValue}
+                        </div>
+                        <span className="text-gray-400">➔</span>
+                        <div className="bg-blue-50 px-2 py-1 rounded border border-blue-200 text-blue-700 font-bold shadow-sm flex-1" title="Data Baru (Usulan)">
+                            {pendingReq.proposedValue}
+                        </div>
+                    </div>
+                    
+                    {/* Reason */}
+                    {pendingReq.studentReason && (
+                        <div className="text-[10px] italic text-gray-600 bg-white/50 p-1.5 rounded border border-gray-100">
+                            "<span className="font-semibold text-gray-700">Alasan:</span> {pendingReq.studentReason}"
+                        </div>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex gap-2 mt-1">
+                        <button 
+                            onClick={() => handleVerifyRequest(pendingReq, 'APPROVED')} 
+                            className="flex-1 bg-green-600 text-white px-3 py-1.5 rounded text-xs font-bold hover:bg-green-700 flex items-center justify-center gap-1 shadow-sm transition-transform active:scale-95"
+                        >
+                            <CheckCircle2 className="w-3 h-3"/> Terima
+                        </button>
+                        <button 
+                            onClick={() => openRejectModal(pendingReq)}
+                            className="flex-1 bg-white border border-red-200 text-red-600 px-3 py-1.5 rounded text-xs font-bold hover:bg-red-50 flex items-center justify-center gap-1 shadow-sm transition-transform active:scale-95"
+                        >
+                            <XCircle className="w-3 h-3"/> Tolak
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // STANDARD VIEW
     return (
         <div id={fieldKey ? `field-${fieldKey}` : undefined} className={`mb-2 ${fullWidth ? 'w-full' : ''} relative group`}>
             <div className="flex justify-between items-center mb-0.5">
@@ -83,7 +186,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
             <div className={`relative p-2 bg-gray-50 border rounded text-gray-900 text-sm font-medium break-words min-h-[36px] flex items-center ${pendingReq ? 'border-yellow-400 bg-yellow-50/30' : 'border-gray-300'}`}>
                 {pendingReq ? pendingReq.proposedValue : stringValue}
                 
-                {/* Edit Button visible on hover */}
+                {/* Edit Button visible on hover (Only for Students to request change) */}
                 {readOnly && fieldKey && !pendingReq && (
                     <button 
                         onClick={() => handleOpenCorrection(fieldKey, label, stringValue)}
@@ -107,7 +210,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[calc(100vh-140px)] relative">
       
-      {/* Correction Modal */}
+      {/* Correction Modal (Student) */}
       {correctionModalOpen && (
           <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
               <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col max-h-[90vh]">
@@ -137,6 +240,30 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
           </div>
       )}
 
+      {/* Rejection Modal (Admin) */}
+      {rejectModalOpen && (
+          <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col">
+                  <h3 className="font-bold text-red-600 mb-2">Tolak Perubahan Data</h3>
+                  <p className="text-xs text-gray-500 mb-3">Berikan alasan mengapa pengajuan ini ditolak.</p>
+                  <textarea 
+                      className="w-full p-3 border border-gray-300 rounded-lg text-sm mb-4 focus:ring-2 focus:ring-red-500 outline-none" 
+                      rows={3} 
+                      value={rejectionNote} 
+                      onChange={e => setRejectionNote(e.target.value)} 
+                      placeholder="Contoh: Data tidak sesuai dengan dokumen fisik..."
+                      autoFocus
+                  />
+                  <div className="flex justify-end gap-2">
+                      <button onClick={()=>setRejectModalOpen(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-bold text-xs hover:bg-gray-200">Batal</button>
+                      <button onClick={confirmRejection} className="px-4 py-2 bg-red-600 text-white rounded-lg font-bold text-xs hover:bg-red-700">
+                          Tolak Pengajuan
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
        {/* Header */}
        <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
             <div className="flex items-center gap-3">
@@ -146,9 +273,13 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                      <p className="text-xs text-gray-500">{student.fullName} • {student.className}</p>
                  </div>
             </div>
-            {readOnly && (
+            {readOnly ? (
                 <div className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full border border-blue-200">
                     Mode Siswa
+                </div>
+            ) : (
+                <div className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-bold rounded-full border border-purple-200">
+                    Mode Verifikator
                 </div>
             )}
        </div>

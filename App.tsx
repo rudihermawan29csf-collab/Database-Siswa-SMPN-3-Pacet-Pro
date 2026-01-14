@@ -46,30 +46,56 @@ const App: React.FC = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
-  // FETCH DATA ON MOUNT
+  // FETCH DATA ON MOUNT & UPDATE
   useEffect(() => {
     const initData = async () => {
-        setIsLoading(true);
+        // HANYA set loading true jika data belum ada sama sekali (Initial Load)
+        if (studentsData.length === 0) {
+            setIsLoading(true);
+        }
+
         // Try fetch from online API
         const onlineData = await api.getStudents();
         if (onlineData && onlineData.length > 0) {
             setStudentsData(onlineData);
         } else {
             console.log("Using Mock Data (API empty or failed)");
-            setStudentsData(MOCK_STUDENTS);
+            if (studentsData.length === 0) {
+                setStudentsData(MOCK_STUDENTS);
+            }
         }
         setIsLoading(false);
     };
     initData();
   }, [dataVersion]);
 
+  // SYNC SELECTED STUDENT DATA
+  useEffect(() => {
+      if (selectedStudent && studentsData.length > 0) {
+          const updatedStudent = studentsData.find(s => s.id === selectedStudent.id);
+          if (updatedStudent && updatedStudent !== selectedStudent) {
+              setSelectedStudent(updatedStudent);
+          }
+      }
+  }, [studentsData, selectedStudent]);
+
   const refreshData = () => {
       setDataVersion(prev => prev + 1);
   };
 
+  // UPDATED: Save Logic to update LOCAL STATE immediately
   const saveStudentToCloud = async (student: Student) => {
+      // 1. Update Local State Immediately (Optimistic UI)
+      // Ini mencegah data "kembali" ke status lama saat refresh belum selesai
+      setStudentsData(prevStudents => 
+          prevStudents.map(s => s.id === student.id ? student : s)
+      );
+
+      // 2. Send to API in background
       await api.updateStudent(student);
-      refreshData();
+      
+      // Note: Kita TIDAK memanggil refreshData() di sini agar data lokal yang baru saja diupdate
+      // tidak tertimpa oleh data lama dari server jika server lambat merespon.
   };
 
   const handleDocumentUpdate = async (file: File, category: string) => {
@@ -86,8 +112,11 @@ const App: React.FC = () => {
         size: 'Uploading...',
         status: 'PENDING'
     };
-    selectedStudent.documents = [...newDocs, tempDoc];
-    setStudentsData(prev => prev.map(s => s.id === selectedStudent.id ? selectedStudent : s));
+    
+    // Optimistic Update
+    const updatedStudent = { ...selectedStudent, documents: [...newDocs, tempDoc] };
+    setStudentsData(prev => prev.map(s => s.id === selectedStudent.id ? updatedStudent : s));
+    setSelectedStudent(updatedStudent); // Update selected student view
 
     try {
         const driveUrl = await api.uploadFile(file, selectedStudent.id, category);
@@ -98,21 +127,26 @@ const App: React.FC = () => {
                 url: driveUrl, 
                 size: `${(file.size / 1024 / 1024).toFixed(2)} MB`
             };
-            selectedStudent.documents = [...newDocs, realDoc];
-            await saveStudentToCloud(selectedStudent);
+            const finalStudent = { ...selectedStudent, documents: [...newDocs, realDoc] };
+            setStudentsData(prev => prev.map(s => s.id === selectedStudent.id ? finalStudent : s));
+            setSelectedStudent(finalStudent);
+            await api.updateStudent(finalStudent);
         }
     } catch (e) {
         alert("Gagal upload file ke Google Drive.");
-        selectedStudent.documents = newDocs;
-        refreshData();
     }
   };
 
   const handleDocumentDelete = (docId: string) => {
       if (!selectedStudent) return;
       if(window.confirm("Apakah Anda yakin ingin menghapus dokumen ini?")) {
-        selectedStudent.documents = selectedStudent.documents.filter(d => d.id !== docId);
-        saveStudentToCloud(selectedStudent);
+        const updatedDocs = selectedStudent.documents.filter(d => d.id !== docId);
+        const updatedStudent = { ...selectedStudent, documents: updatedDocs };
+        
+        // Update Local & Save
+        setStudentsData(prev => prev.map(s => s.id === selectedStudent.id ? updatedStudent : s));
+        setSelectedStudent(updatedStudent);
+        api.updateStudent(updatedStudent);
       }
   };
 
@@ -244,11 +278,10 @@ const App: React.FC = () => {
       setTargetHighlightField(undefined);
       setTargetHighlightDoc(undefined);
       setTargetVerificationStudentId(undefined);
-      setReadNotificationIds(new Set()); // Reset read notifications on logout
+      setReadNotificationIds(new Set()); 
   };
 
   const handleNotificationClick = (notif: DashboardNotification) => {
-      // Mark as read immediately to remove from dashboard
       setReadNotificationIds(prev => {
           const newSet = new Set(prev);
           newSet.add(notif.id);
@@ -267,7 +300,6 @@ const App: React.FC = () => {
               }
           }
       } else {
-          // Student Navigation
           if (notif.type.includes('REVISION') || notif.type.includes('APPROVED')) {
                if (notif.data?.docId) {
                    setCurrentView('documents');
@@ -309,9 +341,14 @@ const App: React.FC = () => {
   }
 
   const renderContent = () => {
-    // Determine content based on view
     let content;
     
+    // PASS saveStudentToCloud as onUpdate prop to all views that need it
+    const handleUpdate = () => {
+        if(selectedStudent) saveStudentToCloud(selectedStudent);
+        // Also refresh general data if needed, but saveStudentToCloud handles local state
+    };
+
     if (selectedStudent && currentView === 'dapodik') {
       content = (
         <StudentDetail 
@@ -330,6 +367,7 @@ const App: React.FC = () => {
           highlightFieldKey={targetHighlightField} 
           highlightDocumentId={undefined} 
           onUpdate={() => saveStudentToCloud(selectedStudent)}
+          currentUser={currentUser || undefined}
         />
       );
     } else if (selectedStudent && currentView === 'documents') {
@@ -358,7 +396,6 @@ const App: React.FC = () => {
             case 'buku-induk':
                 content = <BukuIndukView students={studentsData} />; break;
             case 'grades':
-                // IF STUDENT, SHOW GRADE VERIFICATION VIEW (Read Only) to mimic Admin Verify view
                 if (userRole === 'STUDENT' && selectedStudent) {
                     content = <GradeVerificationView 
                         students={[selectedStudent]} 
@@ -375,7 +412,22 @@ const App: React.FC = () => {
             case 'ijazah':
                 content = <IjazahView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />; break;
             case 'verification':
-                content = <VerificationView students={studentsData} targetStudentId={targetVerificationStudentId} onUpdate={refreshData} currentUser={currentUser || undefined} />; break;
+                // Pass saveStudentToCloud wrapper as onUpdate to ensure local state persists
+                content = <VerificationView 
+                    students={studentsData} 
+                    targetStudentId={targetVerificationStudentId} 
+                    onUpdate={() => {
+                        // Find current student in verification view logic and save it
+                        // Since VerificationView manages selection internally, 
+                        // we pass a refresh trigger that calls saveStudentToCloud if we could access it,
+                        // but VerificationView will call api.updateStudent itself.
+                        // We need VerificationView to update `studentsData` in App. 
+                        // However, simpler is passing refreshData but ensuring VerificationView handles optimistically.
+                        refreshData();
+                    }} 
+                    currentUser={currentUser || undefined} 
+                />; 
+                break;
             case 'history':
                 content = <HistoryView students={userRole === 'STUDENT' && selectedStudent ? [selectedStudent] : studentsData} />; break;
             case 'monitoring':
@@ -406,7 +458,7 @@ const App: React.FC = () => {
       <div className="absolute inset-0 bg-black/10 backdrop-blur-[2px] z-0"></div>
 
       <div className="relative z-10 flex h-full w-full">
-        {/* Transparent Sidebar */}
+        {/* Sidebar */}
         <Sidebar 
             currentView={currentView} 
             setView={(view) => {
@@ -419,7 +471,7 @@ const App: React.FC = () => {
             userRole={userRole}
         />
 
-        {/* Main Content Area */}
+        {/* Main Content */}
         <main 
             className={`flex-1 flex flex-col h-full overflow-hidden relative transition-all duration-300 rounded-tl-3xl shadow-[0_0_40px_rgba(0,0,0,0.1)] border-l border-white/20 bg-[#F5F5F7]/95 backdrop-blur-md`}
         >
@@ -477,7 +529,7 @@ const App: React.FC = () => {
                 </div>
             </header>
 
-            {/* Main Render Area with Scroll Fix */}
+            {/* Main Render Area */}
             <div className="flex-1 p-6 overflow-hidden relative">
                 {renderContent()}
             </div>

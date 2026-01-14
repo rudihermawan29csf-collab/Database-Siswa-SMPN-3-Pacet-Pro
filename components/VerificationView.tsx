@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Student } from '../types';
 import { 
   CheckCircle2, Activity, MapPin, Users, Wallet, Loader2,
-  ZoomIn, ZoomOut, Maximize2, Save, Pencil
+  ZoomIn, ZoomOut, Maximize2, Save, Pencil, AlertCircle
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -82,12 +82,25 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   const currentDoc = currentStudent?.documents.find(d => d.category === activeDocType);
 
   useEffect(() => { if (uniqueClasses.length > 0 && !selectedClass) setSelectedClass(uniqueClasses[0]); }, [uniqueClasses]);
+  
   useEffect(() => { 
     if (targetStudentId) {
         const target = students.find(s => s.id === targetStudentId);
         if (target) { setSelectedClass(target.className); setSelectedStudentId(target.id); }
     } else if (studentsInClass.length > 0 && !selectedStudentId) { setSelectedStudentId(studentsInClass[0].id); }
   }, [targetStudentId, selectedClass, students]);
+
+  useEffect(() => {
+      if (currentStudent) {
+          const pendingDoc = currentStudent.documents.find(d => d.status === 'PENDING' && DOCUMENT_TYPES.some(t => t.id === d.category));
+          if (pendingDoc) {
+              setActiveDocType(pendingDoc.category);
+          } else {
+              const currentTabHasDoc = currentStudent.documents.some(d => d.category === activeDocType);
+              if (!currentTabHasDoc) setActiveDocType('IJAZAH');
+          }
+      }
+  }, [selectedStudentId, currentStudent]); 
 
   useEffect(() => { setZoomLevel(1.0); setUseFallbackViewer(false); }, [selectedStudentId, activeDocType]);
   
@@ -136,11 +149,13 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   const handleApprove = async () => { 
       if (currentDoc && currentStudent) { 
           setIsSaving(true);
+          // Mutate local object directly to ensure immediate feedback
           currentDoc.status = 'APPROVED'; 
           currentDoc.adminNote = 'Dokumen valid.'; 
           currentDoc.verifierName = currentUser?.name || 'Admin';
           currentDoc.verifierRole = currentUser?.role || 'ADMIN';
           currentDoc.verificationDate = new Date().toISOString().split('T')[0];
+          
           await api.updateStudent(currentStudent);
           setIsSaving(false);
           setForceUpdate(prev => prev + 1); 
@@ -152,14 +167,28 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       if (currentDoc && currentStudent) { 
           if (!rejectionNote.trim()) { alert("Mohon isi alasan penolakan."); return; }
           setIsSaving(true);
-          currentDoc.status = 'REVISION'; 
-          currentDoc.adminNote = rejectionNote; 
-          currentDoc.verifierName = currentUser?.name || 'Admin';
-          currentDoc.verifierRole = currentUser?.role || 'ADMIN';
-          currentDoc.verificationDate = new Date().toISOString().split('T')[0];
+          
+          // CRITICAL FIX: Ensure object update happens on the specific document instance in the array
+          // to guarantee reference consistency.
+          const docIndex = currentStudent.documents.findIndex(d => d.id === currentDoc.id);
+          if (docIndex !== -1) {
+              currentStudent.documents[docIndex] = {
+                  ...currentStudent.documents[docIndex],
+                  status: 'REVISION',
+                  adminNote: rejectionNote,
+                  verifierName: currentUser?.name || 'Admin',
+                  verifierRole: currentUser?.role || 'ADMIN',
+                  verificationDate: new Date().toISOString().split('T')[0]
+              };
+          }
+
+          // Save to API
           await api.updateStudent(currentStudent);
+          
           setIsSaving(false);
           setRejectModalOpen(false); 
+          setRejectionNote(''); // Clear note after sending
+          
           setForceUpdate(prev => prev + 1); 
           if (onUpdate) onUpdate(); 
       } 
@@ -293,8 +322,17 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
         </div>
         <div className="flex overflow-x-auto gap-1">{DOCUMENT_TYPES.map(type => {
             const doc = currentStudent?.documents.find(d => d.category === type.id);
-            const color = doc?.status === 'APPROVED' ? 'text-green-600 bg-green-50 border-green-200' : doc?.status === 'REVISION' ? 'text-red-600 bg-red-50 border-red-200' : doc?.status === 'PENDING' ? 'text-yellow-600 bg-yellow-50 border-yellow-200' : 'text-gray-400 border-transparent';
-            return <button key={type.id} onClick={() => setActiveDocType(type.id)} className={`px-3 py-1.5 rounded-md text-xs font-bold border ${activeDocType === type.id ? 'ring-2 ring-blue-500' : ''} ${color}`}>{type.label}</button>;
+            const color = doc?.status === 'APPROVED' ? 'text-green-600 bg-green-50 border-green-200' : doc?.status === 'REVISION' ? 'text-red-600 bg-red-50 border-red-200' : doc?.status === 'PENDING' ? 'text-yellow-600 bg-yellow-50 border-yellow-200 shadow-sm animate-pulse' : 'text-gray-400 border-transparent';
+            return (
+                <button 
+                    key={type.id} 
+                    onClick={() => setActiveDocType(type.id)} 
+                    className={`px-3 py-1.5 rounded-md text-xs font-bold border flex items-center gap-1 ${activeDocType === type.id ? 'ring-2 ring-blue-500' : ''} ${color}`}
+                >
+                    {type.label}
+                    {doc?.status === 'PENDING' && <AlertCircle className="w-3 h-3" />}
+                </button>
+            );
         })}</div>
       </div>
 
@@ -316,7 +354,14 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                 <div className="flex border-b border-gray-200 overflow-x-auto no-scrollbar">
                     {['DAPO_PRIBADI', 'DAPO_ALAMAT', 'DAPO_ORTU', 'DAPO_PERIODIK', 'DAPO_KIP'].map(id => (<button key={id} onClick={()=>setActiveDataTab(id)} className={`px-3 py-2 text-[10px] font-bold border-b-2 whitespace-nowrap ${activeDataTab === id ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-400'}`}>{id.replace('DAPO_', '')}</button>))}
                 </div>
-                <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50 pb-32"><div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">{renderDataTab()}</div>{currentDoc?.adminNote && <div className="mt-4 p-3 bg-yellow-50 border border-yellow-100 rounded text-xs italic text-yellow-700">"Note: {currentDoc.adminNote}"</div>}</div>
+                <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50 pb-32"><div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">{renderDataTab()}</div>
+                {/* Fixed Admin Note Display */}
+                {currentDoc?.status === 'REVISION' && currentDoc.adminNote && (
+                    <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-xs italic text-red-700">
+                        <span className="font-bold">Alasan Penolakan:</span> "{currentDoc.adminNote}"
+                    </div>
+                )}
+                </div>
                 
                 {/* BUTTONS VISIBLE FOR ADMIN/GURU */}
                 <div className="p-4 border-t border-gray-200 bg-gray-50 flex gap-2">

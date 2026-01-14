@@ -3,7 +3,7 @@ import { Student, CorrectionRequest } from '../types';
 import { 
   CheckCircle2, FileText, Maximize2, AlertCircle, 
   ZoomIn, ZoomOut, Save, FileDown, FileSpreadsheet,
-  FileCheck2, Loader2, Pencil, Search, AlertTriangle, X
+  FileCheck2, Loader2, Pencil, Search, AlertTriangle, X, Filter
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -51,6 +51,7 @@ const PDFPageCanvas = ({ pdf, pageNum, scale }: any) => {
 const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students, onUpdate, currentUser, userRole = 'ADMIN' }) => {
   const [activeSemester, setActiveSemester] = useState<number>(1);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>(''); // New Class Filter State
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [activePage, setActivePage] = useState<number>(1);
   const [zoomLevel, setZoomLevel] = useState<number>(1.0); 
@@ -80,22 +81,44 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
   const isStudent = userRole === 'STUDENT';
 
-  // Filter students based on search only (No Class Filter to ensure data appears)
+  // Extract Unique Classes
+  const uniqueClasses = useMemo(() => {
+      return Array.from(new Set(students.map(s => s.className))).sort();
+  }, [students]);
+
+  // Set default class on load
+  useEffect(() => {
+      if (!selectedClassFilter && uniqueClasses.length > 0) {
+          setSelectedClassFilter(uniqueClasses[0]);
+      }
+  }, [uniqueClasses]);
+
+  // Filter students based on Class AND Search
   const filteredStudents = useMemo(() => {
       let filtered = students;
+      
+      // 1. Filter by Class first
+      if (selectedClassFilter) {
+          filtered = filtered.filter(s => s.className === selectedClassFilter);
+      }
+
+      // 2. Filter by Search Term
       if (searchTerm) {
           filtered = filtered.filter(s => s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || s.nisn.includes(searchTerm));
       }
-      return filtered.sort((a, b) => a.className.localeCompare(b.className) || a.fullName.localeCompare(b.fullName));
-  }, [students, searchTerm]);
+      return filtered.sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }, [students, searchTerm, selectedClassFilter]);
 
-  // Force select first student when list loads or changes
+  // Force select first student when list loads or changes (e.g. class change)
   useEffect(() => {
       if (filteredStudents.length > 0) {
-          // Only change if no selection or current selection is invalid
+          // Only change if no selection or current selection is invalid/not in current list
           if (!selectedStudentId || !filteredStudents.find(s => s.id === selectedStudentId)) {
               setSelectedStudentId(filteredStudents[0].id);
           }
+      } else {
+          // If no students in filter, reset ID
+          setSelectedStudentId('');
       }
   }, [filteredStudents, selectedStudentId]);
 
@@ -350,13 +373,42 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
              </div>
              {!isStudent && (
                  <>
+                    {/* Class Filter */}
                     <div className="flex items-center gap-2 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200">
-                        <Search className="w-4 h-4 text-gray-500" />
-                        <input type="text" placeholder="Cari Siswa..." className="bg-transparent text-sm font-medium text-gray-700 outline-none w-32 md:w-48" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                        <Filter className="w-4 h-4 text-gray-500" />
+                        <select 
+                            className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-20 md:w-32"
+                            value={selectedClassFilter}
+                            onChange={(e) => setSelectedClassFilter(e.target.value)}
+                        >
+                            {uniqueClasses.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
                     </div>
-                    <select className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium w-48 md:w-64 truncate" value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>
-                        {filteredStudents.length > 0 ? filteredStudents.map(s => <option key={s.id} value={s.id}>{s.className} - {s.fullName}</option>) : <option value="">Tidak ada siswa</option>}
+
+                    {/* Student Selection */}
+                    <select 
+                        className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium w-48 md:w-64 truncate" 
+                        value={selectedStudentId} 
+                        onChange={(e) => setSelectedStudentId(e.target.value)}
+                    >
+                        {filteredStudents.length > 0 ? (
+                            filteredStudents.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)
+                        ) : (
+                            <option value="">Tidak ada siswa</option>
+                        )}
                     </select>
+
+                    {/* Search Input */}
+                    <div className="relative w-32 md:w-48 hidden md:block">
+                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 w-3 h-3" />
+                        <input 
+                            type="text" 
+                            placeholder="Cari..." 
+                            className="w-full pl-8 pr-3 py-1.5 bg-gray-100 rounded-lg text-sm outline-none focus:bg-white border border-transparent focus:border-purple-300 transition-all" 
+                            value={searchTerm} 
+                            onChange={(e) => setSearchTerm(e.target.value)} 
+                        />
+                    </div>
                  </>
              )}
              {isStudent && currentStudent && <div className="px-3 py-2 bg-gray-100 rounded-lg border border-gray-200 text-sm font-bold text-gray-700">{currentStudent.fullName} ({currentStudent.className})</div>}
