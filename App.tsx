@@ -471,8 +471,8 @@ const App: React.FC = () => {
         <main 
             className={`flex-1 flex flex-col h-full overflow-hidden relative transition-all duration-300 rounded-tl-3xl shadow-[0_0_40px_rgba(0,0,0,0.1)] border-l border-white/20 bg-[#F5F5F7]/95 backdrop-blur-md`}
         >
-            {/* Header */}
-            <header className="h-16 flex items-center justify-between px-8 border-b border-gray-200/60 sticky top-0 z-20 print:hidden shrink-0">
+            {/* Header - Added bg-white/50 backdrop-blur-xl for visual occlusion */}
+            <header className="h-16 flex items-center justify-between px-8 border-b border-gray-200/60 sticky top-0 z-30 print:hidden shrink-0 bg-white/60 backdrop-blur-xl">
                 <div className="flex items-center gap-4">
                     <h2 className="text-xl font-bold text-gray-800 capitalize tracking-tight flex items-center gap-2 drop-shadow-sm">
                         {currentView === 'monitoring' ? 'Monitoring Kelengkapan' :

@@ -221,7 +221,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       const xlsx = window.XLSX;
       if (!xlsx) { alert("Library Excel belum dimuat."); return; }
 
-      const data = currentRecord.subjects.map((s, idx) => ({
+      const data: any[] = currentRecord.subjects.map((s, idx) => ({
           'No': idx + 1,
           'Mata Pelajaran': s.subject,
           'Nilai': s.score,

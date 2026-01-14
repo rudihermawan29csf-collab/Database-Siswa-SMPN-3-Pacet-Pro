@@ -1,7 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Student } from '../types';
 import { Search, Trash, UploadCloud, Download, Loader2, CheckCircle2, Plus, X } from 'lucide-react';
-import { MOCK_STUDENTS } from '../services/mockData';
 
 interface DatabaseViewProps {
   students: Student[];
@@ -264,15 +263,46 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
           const wb = xlsx.utils.book_new();
           const ws = xlsx.utils.aoa_to_sheet(headers);
           
-          // Dummy Data Example
-          xlsx.utils.sheet_add_json(ws, [{
-              'Nama Peserta Didik': 'Siswa Contoh', 'NIS': '1234', 'NISN': '0012345678', 'Kelas': 'VII A', 'L/P': 'L', 
-              'Tempat Lahir': 'Mojokerto', 'Tanggal Lahir': '2010-01-01', 'Agama': 'Islam', 'NIK': '3516000000000001',
-              'Alamat Jalan': 'Jl. Raya Pacet', 'RT': '01', 'RW': '02', 'Kecamatan': 'Pacet'
-          }], {skipHeader: true, origin: -1});
+          let dataRows: any[] = [];
 
-          xlsx.utils.book_append_sheet(wb, ws, "Format Lengkap Dapodik");
-          xlsx.writeFile(wb, "Template_Dapodik_Lengkap.xlsx");
+          if (localStudents.length > 0) {
+              // Map REAL Data if available
+              dataRows = localStudents.map(s => ({
+                  'Nama Peserta Didik': s.fullName, 'NIS': s.nis, 'NISN': s.nisn, 'Kelas': s.className, 'L/P': s.gender,
+                  'Tempat Lahir': s.birthPlace, 'Tanggal Lahir': s.birthDate, 'Agama': s.religion,
+                  'NIK': s.dapodik.nik, 'No KK': s.dapodik.noKK, 'Alamat Jalan': s.address, 
+                  'RT': s.dapodik.rt, 'RW': s.dapodik.rw, 'Dusun': s.dapodik.dusun, 
+                  'Kelurahan': s.dapodik.kelurahan, 'Kecamatan': s.subDistrict, 'Kabupaten': s.district, 'Kode Pos': s.postalCode,
+                  'Anak Ke': s.childOrder, 'Jml Saudara': s.siblingCount, 'Tinggi Badan': s.height, 'Berat Badan': s.weight, 
+                  'Lingkar Kepala': s.dapodik.headCircumference, 'Jarak Rumah': s.dapodik.distanceToSchool, 'Waktu Tempuh (Menit)': s.dapodik.travelTimeMinutes,
+                  'Jenis Tinggal': s.dapodik.livingStatus, 'Alat Transportasi': s.dapodik.transportation, 'Email': s.dapodik.email, 'No HP': s.father.phone,
+                  'Nama Ayah': s.father.name, 'NIK Ayah': s.father.nik, 'Tahun Lahir Ayah': s.father.birthPlaceDate, 
+                  'Pendidikan Ayah': s.father.education, 'Pekerjaan Ayah': s.father.job, 'Penghasilan Ayah': s.father.income,
+                  'Nama Ibu': s.mother.name, 'NIK Ibu': s.mother.nik, 'Tahun Lahir Ibu': s.mother.birthPlaceDate, 
+                  'Pendidikan Ibu': s.mother.education, 'Pekerjaan Ibu': s.mother.job, 'Penghasilan Ibu': s.mother.income,
+                  'Nama Wali': s.guardian?.name, 'Tahun Lahir Wali': s.guardian?.birthPlaceDate, 
+                  'Pendidikan Wali': s.guardian?.education, 'Pekerjaan Wali': s.guardian?.job, 'Penghasilan Wali': s.guardian?.income,
+                  'Penerima KPS': s.dapodik.kpsReceiver, 'No KPS': s.dapodik.kpsNumber,
+                  'Penerima KIP': s.dapodik.kipReceiver, 'No KIP': s.dapodik.kipNumber, 'Nama di KIP': s.dapodik.kipName,
+                  'No KKS': s.dapodik.kksNumber, 'Layak PIP': s.dapodik.pipEligible, 'Alasan Layak PIP': s.dapodik.pipReason,
+                  'Bank': s.dapodik.bank, 'No Rekening': s.dapodik.bankAccount, 'Atas Nama Rekening': s.dapodik.bankAccountName,
+                  'No Reg Akta': s.dapodik.birthRegNumber, 'Sekolah Asal': s.previousSchool, 'No Seri Ijazah': s.diplomaNumber,
+                  'No SKHUN': s.dapodik.skhun, 'No Peserta UN': s.dapodik.unExamNumber
+              }));
+          } else {
+              // Dummy Data Example if list is empty
+              dataRows = [{
+                  'Nama Peserta Didik': 'Siswa Contoh', 'NIS': '1234', 'NISN': '0012345678', 'Kelas': 'VII A', 'L/P': 'L', 
+                  'Tempat Lahir': 'Mojokerto', 'Tanggal Lahir': '2010-01-01', 'Agama': 'Islam', 'NIK': '3516000000000001',
+                  'Alamat Jalan': 'Jl. Raya Pacet', 'RT': '01', 'RW': '02', 'Kecamatan': 'Pacet'
+              }];
+          }
+
+          xlsx.utils.sheet_add_json(ws, dataRows, {skipHeader: true, origin: -1});
+
+          xlsx.utils.book_append_sheet(wb, ws, "Database Siswa");
+          const filename = localStudents.length > 0 ? "Database_Siswa_SMPN3Pacet.xlsx" : "Template_Dapodik_Kosong.xlsx";
+          xlsx.writeFile(wb, filename);
       } catch (e) {
           alert("Gagal download template. Pastikan library XLSX dimuat.");
       }
@@ -374,7 +404,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
                         <Plus className="w-4 h-4" /> Tambah Siswa
                     </button>
                     <button onClick={handleDeleteAll} className="px-4 py-2 bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-bold hover:bg-red-200 transition-colors">Kosongkan</button>
-                    <button onClick={handleDownloadTemplate} className="px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-xs font-bold hover:bg-blue-100 flex items-center gap-2"><Download className="w-4 h-4"/> Template</button>
+                    <button onClick={handleDownloadTemplate} className="px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-xs font-bold hover:bg-blue-100 flex items-center gap-2"><Download className="w-4 h-4"/> Download Data/Template</button>
                     <button onClick={handleImportClick} className="px-4 py-2 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 flex items-center gap-2 shadow-sm"><UploadCloud className="w-4 h-4" /> Import Excel</button>
                     <input type="file" ref={fileInputRef} className="hidden" accept=".csv,.xlsx" onChange={handleFileChange} />
                 </div>
@@ -407,7 +437,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents }
                     <tbody>
                         {filteredStudents.length > 0 ? filteredStudents.map((s, idx) => (
                             <tr key={s.id || idx} className="hover:bg-blue-50">
-                                <td className="px-2 py-2 text-center border border-gray-200">
+                                <td className="px-2 py-2 text-center border border-gray-200 flex items-center justify-center gap-1">
                                     <button onClick={() => handleDeleteRow(s.id)} className="p-1.5 bg-red-100 text-red-600 rounded hover:bg-red-200"><Trash className="w-4 h-4" /></button>
                                 </td>
                                 <Td className="text-center font-bold">{idx + 1}</Td>

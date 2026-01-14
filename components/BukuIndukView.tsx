@@ -1,23 +1,64 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Student } from '../types';
-import { Search, Printer, User, ArrowLeft, ChevronRight, School, FileDown, Loader2 } from 'lucide-react';
+import { Search, Printer, User, ArrowLeft, ChevronRight, School, FileDown, Loader2, Filter } from 'lucide-react';
 
 interface BukuIndukViewProps {
   students: Student[];
 }
 
-const CLASS_LIST = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
-
 const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  
+  // NEW FILTERS
+  const [classFilter, setClassFilter] = useState('ALL');
+  const [studentFilter, setStudentFilter] = useState('ALL');
 
-  const filteredStudents = students.filter(s => 
-    s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.nisn.includes(searchTerm) ||
-    s.nis.includes(searchTerm)
-  );
+  // Derive unique classes
+  const uniqueClasses = useMemo(() => {
+      const classes = new Set(students.map(s => s.className));
+      return Array.from(classes).sort((a: string, b: string) => {
+          // Try to sort numerically if possible, otherwise alphabetical
+          const aNum = parseInt(a.replace(/\D/g, '')) || 0;
+          const bNum = parseInt(b.replace(/\D/g, '')) || 0;
+          if (aNum !== bNum) return aNum - bNum;
+          return a.localeCompare(b);
+      });
+  }, [students]);
+
+  // Derive available students for the filter dropdown
+  const availableStudentsForFilter = useMemo(() => {
+      let list = students;
+      if (classFilter !== 'ALL') {
+          list = list.filter(s => s.className === classFilter);
+      }
+      return list.sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }, [students, classFilter]);
+
+  // Main Filter Logic
+  const filteredStudents = useMemo(() => {
+    return students.filter(s => {
+        const matchesSearch = s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                              s.nisn.includes(searchTerm) ||
+                              s.nis.includes(searchTerm);
+        const matchesClass = classFilter === 'ALL' || s.className === classFilter;
+        const matchesStudent = studentFilter === 'ALL' || s.id === studentFilter;
+
+        return matchesSearch && matchesClass && matchesStudent;
+    });
+  }, [students, searchTerm, classFilter, studentFilter]);
+
+  // Dynamically extract unique classes from the filtered student list to render groups
+  const availableClasses = useMemo(() => {
+      const classes = new Set(filteredStudents.map(s => s.className));
+      return Array.from(classes).sort((a: string, b: string) => {
+          const aNum = parseInt(a.replace(/\D/g, '')) || 0;
+          const bNum = parseInt(b.replace(/\D/g, '')) || 0;
+          if (aNum !== bNum) return aNum - bNum;
+          return a.localeCompare(b);
+      });
+  }, [filteredStudents]);
 
   const handleDownloadPDF = () => {
     if (!selectedStudent) return;
@@ -116,7 +157,7 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
                       <div className="flex justify-between border-b border-gray-800 mb-0.5">
                           <div className="flex-1 flex">
                               <div className="w-24 text-[9px] font-bold">Tanggal</div>
-                              <div className="flex-1 text-[9px]">: 17 Juli 2022</div>
+                              <div className="flex-1 text-[9px]">: {new Date().toLocaleDateString('id-ID')}</div>
                           </div>
                           <div className="flex-1 flex border-l border-gray-800 pl-4">
                               <div className="w-24 text-[9px] font-bold">REG :</div>
@@ -126,7 +167,7 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
                       <div className="flex justify-between border-b border-gray-800 mb-1">
                           <div className="flex-1 flex">
                               <div className="w-24 text-[9px] font-bold"> - Tingkat</div>
-                              <div className="flex-1 text-[9px]">: {selectedStudent.className.split(' ')[0]}</div>
+                              <div className="flex-1 text-[9px]">: {selectedStudent.className}</div>
                           </div>
                           <div className="flex-1 flex border-l border-gray-800 pl-4">
                               <div className="w-24 text-[9px] font-bold">Program :</div>
@@ -277,7 +318,7 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
                           </div>
                           <div className="flex border-b border-gray-300 h-6">
                               <div className="w-1/2 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] flex items-center">23. Waktu Tempuh</div>
-                              <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-gray-200">5</div>
+                              <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-gray-200">{selectedStudent.dapodik.travelTimeMinutes}</div>
                               <div className="w-12 px-1.5 py-0.5 border-r border-gray-300 text-[9px] flex items-center">menit</div>
                               <div className="flex-1 px-1.5 py-0.5 text-[8px] italic flex items-center leading-tight">2) &gt; 60 menit: - Menit</div>
                           </div>
@@ -297,37 +338,68 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
     <div className="flex flex-col h-full space-y-4 animate-fade-in">
         {/* Toolbar Buku Induk */}
         <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
-             <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                <School className="w-5 h-5 text-mac-accent" />
-                Buku Induk Siswa (Per Kelas)
-             </h2>
-             <div className="relative w-full md:w-96">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input
-                    type="text"
-                    placeholder="Cari Nama atau NISN..."
-                    className="w-full pl-10 pr-4 py-2 bg-gray-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-mac-accent focus:bg-white transition-all"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                />
+             <div className="flex items-center gap-2">
+                <School className="w-6 h-6 text-blue-600" />
+                <h2 className="text-lg font-bold text-gray-800">
+                    Buku Induk Siswa
+                </h2>
+             </div>
+             
+             {/* FILTERS */}
+             <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
+                <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
+                    <Filter className="w-4 h-4 text-gray-500" />
+                    <select 
+                        className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-32"
+                        value={classFilter}
+                        onChange={(e) => { setClassFilter(e.target.value); setStudentFilter('ALL'); }}
+                    >
+                        <option value="ALL">Semua Kelas</option>
+                        {uniqueClasses.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                </div>
+
+                <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
+                    <User className="w-4 h-4 text-gray-500" />
+                    <select 
+                        className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-48 md:w-56"
+                        value={studentFilter}
+                        onChange={(e) => setStudentFilter(e.target.value)}
+                    >
+                        <option value="ALL">Semua Siswa</option>
+                        {availableStudentsForFilter.map(s => (
+                            <option key={s.id} value={s.id}>{s.fullName}</option>
+                        ))}
+                    </select>
+                </div>
+
+                <div className="relative w-full md:w-64">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input
+                        type="text"
+                        placeholder="Cari Nama atau NISN..."
+                        className="w-full pl-10 pr-4 py-2 bg-gray-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
              </div>
         </div>
 
         {/* Grouped Table List */}
         <div className="flex-1 overflow-auto bg-mac-bg space-y-6 pb-32">
-            {CLASS_LIST.map((className) => {
+            {availableClasses.map((className) => {
                 const studentsInClass = filteredStudents.filter(s => s.className === className);
-                if (studentsInClass.length === 0 && !searchTerm) return null;
-                if (studentsInClass.length === 0 && searchTerm) return null;
+                if (studentsInClass.length === 0) return null;
 
                 return (
                     <div key={className} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mx-1">
                         <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200 flex justify-between items-center">
                             <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                                <ChevronRight className="w-4 h-4 text-mac-accent" />
+                                <ChevronRight className="w-4 h-4 text-blue-600" />
                                 Kelas {className}
                             </h3>
-                            <span className="text-[10px] font-bold bg-mac-accent/10 text-mac-accent px-2 py-0.5 rounded-full uppercase tracking-wider">
+                            <span className="text-[10px] font-bold bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full uppercase tracking-wider">
                                 {studentsInClass.length} Siswa
                             </span>
                         </div>
@@ -345,13 +417,13 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
                                 {studentsInClass.map((s, idx) => (
                                     <tr key={s.id} className="hover:bg-blue-50/50 transition-colors group cursor-pointer" onClick={() => setSelectedStudent(s)}>
                                         <td className="px-6 py-3 text-center text-xs text-gray-500 font-medium">{idx + 1}</td>
-                                        <td className="px-6 py-3 text-sm font-bold text-gray-800 group-hover:text-mac-accent">{s.fullName}</td>
+                                        <td className="px-6 py-3 text-sm font-bold text-gray-800 group-hover:text-blue-600">{s.fullName}</td>
                                         <td className="px-6 py-3 text-xs text-gray-500 font-mono tracking-tight">{s.nisn}</td>
                                         <td className="px-6 py-3 text-xs">
                                             <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">{s.className}</span>
                                         </td>
                                         <td className="px-6 py-3 text-right">
-                                            <button className="text-[10px] font-bold text-mac-accent uppercase border border-mac-accent/20 px-3 py-1 rounded-md group-hover:bg-mac-accent group-hover:text-white transition-all">
+                                            <button className="text-[10px] font-bold text-blue-600 uppercase border border-blue-200 px-3 py-1 rounded-md group-hover:bg-blue-600 group-hover:text-white transition-all">
                                                 Buka Form
                                             </button>
                                         </td>
@@ -363,7 +435,7 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
                 );
             })}
             
-            {filteredStudents.length === 0 && (
+            {availableClasses.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-20 text-gray-400">
                     <Search className="w-12 h-12 mb-4 opacity-20" />
                     <p>Tidak ada siswa ditemukan.</p>

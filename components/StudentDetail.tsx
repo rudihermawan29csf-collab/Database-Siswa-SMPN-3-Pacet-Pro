@@ -208,7 +208,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
   );
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[calc(100vh-140px)] relative">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full relative">
       
       {/* Correction Modal (Student) */}
       {correctionModalOpen && (
