@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, FileText, Settings, LogOut, GraduationCap, Database, ClipboardCheck, PanelLeftClose, PanelLeft, UserCircle, History, Book, ClipboardList, FolderOpen, Upload, FileCheck2, Calculator, Award, FileInput } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Settings, LogOut, GraduationCap, Database, ClipboardCheck, PanelLeftClose, PanelLeft, UserCircle, History, Book, ClipboardList, FolderOpen, Upload, FileCheck2, Calculator, Award, FileInput, LayoutTemplate } from 'lucide-react';
 
 interface SidebarProps {
   currentView: string;
@@ -13,7 +13,7 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, onLogout, isCollapsed, toggleSidebar, userRole = 'ADMIN' }) => {
   
   // Logic to show/hide items based on Role
-  const showDatabase = userRole === 'ADMIN'; // Only Admin sees Database Dapodik
+  const showDatabase = userRole === 'ADMIN'; 
   
   const adminMenuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, visible: true },
@@ -24,9 +24,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, onLogout, isCol
     { id: 'ijazah', label: 'Nilai Ijazah', icon: Award, visible: true },
     { id: 'verification', label: 'Verifikasi Buku Induk', icon: ClipboardCheck, visible: true },
     { id: 'grade-verification', label: 'Verifikasi Nilai', icon: FileCheck2, visible: true },
-    { id: 'student-docs', label: 'Dokumen Siswa', icon: FileInput, visible: true }, // New Menu
+    { id: 'student-docs', label: 'Dokumen Siswa', icon: FileInput, visible: true },
     { id: 'history', label: 'Riwayat Verifikasi', icon: History, visible: true },
-    { id: 'reports', label: 'Laporan', icon: FileText, visible: true },
+    { id: 'monitoring', label: 'Monitoring', icon: LayoutTemplate, visible: true }, // Changed from Reports
   ];
 
   const studentMenuItems = [
@@ -38,6 +38,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, onLogout, isCol
       { id: 'recap', label: 'Rekap 5 Semester', icon: Calculator, visible: true },
       { id: 'ijazah', label: 'Nilai Ijazah', icon: Award, visible: true },
       { id: 'history', label: 'Riwayat', icon: History, visible: true },
+      { id: 'monitoring', label: 'Monitoring', icon: LayoutTemplate, visible: true }, // Added Monitoring for Student
   ];
 
   const rawItems = (userRole === 'ADMIN' || userRole === 'GURU') ? adminMenuItems : studentMenuItems;

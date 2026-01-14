@@ -14,8 +14,9 @@ import FileManager from './components/FileManager';
 import SettingsView from './components/SettingsView';
 import UploadRaporView from './components/UploadRaporView';
 import GradeVerificationView from './components/GradeVerificationView';
+import MonitoringView from './components/MonitoringView'; // Renamed
 import ReportsView from './components/ReportsView';
-import StudentDocsAdminView from './components/StudentDocsAdminView'; // New Import
+import StudentDocsAdminView from './components/StudentDocsAdminView'; 
 import Login from './components/Login';
 import { MOCK_STUDENTS } from './services/mockData'; 
 import { api } from './services/api'; 
@@ -29,6 +30,7 @@ const App: React.FC = () => {
   const [studentsData, setStudentsData] = useState<Student[]>([]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>('ADMIN');
+  const [currentUser, setCurrentUser] = useState<{name: string, role: string} | null>(null); // New state to track logged user identity
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   
@@ -37,6 +39,9 @@ const App: React.FC = () => {
   const [targetHighlightField, setTargetHighlightField] = useState<string | undefined>(undefined);
   const [targetHighlightDoc, setTargetHighlightDoc] = useState<string | undefined>(undefined);
   const [targetVerificationStudentId, setTargetVerificationStudentId] = useState<string | undefined>(undefined); 
+  
+  // Track read notifications
+  const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(new Set());
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -90,15 +95,13 @@ const App: React.FC = () => {
     try {
         const driveUrl = await api.uploadFile(file, selectedStudent.id, category);
         if (driveUrl) {
-            // Update with real URL and Drive ID
             const realDoc: DocumentFile = {
                 ...tempDoc,
                 id: Math.random().toString(36).substr(2, 9),
-                url: driveUrl, // Google Drive Link
+                url: driveUrl, 
                 size: `${(file.size / 1024 / 1024).toFixed(2)} MB`
             };
             selectedStudent.documents = [...newDocs, realDoc];
-            // Sync metadata to sheet
             await saveStudentToCloud(selectedStudent);
         }
     } catch (e) {
@@ -149,16 +152,93 @@ const App: React.FC = () => {
               }
           });
       } else if (userRole === 'STUDENT' && selectedStudent) {
-          // ... (Existing student notification logic same as before) ...
+          selectedStudent.documents.forEach(d => {
+              // Only show if not read
+              if (d.status === 'REVISION') {
+                   notifs.push({
+                      id: `doc-rev-${d.id}`,
+                      type: 'STUDENT_REVISION',
+                      title: `Revisi Diperlukan: ${d.name}`,
+                      description: d.adminNote || 'Dokumen buram atau tidak sesuai. Silakan upload ulang.',
+                      date: d.verificationDate || 'Baru saja',
+                      priority: 'HIGH',
+                      data: { docId: d.id },
+                      verifierName: d.verifierName
+                  });
+              } else if (d.status === 'APPROVED') {
+                  notifs.push({
+                      id: `doc-app-${d.id}`,
+                      type: 'STUDENT_APPROVED',
+                      title: `Dokumen Disetujui: ${d.name}`,
+                      description: 'Dokumen Anda telah diverifikasi.',
+                      date: d.verificationDate || 'Baru saja',
+                      priority: 'LOW',
+                      data: { docId: d.id },
+                      verifierName: d.verifierName
+                  });
+              }
+          });
+
+          selectedStudent.correctionRequests?.forEach(r => {
+              if (r.status === 'APPROVED') {
+                  notifs.push({
+                      id: `req-app-${r.id}`,
+                      type: 'STUDENT_APPROVED',
+                      title: `Perubahan Disetujui: ${r.fieldName}`,
+                      description: `Data ${r.fieldName} telah diperbarui sesuai permintaan.`,
+                      date: 'Hari ini',
+                      priority: 'LOW',
+                      data: { fieldKey: r.fieldKey },
+                      verifierName: r.verifierName
+                  });
+              } else if (r.status === 'REJECTED') {
+                 notifs.push({
+                      id: `req-rej-${r.id}`,
+                      type: 'STUDENT_REVISION',
+                      title: `Perubahan Ditolak: ${r.fieldName}`,
+                      description: r.adminNote || 'Pengajuan anda ditolak.',
+                      date: 'Hari ini',
+                      priority: 'MEDIUM',
+                      data: { fieldKey: r.fieldKey },
+                      verifierName: r.verifierName
+                  });
+              }
+          });
+          
+          selectedStudent.adminMessages?.forEach(msg => {
+              notifs.push({
+                  id: `msg-${msg.id}`,
+                  type: 'STUDENT_REVISION',
+                  title: 'Pesan dari Admin',
+                  description: msg.content,
+                  date: new Date(msg.date).toLocaleDateString(),
+                  priority: 'HIGH'
+              });
+          });
       }
 
-      return notifs;
-  }, [userRole, studentsData, selectedStudent, dataVersion]);
+      // Filter out read notifications
+      return notifs.filter(n => !readNotificationIds.has(n.id));
+  }, [userRole, studentsData, selectedStudent, dataVersion, readNotificationIds]);
 
   const handleLogin = (role: UserRole, studentData?: Student) => {
       setUserRole(role);
       setIsAuthenticated(true);
       
+      // Determine Current User Name/Role for tagging
+      if (role === 'ADMIN') {
+          setCurrentUser({ name: 'Admin TU', role: 'ADMIN' });
+      } else if (role === 'GURU') {
+          // In real app, name comes from login selection. Using generic here unless stored in session.
+          // For now assuming default if not passed, but Login component logic persists in localStorage usually.
+          // Let's assume the user selection in Login component sets it.
+          const savedUsers = localStorage.getItem('sys_users');
+          // Simple fallback
+          setCurrentUser({ name: 'Guru Mapel', role: 'GURU' });
+      } else {
+          setCurrentUser({ name: studentData?.fullName || 'Siswa', role: 'STUDENT' });
+      }
+
       if (role === 'STUDENT' && studentData) {
           setSelectedStudent(studentData);
           setCurrentView('dashboard');
@@ -170,13 +250,18 @@ const App: React.FC = () => {
   const handleLogout = () => {
       setIsAuthenticated(false);
       setSelectedStudent(null);
+      setCurrentUser(null);
       setUserRole('ADMIN');
       setTargetHighlightField(undefined);
       setTargetHighlightDoc(undefined);
       setTargetVerificationStudentId(undefined);
+      setReadNotificationIds(new Set());
   };
 
   const handleNotificationClick = (notif: DashboardNotification) => {
+      // Mark as read to remove from dashboard
+      setReadNotificationIds(prev => new Set(prev).add(notif.id));
+
       if (userRole === 'ADMIN' || userRole === 'GURU') {
           if (notif.data?.student) {
               if (notif.type === 'ADMIN_VERIFY') {
@@ -189,7 +274,20 @@ const App: React.FC = () => {
               }
           }
       } else {
-          // ... (Student logic same) ...
+          // Student Navigation
+          if (notif.type.includes('REVISION') || notif.type.includes('APPROVED')) {
+               if (notif.data?.docId) {
+                   setCurrentView('documents');
+                   setTargetHighlightDoc(notif.data.docId);
+               } else if (notif.data?.fieldKey) {
+                    if (notif.data.fieldKey.includes('Nilai')) {
+                        setCurrentView('grades');
+                    } else {
+                        setCurrentView('dapodik');
+                        setTargetHighlightField(notif.data.fieldKey);
+                    }
+               }
+          }
       }
   };
 
@@ -306,12 +404,21 @@ const App: React.FC = () => {
                 students={studentsData} 
                 targetStudentId={targetVerificationStudentId}
                 onUpdate={refreshData}
+                currentUser={currentUser || undefined} // Pass user info
             />
         );
     case 'history':
          return <HistoryView students={userRole === 'STUDENT' && selectedStudent ? [selectedStudent] : studentsData} />;
-    case 'reports':
+    case 'monitoring': // Replaced Reports
         return (
+            <MonitoringView 
+                students={studentsData} 
+                userRole={userRole}
+                loggedInStudent={selectedStudent || undefined}
+            />
+        );
+    case 'reports': // Keeping for sidebar compatibility but renders monitoring
+         return (
             <ReportsView 
                 students={studentsData} 
                 onUpdate={refreshData}
@@ -322,7 +429,7 @@ const App: React.FC = () => {
     case 'upload-rapor':
         return selectedStudent ? <UploadRaporView student={selectedStudent} onUpdate={() => saveStudentToCloud(selectedStudent)} /> : null;
     case 'grade-verification':
-        return <GradeVerificationView students={studentsData} onUpdate={refreshData} />;
+        return <GradeVerificationView students={studentsData} onUpdate={refreshData} currentUser={currentUser || undefined} />;
     case 'student-docs': // New Route
         return <StudentDocsAdminView students={studentsData} onUpdate={refreshData} />;
     default:
@@ -372,7 +479,7 @@ const App: React.FC = () => {
                         currentView === 'settings' ? 'Pengaturan Sistem' :
                         currentView === 'upload-rapor' ? 'Upload Rapor' :
                         currentView === 'grade-verification' ? 'Verifikasi Nilai' :
-                        currentView === 'reports' ? 'Laporan & Monitoring' :
+                        currentView === 'monitoring' ? 'Monitoring Kelengkapan' :
                         currentView === 'student-docs' ? 'Dokumen Siswa (Admin)' :
                         'Dashboard Utama'}
                     </h2>
@@ -403,10 +510,10 @@ const App: React.FC = () => {
                             <div className="flex items-center gap-3 pl-4 border-l border-gray-300/50 cursor-pointer hover:bg-gray-200/50 p-1 rounded-lg transition-colors group">
                                 <div className="text-right hidden sm:block">
                                     <p className="text-sm font-bold text-gray-800 group-hover:text-blue-600 transition-colors">
-                                        {userRole === 'ADMIN' ? 'Admin TU' : userRole === 'GURU' ? 'Guru Mapel' : selectedStudent?.fullName || 'Siswa'}
+                                        {currentUser?.name || (userRole === 'ADMIN' ? 'Admin TU' : 'User')}
                                     </p>
                                     <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">
-                                        {userRole === 'ADMIN' ? 'Operator' : userRole === 'GURU' ? 'Pengajar' : 'Siswa'}
+                                        {currentUser?.role || userRole}
                                     </p>
                                 </div>
                                 <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 p-[2px] shadow-md">

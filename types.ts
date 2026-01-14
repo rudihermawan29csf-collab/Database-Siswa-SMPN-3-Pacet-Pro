@@ -15,6 +15,8 @@ export interface DocumentFile {
   status: 'PENDING' | 'APPROVED' | 'REVISION';
   adminNote?: string;
   verificationDate?: string;
+  verifierName?: string; // Who verified this
+  verifierRole?: string;
   // Metadata specifically for Rapor
   subType?: {
       semester: number;
@@ -110,7 +112,7 @@ export interface Student {
   documents: DocumentFile[];
   correctionRequests: CorrectionRequest[];
   academicRecords?: Record<number, AcademicRecord>;
-  adminMessages?: AdminMessage[]; // New field for report comments
+  adminMessages?: AdminMessage[]; 
 }
 
 export interface CorrectionRequest {
@@ -121,8 +123,10 @@ export interface CorrectionRequest {
   proposedValue: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   requestDate: string;
+  studentReason?: string; // Reason from student
   adminNote?: string;
   processedDate?: string;
+  verifierName?: string; // Who processed this
   attachment?: {
       url: string;
       type: 'IMAGE' | 'PDF';
