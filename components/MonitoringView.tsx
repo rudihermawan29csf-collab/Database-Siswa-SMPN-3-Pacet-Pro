@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Student } from '../types';
 import { Search, Filter, AlertCircle, CheckCircle2, ChevronRight, BookOpen, ClipboardList, FolderOpen, FileText, ArrowLeft, Calendar, UserCheck, LayoutDashboard, ChevronDown, ChevronUp } from 'lucide-react';
+import { api } from '../services/api';
 
 interface MonitoringViewProps {
   students: Student[];
@@ -8,9 +9,30 @@ interface MonitoringViewProps {
   loggedInStudent?: Student;
 }
 
-const REQUIRED_DOCS_ID = ['IJAZAH', 'AKTA', 'KK', 'KTP_AYAH', 'KTP_IBU', 'FOTO'];
+// Function to fetch active document config from storage
+const getActiveDocs = () => {
+    try {
+        const saved = localStorage.getItem('sys_doc_config');
+        return saved ? JSON.parse(saved) : ['IJAZAH', 'AKTA', 'KK', 'KTP_AYAH', 'KTP_IBU', 'FOTO'];
+    } catch (e) {
+        return ['IJAZAH', 'AKTA', 'KK', 'KTP_AYAH', 'KTP_IBU', 'FOTO'];
+    }
+};
+
+const getRaporPageCount = () => {
+    try {
+        const saved = localStorage.getItem('sys_rapor_config');
+        return saved ? parseInt(saved) : 3;
+    } catch {
+        return 3;
+    }
+}
 
 const analyzeStudent = (student: Student) => {
+    // Dynamic settings
+    const activeDocsId = getActiveDocs();
+    const raporPageCount = getRaporPageCount();
+
     // 1. Bio (Buku Induk)
     const missingBioFields = [];
     if (!student.nisn) missingBioFields.push('NISN');
@@ -20,33 +42,30 @@ const analyzeStudent = (student: Student) => {
     if (!student.mother.name || student.mother.name === 'Nama Ibu') missingBioFields.push('Nama Ibu');
     const bioPercent = Math.round(((5 - missingBioFields.length) / 5) * 100);
 
-    // Determine Expected Semesters based on Class Level
-    let expectedSemesters = [1, 2];
-    if (student.className.startsWith('VIII')) expectedSemesters = [1, 2, 3, 4];
-    if (student.className.startsWith('IX')) expectedSemesters = [1, 2, 3, 4, 5, 6];
-
-    // 2. Grades
-    const missingGradesSemesters = expectedSemesters.filter(sem => {
+    // 2. Grades (CHECK ALL 6 SEMESTERS for Monitoring)
+    const allSemesters = [1, 2, 3, 4, 5, 6];
+    const missingGradesSemesters = allSemesters.filter(sem => {
         return !(student.academicRecords && student.academicRecords[sem] && student.academicRecords[sem].subjects.length > 0);
     });
-    const gradePercent = Math.round(((expectedSemesters.length - missingGradesSemesters.length) / expectedSemesters.length) * 100);
+    const gradePercent = Math.round(((allSemesters.length - missingGradesSemesters.length) / allSemesters.length) * 100);
 
-    // 3. Docs
-    const missingDocs = REQUIRED_DOCS_ID.filter(id => !student.documents.find(d => d.category === id && d.status !== 'REVISION'));
-    const docPercent = Math.round(((REQUIRED_DOCS_ID.length - missingDocs.length) / REQUIRED_DOCS_ID.length) * 100);
+    // 3. Docs (Dynamic)
+    const missingDocs = activeDocsId.filter((id: string) => !student.documents.find(d => d.category === id && d.status !== 'REVISION'));
+    const docPercent = activeDocsId.length > 0 ? Math.round(((activeDocsId.length - missingDocs.length) / activeDocsId.length) * 100) : 100;
 
-    // 4. Rapor Pages (Check ALL Semesters)
-    // Updated: Each semester has 3 pages.
-    const totalExpectedPages = expectedSemesters.length * 3;
+    // 4. Rapor Pages (Check ALL 6 Semesters based on Dynamic Config)
+    const totalExpectedPages = 6 * raporPageCount;
     let totalUploadedPages = 0;
 
-    expectedSemesters.forEach(sem => {
+    allSemesters.forEach(sem => {
         const uploadedForSem = student.documents.filter(d => d.category === 'RAPOR' && d.subType?.semester === sem).length;
         totalUploadedPages += uploadedForSem;
     });
 
-    const raporPercent = totalExpectedPages > 0 ? Math.round((totalUploadedPages / totalExpectedPages) * 100) : 0;
-    const missingRaporPages = totalExpectedPages - totalUploadedPages;
+    // Cap uploaded pages to max expected per semester to prevent over-100% bugs if user uploads extra
+    // Logic: we trust the simple count for monitoring purposes
+    const raporPercent = totalExpectedPages > 0 ? Math.min(100, Math.round((totalUploadedPages / totalExpectedPages) * 100)) : 100;
+    const missingRaporPages = Math.max(0, totalExpectedPages - totalUploadedPages);
 
     return {
         bioPercent,
@@ -57,7 +76,7 @@ const analyzeStudent = (student: Student) => {
         missingDocs,
         missingGradesSemesters,
         missingRaporPages,
-        expectedSemesters // Pass for display if needed
+        raporPageCount
     };
 };
 
@@ -107,7 +126,7 @@ const StudentDetailCard: React.FC<{ student: Student }> = ({ student }) => {
 
                 <div className={`p-4 rounded-lg border ${analysis.gradePercent === 100 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                     <div className="flex justify-between items-center mb-2">
-                        <h4 className="font-bold text-gray-700 flex items-center gap-2"><ClipboardList className="w-4 h-4" /> Nilai Siswa</h4>
+                        <h4 className="font-bold text-gray-700 flex items-center gap-2"><ClipboardList className="w-4 h-4" /> Nilai (6 Sem)</h4>
                         <span className="text-xs font-bold">{analysis.gradePercent}%</span>
                     </div>
                     {analysis.missingGradesSemesters.length > 0 ? (
@@ -124,7 +143,7 @@ const StudentDetailCard: React.FC<{ student: Student }> = ({ student }) => {
                     </div>
                     {analysis.missingDocs.length > 0 ? (
                         <ul className="list-disc pl-4 text-xs text-red-700">
-                            {analysis.missingDocs.map(d => <li key={d}>{d} Belum Ada</li>)}
+                            {analysis.missingDocs.map((d: any) => <li key={d}>{d} Belum Ada</li>)}
                         </ul>
                     ) : <div className="text-xs text-green-700 font-medium flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Lengkap</div>}
                 </div>
@@ -135,7 +154,7 @@ const StudentDetailCard: React.FC<{ student: Student }> = ({ student }) => {
                         <span className="text-xs font-bold">{analysis.raporPercent}%</span>
                     </div>
                     {analysis.missingRaporPages > 0 ? (
-                        <div className="text-xs text-red-700">Kurang {analysis.missingRaporPages} Halaman (Total)</div>
+                        <div className="text-xs text-red-700">Kurang {analysis.missingRaporPages} Halaman Total</div>
                     ) : <div className="text-xs text-green-700 font-medium flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Lengkap</div>}
                 </div>
             </div>
@@ -148,6 +167,10 @@ const MonitoringView: React.FC<MonitoringViewProps> = ({ students, userRole, log
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
   
+  // Force re-render to catch settings update
+  const [_, setTick] = useState(0);
+  useEffect(() => { setTick(t => t + 1) }, []);
+
   const uniqueClasses = Array.from(new Set(students.map(s => s.className))).sort();
 
   // Initialize selectedClass immediately
@@ -203,9 +226,9 @@ const MonitoringView: React.FC<MonitoringViewProps> = ({ students, userRole, log
                             <tr>
                                 <th className="px-6 py-4">Nama Siswa</th>
                                 <th className="px-6 py-4 text-center">Buku Induk</th>
-                                <th className="px-6 py-4 text-center">Nilai (Akumulasi)</th>
+                                <th className="px-6 py-4 text-center">Nilai (6 Sem)</th>
                                 <th className="px-6 py-4 text-center">Dokumen</th>
-                                <th className="px-6 py-4 text-center">Rapor (Total)</th>
+                                <th className="px-6 py-4 text-center">Rapor (S1-S6)</th>
                                 <th className="px-6 py-4 text-right">Detail</th>
                             </tr>
                         </thead>
@@ -248,21 +271,22 @@ const MonitoringView: React.FC<MonitoringViewProps> = ({ students, userRole, log
                                                                 ) : <span className="text-green-600 font-medium">Lengkap</span>}
                                                             </div>
                                                             <div>
-                                                                <p className="font-bold mb-1 text-gray-600">Nilai</p>
+                                                                <p className="font-bold mb-1 text-gray-600">Nilai (6 Semester)</p>
                                                                 {analysis.missingGradesSemesters.length > 0 ? (
                                                                     <ul className="list-disc pl-4 text-red-600">{analysis.missingGradesSemesters.map(s => <li key={s}>Semester {s}</li>)}</ul>
                                                                 ) : <span className="text-green-600 font-medium">Lengkap</span>}
                                                             </div>
                                                             <div>
-                                                                <p className="font-bold mb-1 text-gray-600">Dokumen</p>
+                                                                <p className="font-bold mb-1 text-gray-600">Dokumen Wajib</p>
                                                                 {analysis.missingDocs.length > 0 ? (
-                                                                    <ul className="list-disc pl-4 text-red-600">{analysis.missingDocs.map(d => <li key={d}>{d}</li>)}</ul>
+                                                                    <ul className="list-disc pl-4 text-red-600">{analysis.missingDocs.map((d: any) => <li key={d}>{d}</li>)}</ul>
                                                                 ) : <span className="text-green-600 font-medium">Lengkap</span>}
                                                             </div>
                                                             <div>
                                                                 <p className="font-bold mb-1 text-gray-600">Rapor (S1-S6)</p>
+                                                                <p className="text-gray-500 mb-1">Target: {analysis.raporPageCount * 6} Halaman Total</p>
                                                                 {analysis.missingRaporPages > 0 ? (
-                                                                    <span className="text-red-600">Kurang {analysis.missingRaporPages} Halaman (Total)</span>
+                                                                    <span className="text-red-600">Kurang {analysis.missingRaporPages} Halaman</span>
                                                                 ) : <span className="text-green-600 font-medium">Lengkap</span>}
                                                             </div>
                                                         </div>

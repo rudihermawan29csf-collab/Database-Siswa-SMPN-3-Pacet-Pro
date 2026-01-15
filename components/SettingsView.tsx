@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, School, Calendar, Users, Lock, Check, UploadCloud, Loader2, BookOpen, Plus, Trash2, LayoutList, Calculator, Pencil, X, Eye, EyeOff, RefreshCw, Cloud } from 'lucide-react';
+import { Save, School, Calendar, Users, Lock, Check, UploadCloud, Loader2, BookOpen, Plus, Trash2, LayoutList, Calculator, Pencil, X, Eye, EyeOff, RefreshCw, Cloud, FileText, FolderOpen } from 'lucide-react';
 import { api } from '../services/api';
 import { MOCK_STUDENTS } from '../services/mockData';
 
@@ -29,8 +29,20 @@ const SUBJECT_MAP_CONFIG = [
     { key: 'Bahasa Jawa', label: 'B.JAWA', full: 'Bahasa Jawa' },
 ];
 
+const MASTER_DOC_LIST = [
+    { id: 'IJAZAH', label: 'Ijazah SD', desc: 'Ijazah Asli' },
+    { id: 'AKTA', label: 'Akta Kelahiran', desc: 'Scan Asli' },
+    { id: 'KK', label: 'Kartu Keluarga', desc: 'Terbaru' },
+    { id: 'KTP_AYAH', label: 'KTP Ayah', desc: 'Scan KTP' },
+    { id: 'KTP_IBU', label: 'KTP Ibu', desc: 'Scan KTP' },
+    { id: 'FOTO', label: 'Pas Foto', desc: '3x4 Warna' },
+    { id: 'KARTU_PELAJAR', label: 'Kartu Pelajar', desc: 'Depan Belakang' },
+    { id: 'KIP', label: 'KIP / PKH', desc: 'Jika ada' },
+    { id: 'SKL', label: 'SKL', desc: 'Surat Ket Lulus' },
+];
+
 const SettingsView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'IDENTITY' | 'ACADEMIC' | 'USERS' | 'KELAS' | 'P5' | 'REKAP'>('IDENTITY');
+  const [activeTab, setActiveTab] = useState<'IDENTITY' | 'ACADEMIC' | 'USERS' | 'KELAS' | 'P5' | 'REKAP' | 'DOCS'>('IDENTITY');
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSavingUsers, setIsSavingUsers] = useState(false);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
@@ -91,6 +103,10 @@ const SettingsView: React.FC = () => {
   // --- REKAP 5 SEMESTER SETTINGS ---
   const [recapSubjects, setRecapSubjects] = useState<string[]>(SUBJECT_MAP_CONFIG.map(s => s.key));
 
+  // --- DOCS & RAPOR SETTINGS ---
+  const [docConfig, setDocConfig] = useState<string[]>(['IJAZAH', 'AKTA', 'KK', 'KTP_AYAH', 'KTP_IBU', 'FOTO']);
+  const [raporPageCount, setRaporPageCount] = useState<number>(3);
+
   // INITIAL LOAD FROM CLOUD
   useEffect(() => {
       const initSettings = async () => {
@@ -103,7 +119,6 @@ const SettingsView: React.FC = () => {
                   
                   if (cloudSettings.academicData) {
                       const ad = cloudSettings.academicData;
-                      // Ensure robust fallback for deep objects
                       if (!ad.semesterYears) ad.semesterYears = { 1: ad.year, 2: ad.year, 3: ad.year, 4: ad.year, 5: ad.year, 6: ad.year };
                       if (!ad.semesterDates) ad.semesterDates = { 1: '', 2: '', 3: '', 4: '', 5: '', 6: '' };
                       setAcademicData(ad);
@@ -112,6 +127,10 @@ const SettingsView: React.FC = () => {
                   if (cloudSettings.classConfig) setClassConfig(cloudSettings.classConfig);
                   if (cloudSettings.p5Config) setP5Config(cloudSettings.p5Config);
                   if (cloudSettings.recapSubjects) setRecapSubjects(cloudSettings.recapSubjects);
+                  
+                  // Load Doc Config
+                  if (cloudSettings.docConfig) setDocConfig(cloudSettings.docConfig);
+                  if (cloudSettings.raporPageCount) setRaporPageCount(Number(cloudSettings.raporPageCount));
               }
 
               // 2. Fetch Users
@@ -124,7 +143,6 @@ const SettingsView: React.FC = () => {
 
           } catch (e) {
               console.error("Failed to load settings", e);
-              alert("Gagal mengambil pengaturan dari server. Menggunakan default.");
           } finally {
               setIsLoadingSettings(false);
               setIsLoadingUsers(false);
@@ -142,8 +160,15 @@ const SettingsView: React.FC = () => {
           academicData,
           classConfig,
           p5Config,
-          recapSubjects
+          recapSubjects,
+          docConfig,
+          raporPageCount
       };
+
+      // Also save to LocalStorage for immediate access in other components without refetching
+      localStorage.setItem('sys_recap_config', JSON.stringify(recapSubjects));
+      localStorage.setItem('sys_doc_config', JSON.stringify(docConfig));
+      localStorage.setItem('sys_rapor_config', String(raporPageCount));
 
       const success = await api.saveAppSettings(settingsPayload);
       setIsSavingSettings(false);
@@ -220,6 +245,14 @@ const SettingsView: React.FC = () => {
           setRecapSubjects(prev => prev.filter(k => k !== key));
       } else {
           setRecapSubjects(prev => [...prev, key]);
+      }
+  };
+
+  const toggleDocConfig = (id: string) => {
+      if (docConfig.includes(id)) {
+          setDocConfig(prev => prev.filter(d => d !== id));
+      } else {
+          setDocConfig(prev => [...prev, id]);
       }
   };
 
@@ -319,13 +352,14 @@ const SettingsView: React.FC = () => {
                 <TabButton id="IDENTITY" label="Identitas Sekolah" icon={School} />
                 <TabButton id="ACADEMIC" label="Tahun Ajaran" icon={Calendar} />
                 <TabButton id="KELAS" label="Data Kelas & Wali" icon={BookOpen} />
+                <TabButton id="DOCS" label="Dokumen & Rapor" icon={FolderOpen} />
                 <TabButton id="P5" label="Setting P5" icon={LayoutList} />
                 <TabButton id="REKAP" label="Rekap 5 Semester" icon={Calculator} />
                 <TabButton id="USERS" label="Manajemen User" icon={Users} />
             </div>
 
             <div className="p-6 flex-1 overflow-auto bg-gray-50/50 pb-32">
-                {/* ... (IDENTITY, ACADEMIC, KELAS, P5, REKAP tabs remain unchanged) ... */}
+                
                 {activeTab === 'IDENTITY' && (
                     <div className="max-w-2xl space-y-4 bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
                         <div className="grid grid-cols-2 gap-4">
@@ -364,7 +398,6 @@ const SettingsView: React.FC = () => {
                              <p className="text-sm text-blue-800">Pengaturan ini akan ditampilkan pada kop/header Rapor Nilai siswa sesuai dengan semester yang dipilih.</p>
                          </div>
                          
-                         {/* SETTING TAHUN PELAJARAN */}
                          <div className="border-b pb-4 mb-4">
                             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Setting Tahun Pelajaran per Semester</label>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -389,7 +422,6 @@ const SettingsView: React.FC = () => {
                             </div>
                          </div>
 
-                         {/* SETTING TANGGAL RAPOR */}
                          <div className="border-b pb-4 mb-4">
                             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Setting Tanggal Rapor per Semester</label>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -499,8 +531,60 @@ const SettingsView: React.FC = () => {
                     </div>
                 )}
 
+                {activeTab === 'DOCS' && (
+                    <div className="max-w-4xl space-y-6">
+                        <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+                            <h3 className="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center gap-2">
+                                <FileText className="w-5 h-5 text-blue-600" />
+                                Setting Halaman Rapor
+                            </h3>
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-semibold text-gray-700">Jumlah Halaman Rapor per Semester yang Wajib Diupload:</label>
+                                <div className="flex items-center gap-3">
+                                    <input 
+                                        type="number" 
+                                        min="1" 
+                                        max="20"
+                                        className="w-24 p-2 border border-gray-300 rounded-lg text-center font-bold"
+                                        value={raporPageCount} 
+                                        onChange={e => setRaporPageCount(Math.max(1, Number(e.target.value)))}
+                                    />
+                                    <span className="text-sm text-gray-500">Halaman / Semester</span>
+                                </div>
+                                <p className="text-xs text-gray-400 mt-1">Siswa akan melihat sejumlah slot upload sesuai angka ini untuk setiap semester (1-6).</p>
+                            </div>
+                        </div>
+
+                        <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+                            <h3 className="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center gap-2">
+                                <FolderOpen className="w-5 h-5 text-orange-600" />
+                                Setting Dokumen Persyaratan
+                            </h3>
+                            <p className="text-sm text-gray-600 mb-4">Pilih dokumen apa saja yang <span className="font-bold">WAJIB</span> diupload oleh siswa dan ditampilkan di menu Dokumen.</p>
+                            
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                {MASTER_DOC_LIST.map(doc => (
+                                    <label key={doc.id} className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-all ${docConfig.includes(doc.id) ? 'bg-orange-50 border-orange-200 shadow-sm' : 'bg-white hover:bg-gray-50'}`}>
+                                        <input 
+                                            type="checkbox" 
+                                            className="w-5 h-5 text-orange-600 rounded mt-0.5 focus:ring-orange-500"
+                                            checked={docConfig.includes(doc.id)}
+                                            onChange={() => toggleDocConfig(doc.id)}
+                                        />
+                                        <div className="flex flex-col">
+                                            <span className="text-sm font-bold text-gray-800">{doc.label}</span>
+                                            <span className="text-[10px] text-gray-500">{doc.desc}</span>
+                                        </div>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {activeTab === 'P5' && (
                     <div className="space-y-4">
+                        {/* P5 Logic kept same as before */}
                         <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm flex flex-col md:flex-row gap-4 items-center">
                             <div className="flex flex-col gap-1 w-full md:w-auto">
                                 <span className="text-xs font-bold text-gray-500 uppercase">Tahun Pelajaran (Manual)</span>

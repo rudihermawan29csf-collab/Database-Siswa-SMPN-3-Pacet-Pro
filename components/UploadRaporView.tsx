@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { Student, DocumentFile } from '../types';
 import { UploadCloud, CheckCircle2, Eye, Trash2, AlertCircle, FileText, Image as ImageIcon, X, Lock, RefreshCw } from 'lucide-react';
 
@@ -8,13 +8,22 @@ interface UploadRaporViewProps {
 }
 
 const SEMESTERS = [1, 2, 3, 4, 5, 6];
-// UPDATED: Changed from 5 to 3 pages
-const PAGES_PER_SEMESTER = [1, 2, 3];
 
 const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) => {
   const [activeSemester, setActiveSemester] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [stagingPage, setStagingPage] = useState<number | null>(null);
+
+  // Dynamic Page Count from Settings
+  const pagesPerSemester = useMemo(() => {
+      try {
+          const savedCount = localStorage.getItem('sys_rapor_config');
+          const count = savedCount ? parseInt(savedCount) : 3;
+          return Array.from({length: count}, (_, i) => i + 1);
+      } catch {
+          return [1, 2, 3];
+      }
+  }, []);
 
   const getRaporDoc = (semester: number, page: number) => {
       return student.documents.find(d => 
@@ -95,13 +104,13 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
         <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
             <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <UploadCloud className="w-5 h-5 text-blue-600" />
-                Upload Dokumen Rapor (3 Halaman / Semester)
+                Upload Dokumen Rapor ({pagesPerSemester.length} Halaman / Semester)
             </h2>
             <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                 {SEMESTERS.map(sem => {
-                    const uploadedCount = PAGES_PER_SEMESTER.filter(p => getRaporDoc(sem, p)).length;
-                    const isComplete = uploadedCount === 3;
-                    const hasRevision = PAGES_PER_SEMESTER.some(p => getRaporDoc(sem, p)?.status === 'REVISION');
+                    const uploadedCount = pagesPerSemester.filter(p => getRaporDoc(sem, p)).length;
+                    const isComplete = uploadedCount === pagesPerSemester.length;
+                    const hasRevision = pagesPerSemester.some(p => getRaporDoc(sem, p)?.status === 'REVISION');
 
                     return (
                         <button
@@ -125,7 +134,7 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
                                 {isComplete ? (
                                     <span className="text-green-600 font-bold flex items-center gap-0.5"><CheckCircle2 className="w-3 h-3" /> Lengkap</span>
                                 ) : (
-                                    <span className="text-gray-400">{uploadedCount}/3 Hal</span>
+                                    <span className="text-gray-400">{uploadedCount}/{pagesPerSemester.length} Hal</span>
                                 )}
                             </div>
                         </button>
@@ -141,8 +150,8 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
                 <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Pastikan foto jelas dan terbaca</span>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-                {PAGES_PER_SEMESTER.map(page => {
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
+                {pagesPerSemester.map(page => {
                     const doc = getRaporDoc(activeSemester, page);
                     const isApproved = doc?.status === 'APPROVED';
                     const isRevision = doc?.status === 'REVISION';

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Student } from '../types';
 import { Search, FileSpreadsheet, FileText, Calculator } from 'lucide-react';
+import { api } from '../services/api';
 
 interface RecapViewProps {
   students: Student[];
@@ -30,18 +31,34 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
   ];
 
   useEffect(() => {
-      // Load Config from Settings with Safety Check
-      const savedRecapConfig = localStorage.getItem('sys_recap_config');
-      if (savedRecapConfig) {
+      const initConfig = async () => {
+          // 1. Try fetching from Cloud Settings first for most up-to-date config
           try {
-              setSelected5SemSubjects(JSON.parse(savedRecapConfig));
+              const settings = await api.getAppSettings();
+              if (settings && settings.recapSubjects && Array.isArray(settings.recapSubjects) && settings.recapSubjects.length > 0) {
+                  setSelected5SemSubjects(settings.recapSubjects);
+                  return;
+              }
           } catch (e) {
-              console.error("Failed to parse recap config, using default", e);
+              console.warn("Could not fetch cloud settings for recap, falling back to local/default");
+          }
+
+          // 2. Fallback to LocalStorage if Cloud fails or empty
+          const savedRecapConfig = localStorage.getItem('sys_recap_config');
+          if (savedRecapConfig) {
+              try {
+                  setSelected5SemSubjects(JSON.parse(savedRecapConfig));
+              } catch (e) {
+                  console.error("Failed to parse local recap config, using default", e);
+                  setSelected5SemSubjects(SUBJECT_MAP.map(s => s.key));
+              }
+          } else {
+              // 3. Default to ALL subjects if nothing configured
               setSelected5SemSubjects(SUBJECT_MAP.map(s => s.key));
           }
-      } else {
-          setSelected5SemSubjects(SUBJECT_MAP.map(s => s.key));
-      }
+      };
+
+      initConfig();
   }, []);
 
   const effectiveStudents = (userRole === 'STUDENT' && loggedInStudent) ? [loggedInStudent] : students;
@@ -55,7 +72,17 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
   const getScore = (s: Student, subjKey: string, sem: number) => {
       const record = s.academicRecords?.[sem];
       if (!record) return 0;
-      const subj = record.subjects.find(sub => sub.subject.startsWith(subjKey) || (subjKey === 'PAI' && sub.subject.includes('Agama')));
+      const mapItem = SUBJECT_MAP.find(m => m.key === subjKey);
+      
+      const subj = record.subjects.find(sub => {
+           if (mapItem) {
+               return sub.subject === mapItem.full || 
+                      sub.subject === mapItem.key ||
+                      sub.subject.startsWith(mapItem.key) || 
+                      (mapItem.key === 'PAI' && sub.subject.includes('Agama'));
+           }
+           return sub.subject.startsWith(subjKey);
+      });
       return subj ? subj.score : 0;
   };
 

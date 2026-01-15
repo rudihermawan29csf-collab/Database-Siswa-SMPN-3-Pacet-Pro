@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import { FileText, Image as ImageIcon, Download, Eye, Plus, Trash2, FolderOpen, AlertCircle, CheckCircle2, UploadCloud, X, Save, RefreshCw, AlertTriangle } from 'lucide-react';
 import { DocumentFile } from '../types';
 
@@ -9,16 +9,16 @@ interface FileManagerProps {
   highlightDocumentId?: string; // New prop for visual highlighting
 }
 
-// SKL Removed from list
-const REQUIRED_DOCS = [
-  { id: 'IJAZAH', label: 'Ijazah SD', required: true, desc: 'PDF/JPG' },
-  { id: 'AKTA', label: 'Akta Kelahiran', required: true, desc: 'Scan Asli' },
-  { id: 'KK', label: 'Kartu Keluarga', required: true, desc: 'Terbaru' },
-  { id: 'KTP_AYAH', label: 'KTP Ayah', required: true, desc: 'Scan' },
-  { id: 'KTP_IBU', label: 'KTP Ibu', required: true, desc: 'Scan' },
-  { id: 'FOTO', label: 'Pas Foto Siswa', required: true, desc: '3x4 Warna' },
-  { id: 'KARTU_PELAJAR', label: 'Kartu Pelajar', required: true, desc: 'Depan Belakang' },
-  { id: 'KIP', label: 'KIP / PKH', required: false, desc: 'Jika ada' },
+const MASTER_DOC_LIST = [
+    { id: 'IJAZAH', label: 'Ijazah SD', desc: 'PDF/JPG' },
+    { id: 'AKTA', label: 'Akta Kelahiran', desc: 'Scan Asli' },
+    { id: 'KK', label: 'Kartu Keluarga', desc: 'Terbaru' },
+    { id: 'KTP_AYAH', label: 'KTP Ayah', desc: 'Scan' },
+    { id: 'KTP_IBU', label: 'KTP Ibu', desc: 'Scan' },
+    { id: 'FOTO', label: 'Pas Foto Siswa', desc: '3x4 Warna' },
+    { id: 'KARTU_PELAJAR', label: 'Kartu Pelajar', desc: 'Depan Belakang' },
+    { id: 'KIP', label: 'KIP / PKH', desc: 'Jika ada' },
+    { id: 'SKL', label: 'SKL', desc: 'Surat Ket. Lulus' },
 ];
 
 const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete, highlightDocumentId }) => {
@@ -27,6 +27,17 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
   
   // Staging State for Confirmation Modal
   const [stagingFile, setStagingFile] = useState<File | null>(null);
+
+  // Dynamic Docs from Settings
+  const activeDocs = useMemo(() => {
+      try {
+          const savedConfig = localStorage.getItem('sys_doc_config');
+          const configIds = savedConfig ? JSON.parse(savedConfig) : ['IJAZAH', 'AKTA', 'KK', 'KTP_AYAH', 'KTP_IBU', 'FOTO'];
+          return MASTER_DOC_LIST.filter(d => configIds.includes(d.id));
+      } catch {
+          return MASTER_DOC_LIST.slice(0, 6);
+      }
+  }, []);
 
   const getIcon = (type: string) => {
     if (type === 'PDF') return <FileText className="w-10 h-10 text-red-500" />;
@@ -46,9 +57,9 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
   const getFileByCategory = (category: string) => documents.find(d => d.category === category);
 
   // Calculate stats
-  const requiredCount = REQUIRED_DOCS.filter(d => d.required).length;
-  const uploadedRequiredCount = REQUIRED_DOCS.filter(d => d.required && getFileByCategory(d.id)).length;
-  const completeness = Math.round((uploadedRequiredCount / requiredCount) * 100);
+  const requiredCount = activeDocs.length;
+  const uploadedRequiredCount = activeDocs.filter(d => getFileByCategory(d.id)).length;
+  const completeness = requiredCount > 0 ? Math.round((uploadedRequiredCount / requiredCount) * 100) : 100;
 
   const handleUploadTrigger = (category: string) => {
     setTargetCategory(category);
@@ -89,7 +100,7 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
                           <UploadCloud className="w-8 h-8 text-blue-600" />
                       </div>
                       <h3 className="text-lg font-bold text-gray-900 mb-1">Konfirmasi Upload</h3>
-                      <p className="text-sm text-gray-500 mb-6">Anda akan mengunggah dokumen untuk kategori <span className="font-bold text-blue-600">{REQUIRED_DOCS.find(r => r.id === targetCategory)?.label || targetCategory}</span></p>
+                      <p className="text-sm text-gray-500 mb-6">Anda akan mengunggah dokumen untuk kategori <span className="font-bold text-blue-600">{MASTER_DOC_LIST.find(r => r.id === targetCategory)?.label || targetCategory}</span></p>
                       
                       <div className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 flex items-center gap-3 mb-6">
                           {stagingFile.type.includes('pdf') ? <FileText className="w-8 h-8 text-red-500" /> : <ImageIcon className="w-8 h-8 text-blue-500" />}
@@ -150,7 +161,7 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
             
             {/* Render Required Slots First */}
-            {REQUIRED_DOCS.map((req) => {
+            {activeDocs.map((req) => {
                 const doc = getFileByCategory(req.id);
                 const isHighlighted = doc && highlightDocumentId === doc.id;
                 
@@ -215,16 +226,14 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
                             </div>
                             <span className="text-sm font-medium text-gray-600 group-hover:text-blue-600 text-center">{req.label}</span>
                             <span className="text-xs text-gray-400 text-center mt-1">{req.desc}</span>
-                            {req.required && (
-                                <span className="mt-2 px-2 py-0.5 bg-red-100 text-red-600 text-[10px] font-bold rounded-full uppercase tracking-wider">Wajib</span>
-                            )}
+                            <span className="mt-2 px-2 py-0.5 bg-red-100 text-red-600 text-[10px] font-bold rounded-full uppercase tracking-wider">Wajib</span>
                          </div>
                     );
                 }
             })}
 
-            {/* Render 'Others' */}
-            {documents.filter(d => !REQUIRED_DOCS.find(r => r.id === d.category)).map((doc) => {
+            {/* Render 'Others' - Dynamic */}
+            {documents.filter(d => !activeDocs.find(r => r.id === d.category)).map((doc) => {
                 const isHighlighted = highlightDocumentId === doc.id;
                 return (
                     <div 
@@ -270,7 +279,6 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
                                 <button className="w-full px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold border border-blue-200 hover:bg-blue-100 flex items-center justify-center" title="Preview">
                                     <Eye className="w-3 h-3 mr-1" /> Lihat
                                 </button>
-                                {/* For Custom docs, we don't have a category trigger so easily, but simplified here */}
                             </div>
                     </div>
                 );
