@@ -15,7 +15,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
-  const [importStats, setImportStats] = useState<{ success: number; total: number } | null>(null);
+  const [importStats, setImportStats] = useState<{ success: number; total: number; skipped: number } | null>(null);
 
   // Sync with parent state when it changes
   useEffect(() => {
@@ -77,8 +77,11 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
               
               setImportProgress(50);
 
+              // 1. Identify Existing NISNs for deduplication
+              const existingNisns = new Set(localStudents.map(s => String(s.nisn).trim()));
+
               // Process Data dengan Mapping Lengkap & Robust Key Handling
-              const newStudents: Student[] = data.map((rawRow: any) => {
+              const processedStudents: Student[] = data.map((rawRow: any) => {
                   // Normalize Keys (Trim spaces & Handle variasi nama kolom)
                   const row: any = {};
                   Object.keys(rawRow).forEach(k => row[k.trim()] = rawRow[k]);
@@ -200,17 +203,27 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
                   };
               });
 
+              // 2. Filter out Duplicates (Only keep new NISNs)
+              const newUniqueStudents = processedStudents.filter(s => {
+                  const nisn = String(s.nisn).trim();
+                  return nisn && !existingNisns.has(nisn);
+              });
+
+              const skippedCount = processedStudents.length - newUniqueStudents.length;
+
               // UPDATE STATE & NOTIFY PARENT & SAVE TO CLOUD
               setTimeout(() => {
-                  const updatedList = [...localStudents, ...newStudents];
+                  const updatedList = [...localStudents, ...newUniqueStudents];
                   setLocalStudents(updatedList);
                   onUpdateStudents(updatedList); // Update Parent/Global State
                   
                   // Persist to Cloud
-                  api.updateStudentsBulk(newStudents).catch(err => console.error("Cloud sync failed", err));
+                  if (newUniqueStudents.length > 0) {
+                      api.updateStudentsBulk(newUniqueStudents).catch(err => console.error("Cloud sync failed", err));
+                  }
 
                   setImportProgress(100);
-                  setImportStats({ success: newStudents.length, total: newStudents.length });
+                  setImportStats({ success: newUniqueStudents.length, total: processedStudents.length, skipped: skippedCount });
               }, 500);
 
           } catch (error: any) {
@@ -237,6 +250,12 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
   const handleAddStudent = () => {
       if (!newStudent.fullName || !newStudent.nisn) {
           alert("Nama dan NISN wajib diisi!");
+          return;
+      }
+
+      // Check Duplicate NISN
+      if (localStudents.some(s => s.nisn === newStudent.nisn)) {
+          alert("Gagal: NISN ini sudah terdaftar di database.");
           return;
       }
 
@@ -368,6 +387,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
                             <div className="bg-green-50 p-4 rounded w-full text-center my-4 border border-green-100">
                                 <p className="text-2xl font-bold text-green-700">{importStats.success} Data</p>
                                 <p className="text-xs text-gray-500">Telah ditambahkan.</p>
+                                {importStats.skipped > 0 && <p className="text-xs text-red-500 mt-1">({importStats.skipped} Data Duplikat Dilewati)</p>}
                             </div>
                             <button onClick={() => setIsImporting(false)} className="w-full py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700">
                                 Tutup

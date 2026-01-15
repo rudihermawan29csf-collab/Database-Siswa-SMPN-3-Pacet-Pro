@@ -63,8 +63,21 @@ const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
 
   const studentsInClass = useMemo(() => {
     if (!selectedClass) return [];
-    return students
-        .filter(s => s.className === selectedClass)
+    
+    // Filter by Class
+    const filtered = students.filter(s => s.className === selectedClass);
+
+    // DEDUPLICATE Logic: Ensure unique students by NISN to prevent double names
+    const uniqueStudents = new Map();
+    filtered.forEach(s => {
+        // Use NISN as unique key, fallback to Name if NISN missing
+        const key = s.nisn ? s.nisn : s.fullName;
+        if (!uniqueStudents.has(key)) {
+            uniqueStudents.set(key, s);
+        }
+    });
+
+    return Array.from(uniqueStudents.values())
         .sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [selectedClass, students]);
 
@@ -113,15 +126,16 @@ const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-cover bg-center font-sans text-gray-800 transition-all duration-500"
+    // Updated Layout: Changed from items-center to py-10 with scrolling to fix laptop overlap issues
+    <div className="min-h-screen w-full flex flex-col items-center justify-center bg-cover bg-center font-sans text-gray-800 transition-all duration-500 overflow-y-auto py-10 px-4"
          style={{ backgroundImage: `url('https://4kwallpapers.com/images/wallpapers/macos-big-sur-apple-layers-fluidic-colorful-wwdc-stock-3840x2160-1455.jpg')` }}
     >
-      <div className="absolute inset-0 bg-black/10 backdrop-blur-[2px]"></div>
+      <div className="absolute inset-0 bg-black/10 backdrop-blur-[2px] fixed"></div>
       
-      <div className="relative w-full max-w-[900px] h-auto md:h-[550px] flex flex-col md:flex-row rounded-3xl shadow-2xl overflow-hidden animate-fade-in mx-4">
+      <div className="relative w-full max-w-[900px] h-auto flex flex-col md:flex-row rounded-3xl shadow-2xl overflow-hidden animate-fade-in z-10 my-auto">
         
         {/* Left Side */}
-        <div className="w-full md:w-5/12 bg-white/20 backdrop-blur-xl border-r border-white/20 p-8 flex flex-col justify-between text-white relative overflow-hidden">
+        <div className="w-full md:w-5/12 bg-white/20 backdrop-blur-xl border-r border-white/20 p-8 flex flex-col justify-between text-white relative overflow-hidden min-h-[300px] md:min-h-[550px]">
             <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-blue-500/30 to-purple-500/30 z-0"></div>
             <div className="relative z-10">
                 <div className="flex items-center gap-2 mb-6">
@@ -141,14 +155,14 @@ const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
                 <p className="text-[10px] text-white/60 uppercase tracking-widest font-bold mb-2">Versi Aplikasi</p>
                 <div className="flex items-center gap-2 bg-black/20 p-2 rounded-lg w-fit backdrop-blur-sm">
                     <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-                    <span className="text-xs font-mono">v2.1 macOS UI</span>
+                    <span className="text-xs font-mono">v2.2 Patched</span>
                 </div>
             </div>
         </div>
 
         {/* Right Side: Login Form */}
-        <div className="w-full md:w-7/12 bg-white/70 backdrop-blur-3xl p-8 md:p-12 flex flex-col justify-center relative">
-            <div className="absolute top-6 right-6">
+        <div className="w-full md:w-7/12 bg-white/80 backdrop-blur-3xl p-8 md:p-12 flex flex-col justify-center relative">
+            <div className="flex justify-end mb-6 md:absolute md:top-6 md:right-6">
                 <div className="bg-gray-200/50 p-1 rounded-lg flex shadow-inner gap-1">
                     <button onClick={() => { setLoginMode('ADMIN'); setError(''); }} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${loginMode === 'ADMIN' ? 'bg-white shadow text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>Admin</button>
                     <button onClick={() => { setLoginMode('GURU'); setError(''); }} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${loginMode === 'GURU' ? 'bg-white shadow text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>Guru</button>
@@ -156,7 +170,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
                 </div>
             </div>
 
-            <h2 className="text-2xl font-bold text-gray-800 mb-1 mt-8 md:mt-0">
+            <h2 className="text-2xl font-bold text-gray-800 mb-1 mt-0">
                 {loginMode === 'ADMIN' ? 'Login Admin' : loginMode === 'GURU' ? 'Login Guru' : 'Halo Siswa'}
             </h2>
             <p className="text-gray-500 text-sm mb-8">Silakan masuk untuk melanjutkan.</p>
