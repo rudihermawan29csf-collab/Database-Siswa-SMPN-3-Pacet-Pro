@@ -47,9 +47,10 @@ const ReportsView: React.FC<ReportsViewProps> = ({ students, onUpdate }) => {
       const missingDocs = REQUIRED_DOCS_ID.filter(id => !student.documents.find(d => d.category === id));
       const docPercent = Math.round(((REQUIRED_DOCS_ID.length - missingDocs.length) / REQUIRED_DOCS_ID.length) * 100);
 
-      // 4. Rapor (Dynamic Semester, 5 pages)
+      // 4. Rapor (Dynamic Semester, 3 pages)
       const uploadedPages = student.documents.filter(d => d.category === 'RAPOR' && d.subType?.semester === selectedSemester).length;
-      const raporPercent = Math.round((uploadedPages / 5) * 100);
+      // Denominator updated to 3
+      const raporPercent = Math.round((uploadedPages / 3) * 100);
 
       return {
           bioPercent,
@@ -58,7 +59,7 @@ const ReportsView: React.FC<ReportsViewProps> = ({ students, onUpdate }) => {
           raporPercent,
           missingBioFields,
           missingDocs,
-          missingRaporPages: 5 - uploadedPages
+          missingRaporPages: 3 - uploadedPages
       };
   };
 

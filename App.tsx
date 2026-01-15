@@ -447,7 +447,7 @@ const App: React.FC = () => {
   };
 
   return (
-    // ROOT: min-h-screen allows scroll. Padding top added for safe area on all devices.
+    // ROOT: min-h-screen allows scroll. Padding top significantly increased for safe area.
     <div 
         className="flex min-h-screen font-sans text-gray-900 bg-cover bg-center transition-all duration-700 pb-10"
         style={{ backgroundImage: `url('https://4kwallpapers.com/images/wallpapers/macos-big-sur-apple-layers-fluidic-colorful-wwdc-stock-3840x2160-1455.jpg')` }}
@@ -462,8 +462,8 @@ const App: React.FC = () => {
           </button>
       </div>
 
-      {/* MAIN CONTAINER: Padded top to avoid browser address bar overlap */}
-      <div className="relative z-10 flex flex-col md:flex-row w-full pt-16 md:pt-16 md:px-6 md:pb-6 gap-4">
+      {/* MAIN CONTAINER: Increased top padding (pt-24 to pt-28) to clear browser tabs */}
+      <div className="relative z-10 flex flex-col md:flex-row w-full pt-24 md:pt-28 md:px-6 md:pb-6 gap-4">
         
         {/* SIDEBAR: Sticky on Desktop, Toggle on Mobile */}
         <div className={`
@@ -471,7 +471,7 @@ const App: React.FC = () => {
             ${isMobileMenuOpen ? 'block' : 'hidden md:block'}
         `}>
             <div className={`
-                h-full md:h-auto md:sticky md:top-20
+                h-full md:h-auto md:sticky md:top-28
                 ${isMobileMenuOpen ? 'w-64 bg-gray-900 absolute top-0 left-0 bottom-0 shadow-2xl p-4' : ''}
             `}>
                 <Sidebar 

@@ -112,11 +112,19 @@ const Dashboard: React.FC<DashboardProps> = ({ notifications = [], onNotificatio
     ).length;
     const biPercentage = Math.round((biCompleteCount / total) * 100);
 
-    // 2. Kelengkapan Nilai (Semester 1 assumed as current active)
-    const gradesCompleteCount = filteredStudents.filter(s => 
-        s.academicRecords && s.academicRecords[1] && s.academicRecords[1].subjects.length > 0
-    ).length;
-    const gradesPercentage = Math.round((gradesCompleteCount / total) * 100);
+    // 2. Kelengkapan Nilai (Semester 1 - 6)
+    // Counts total filled semester slots across all students
+    let totalFilledSemesters = 0;
+    const totalPossibleSemesters = total * 6; // 6 semesters per student
+
+    filteredStudents.forEach(s => {
+        for(let i=1; i<=6; i++) {
+            if (s.academicRecords && s.academicRecords[i] && s.academicRecords[i].subjects.length > 0) {
+                totalFilledSemesters++;
+            }
+        }
+    });
+    const gradesPercentage = Math.round((totalFilledSemesters / totalPossibleSemesters) * 100);
 
     // 3. Kelengkapan Dokumen (Wajib: KK, Akta, Ijazah)
     const docsCompleteCount = filteredStudents.filter(s => {
@@ -127,11 +135,17 @@ const Dashboard: React.FC<DashboardProps> = ({ notifications = [], onNotificatio
     }).length;
     const docsPercentage = Math.round((docsCompleteCount / total) * 100);
 
-    // 4. Kelengkapan Rapor (Uploaded Rapor for Semester 1)
-    const raporCompleteCount = filteredStudents.filter(s => 
-        s.documents.some(d => d.category === 'RAPOR' && d.subType?.semester === 1)
-    ).length;
-    const raporPercentage = Math.round((raporCompleteCount / total) * 100);
+    // 4. Kelengkapan Rapor (Semester 1 - 6, 3 Pages each)
+    // Counts total uploaded pages across all students and semesters
+    let totalUploadedPages = 0;
+    const totalPossiblePages = total * 6 * 3; // 6 semesters * 3 pages per semester
+
+    filteredStudents.forEach(s => {
+        const raporDocs = s.documents.filter(d => d.category === 'RAPOR');
+        totalUploadedPages += raporDocs.length;
+    });
+    
+    const raporPercentage = Math.round((totalUploadedPages / totalPossiblePages) * 100);
 
     return {
         biPercentage,
@@ -200,9 +214,9 @@ const Dashboard: React.FC<DashboardProps> = ({ notifications = [], onNotificatio
                 color="bg-purple-500" 
              />
              <StatCard 
-                title="Kelengkapan Nilai (S1)" 
+                title="Kelengkapan Nilai" 
                 value={`${stats.gradesPercentage}%`} 
-                subtext="Input Nilai Guru"
+                subtext="Input Nilai Semester 1-6"
                 icon={<ClipboardList />} 
                 color="bg-green-500" 
              />
@@ -216,7 +230,7 @@ const Dashboard: React.FC<DashboardProps> = ({ notifications = [], onNotificatio
              <StatCard 
                 title="Kelengkapan Upload Rapor" 
                 value={`${stats.raporPercentage}%`} 
-                subtext="Scan Rapor S1"
+                subtext="Scan Rapor S1-S6 (3 Hal/Sem)"
                 icon={<FileCheck />} 
                 color="bg-blue-500" 
              />

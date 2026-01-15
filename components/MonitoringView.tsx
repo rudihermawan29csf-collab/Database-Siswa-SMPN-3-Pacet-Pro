@@ -36,8 +36,8 @@ const analyzeStudent = (student: Student) => {
     const docPercent = Math.round(((REQUIRED_DOCS_ID.length - missingDocs.length) / REQUIRED_DOCS_ID.length) * 100);
 
     // 4. Rapor Pages (Check ALL Semesters)
-    // Assumption: Each semester has 5 pages.
-    const totalExpectedPages = expectedSemesters.length * 5;
+    // Updated: Each semester has 3 pages.
+    const totalExpectedPages = expectedSemesters.length * 3;
     let totalUploadedPages = 0;
 
     expectedSemesters.forEach(sem => {
@@ -45,7 +45,7 @@ const analyzeStudent = (student: Student) => {
         totalUploadedPages += uploadedForSem;
     });
 
-    const raporPercent = Math.round((totalUploadedPages / totalExpectedPages) * 100);
+    const raporPercent = totalExpectedPages > 0 ? Math.round((totalUploadedPages / totalExpectedPages) * 100) : 0;
     const missingRaporPages = totalExpectedPages - totalUploadedPages;
 
     return {

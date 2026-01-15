@@ -3,7 +3,7 @@ import { Student, CorrectionRequest } from '../types';
 import { 
   CheckCircle2, FileText, Maximize2, AlertCircle, 
   ZoomIn, ZoomOut, Save, FileDown, FileSpreadsheet,
-  FileCheck2, Loader2, Pencil, Search, AlertTriangle, X, Filter
+  FileCheck2, Loader2, Pencil, Search, AlertTriangle, X, Filter, Image as ImageIcon
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -138,7 +138,11 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
     const loadPdf = async () => {
         setPdfDoc(null); setIsPdfLoading(false); setUseFallbackViewer(false);
         if (!currentDoc) return;
+        
+        // Handle Drive or Docs URLs first
         if (currentDoc.url.includes('drive.google.com') || currentDoc.url.includes('docs.google.com')) { setUseFallbackViewer(true); return; }
+        
+        // Ensure strictly checking for PDF types to attempt PDF loading
         if (currentDoc.type === 'PDF' || currentDoc.name.toLowerCase().endsWith('.pdf')) {
             setIsPdfLoading(true);
             try {
@@ -161,11 +165,19 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   const handleApproveDoc = async () => { 
       if (currentDoc && currentStudent) { 
           setIsSaving(true);
-          currentDoc.status = 'APPROVED'; 
-          currentDoc.adminNote = 'Valid.'; 
-          currentDoc.verifierName = currentUser?.name || 'Admin';
-          currentDoc.verifierRole = currentUser?.role || 'ADMIN';
-          currentDoc.verificationDate = new Date().toISOString().split('T')[0];
+          // Update immutable logic
+          const updatedDocs = currentStudent.documents.map(d => 
+              d.id === currentDoc.id 
+              ? {
+                  ...d,
+                  status: 'APPROVED' as const,
+                  adminNote: 'Valid.',
+                  verifierName: currentUser?.name || 'Admin',
+                  verifierRole: currentUser?.role || 'ADMIN',
+                  verificationDate: new Date().toISOString().split('T')[0]
+              } : d
+          );
+          currentStudent.documents = updatedDocs;
           
           await api.updateStudent(currentStudent);
           setIsSaving(false);
@@ -182,11 +194,18 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
               return;
           }
           setIsSaving(true);
-          currentDoc.status = 'REVISION'; 
-          currentDoc.adminNote = rejectionNote; 
-          currentDoc.verifierName = currentUser?.name || 'Admin';
-          currentDoc.verifierRole = currentUser?.role || 'ADMIN';
-          currentDoc.verificationDate = new Date().toISOString().split('T')[0];
+          const updatedDocs = currentStudent.documents.map(d => 
+              d.id === currentDoc.id 
+              ? {
+                  ...d,
+                  status: 'REVISION' as const,
+                  adminNote: rejectionNote,
+                  verifierName: currentUser?.name || 'Admin',
+                  verifierRole: currentUser?.role || 'ADMIN',
+                  verificationDate: new Date().toISOString().split('T')[0]
+              } : d
+          );
+          currentStudent.documents = updatedDocs;
           
           await api.updateStudent(currentStudent);
           setIsSaving(false);
@@ -544,7 +563,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
             {!isStudent && (
                 <div className={`flex flex-col bg-gray-800 rounded-xl overflow-hidden shadow-lg flex-1 transition-all ${layoutMode === 'full-doc' ? 'absolute inset-0 z-20' : ''}`}>
                      <div className="h-10 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-3 text-gray-300">
-                         <div className="flex items-center gap-2"><span className="text-xs font-bold text-white">Rapor S{activeSemester}</span><div className="flex bg-gray-700 rounded p-0.5">{[1, 2, 3, 4, 5].map(p => <button key={p} onClick={() => setActivePage(p)} className={`w-6 h-6 flex items-center justify-center text-[10px] rounded ${activePage === p ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>{p}</button>)}</div></div>
+                         <div className="flex items-center gap-2"><span className="text-xs font-bold text-white">Rapor S{activeSemester}</span><div className="flex bg-gray-700 rounded p-0.5">{[1, 2, 3].map(p => <button key={p} onClick={() => setActivePage(p)} className={`w-6 h-6 flex items-center justify-center text-[10px] rounded ${activePage === p ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>{p}</button>)}</div></div>
                          <div className="flex items-center gap-1"><button onClick={()=>setZoomLevel(z=>z-0.2)} className="p-1 hover:bg-gray-700 rounded"><ZoomOut className="w-3 h-3" /></button><span className="text-[10px]">{Math.round(zoomLevel*100)}%</span><button onClick={()=>setZoomLevel(z=>z+0.2)} className="p-1 hover:bg-gray-700 rounded"><ZoomIn className="w-3 h-3" /></button><button onClick={()=>setLayoutMode(m=>m==='full-doc'?'split':'full-doc')} className="p-1 hover:bg-gray-700 rounded ml-2"><Maximize2 className="w-3 h-3" /></button></div>
                      </div>
                      <div className="flex-1 overflow-auto p-4 bg-gray-900/50 flex items-start justify-center pb-32">
@@ -553,7 +572,17 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                                  {(useFallbackViewer || isDriveUrl) ? (
                                     <iframe src={getDriveUrl(currentDoc.url, 'preview')} className="w-full h-[800px] border-none bg-white rounded" title="Viewer" />
                                  ) : (
-                                    currentDoc.type === 'IMAGE' ? <img src={getDriveUrl(currentDoc.url, 'direct')} className="max-w-full h-auto rounded" /> : <div className="bg-white min-h-[600px] w-full max-w-[800px] flex items-center justify-center relative">{isPdfLoading ? <Loader2 className="animate-spin w-10 h-10 text-blue-500" /> : (pdfDoc ? <PDFPageCanvas pdf={pdfDoc} pageNum={1} scale={1.0} /> : <div className="text-red-500">PDF Viewer</div>)}</div>
+                                    (currentDoc.type === 'IMAGE' || currentDoc.name.match(/\.(jpeg|jpg|png|gif)$/i)) ? (
+                                        <img 
+                                            src={getDriveUrl(currentDoc.url, 'direct')} 
+                                            className="max-w-full h-auto rounded shadow-sm" 
+                                            alt="Doc"
+                                        />
+                                    ) : (
+                                        <div className="bg-white min-h-[600px] w-full max-w-[800px] flex items-center justify-center relative">
+                                            {isPdfLoading ? <Loader2 className="animate-spin w-10 h-10 text-blue-500" /> : (pdfDoc ? <PDFPageCanvas pdf={pdfDoc} pageNum={1} scale={1.0} /> : <div className="text-red-500">PDF Viewer</div>)}
+                                        </div>
+                                    )
                                  )}
                              </div>
                          ) : <div className="text-gray-500 mt-20 flex flex-col items-center"><FileText className="w-12 h-12 mb-2 opacity-50" />Halaman {activePage} belum diupload siswa.</div>}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Student } from '../types';
 import { 
   CheckCircle2, Activity, MapPin, Users, Wallet, Loader2,
@@ -22,6 +22,7 @@ const DOCUMENT_TYPES = [
   { id: 'KTP_IBU', label: 'KTP Ibu' },
   { id: 'KIP', label: 'KIP / PKH' },
   { id: 'SKL', label: 'Surat Ket. Lulus' },
+  { id: 'RAPOR', label: 'Rapor' }, // Added Rapor Tab
   { id: 'FOTO', label: 'Pas Foto' },
 ];
 
@@ -69,6 +70,10 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   const [isEditing, setIsEditing] = useState(false);
   const [forceUpdate, setForceUpdate] = useState(0);
   
+  // Rapor State
+  const [raporSemester, setRaporSemester] = useState(1);
+  const [raporPage, setRaporPage] = useState(1);
+  
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionNote, setRejectionNote] = useState('');
   const [isSaving, setIsSaving] = useState(false); 
@@ -80,7 +85,19 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   const uniqueClasses = Array.from(new Set(students.map(s => s.className))).sort();
   const studentsInClass = students.filter(s => s.className === selectedClass);
   const currentStudent = students.find(s => s.id === selectedStudentId);
-  const currentDoc = currentStudent?.documents.find(d => d.category === activeDocType);
+  
+  // Dynamic Document Finder including Rapor logic
+  const currentDoc = useMemo(() => {
+      if (!currentStudent) return undefined;
+      if (activeDocType === 'RAPOR') {
+          return currentStudent.documents.find(d => 
+              d.category === 'RAPOR' && 
+              d.subType?.semester === raporSemester && 
+              d.subType?.page === raporPage
+          );
+      }
+      return currentStudent.documents.find(d => d.category === activeDocType);
+  }, [currentStudent, activeDocType, raporSemester, raporPage]);
 
   useEffect(() => { if (uniqueClasses.length > 0 && !selectedClass) setSelectedClass(uniqueClasses[0]); }, [uniqueClasses]);
   
@@ -93,18 +110,19 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   useEffect(() => {
       if (currentStudent) {
+          // Check if there's a specific pending doc to highlight
           const pendingDoc = currentStudent.documents.find(d => d.status === 'PENDING' && DOCUMENT_TYPES.some(t => t.id === d.category));
           if (pendingDoc) {
               setActiveDocType(pendingDoc.category);
-          } else {
-              // Only reset to IJAZAH if current type is not present
-              const currentTabHasDoc = currentStudent.documents.some(d => d.category === activeDocType);
-              if (!currentTabHasDoc) setActiveDocType('IJAZAH');
+              if (pendingDoc.category === 'RAPOR' && pendingDoc.subType) {
+                  setRaporSemester(pendingDoc.subType.semester);
+                  setRaporPage(pendingDoc.subType.page);
+              }
           }
       }
-  }, [selectedStudentId, currentStudent]); 
+  }, [selectedStudentId]); // Only run on student switch
 
-  useEffect(() => { setZoomLevel(1.0); setUseFallbackViewer(false); }, [selectedStudentId, activeDocType]);
+  useEffect(() => { setZoomLevel(1.0); setUseFallbackViewer(false); }, [selectedStudentId, activeDocType, raporSemester, raporPage]);
   
   const handleDataChange = (path: string, value: string) => {
       if (!currentStudent) return;
@@ -146,7 +164,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
         }
     };
     loadPdf();
-  }, [currentStudent, activeDocType]);
+  }, [currentStudent, activeDocType, raporSemester, raporPage]);
 
   const handleApprove = async () => { 
       if (currentDoc && currentStudent) { 
@@ -172,17 +190,13 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           };
           
           if (onSave) {
-              // Optimistic UI Update via App State
               await onSave(updatedStudent);
-              // NOTE: Do NOT call onUpdate() here, as it triggers a re-fetch that overwrites local state with stale server data
           } else {
-              // Fallback if onSave not provided
               await api.updateStudent(updatedStudent);
               if (onUpdate) onUpdate(); 
           }
           
           setIsSaving(false);
-          // Force re-render of local component just in case, though props change should handle it
           setForceUpdate(prev => prev + 1); 
       } 
   };
@@ -192,7 +206,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           if (!rejectionNote.trim()) { alert("Mohon isi alasan penolakan."); return; }
           setIsSaving(true);
           
-          // IMMUTABLE UPDATE
           const updatedDocs = currentStudent.documents.map(d => 
               d.id === currentDoc.id 
               ? {
@@ -212,9 +225,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           };
 
           if (onSave) {
-              // Optimistic UI Update
               await onSave(updatedStudent);
-              // NOTE: Do NOT call onUpdate() here to avoid stale data overwrite
           } else {
               await api.updateStudent(updatedStudent);
               if (onUpdate) onUpdate(); 
@@ -223,8 +234,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           setIsSaving(false);
           setRejectModalOpen(false); 
           setRejectionNote(''); 
-          
-          // Force re-render
           setForceUpdate(prev => prev + 1); 
       } 
   };
@@ -233,7 +242,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       if (currentDoc && currentStudent && window.confirm("Reset status dokumen ke MENUNGGU?")) {
           setIsSaving(true);
           
-          // IMMUTABLE UPDATE
           const updatedDocs = currentStudent.documents.map(d => 
               d.id === currentDoc.id 
               ? {
@@ -390,7 +398,14 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
              <select className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium w-64" value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>{studentsInClass.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}</select>
         </div>
         <div className="flex overflow-x-auto gap-1">{DOCUMENT_TYPES.map(type => {
-            const doc = currentStudent?.documents.find(d => d.category === type.id);
+            // Special check for Rapor to see if ANY page is pending
+            let doc;
+            if (type.id === 'RAPOR' && currentStudent) {
+                doc = currentStudent.documents.find(d => d.category === 'RAPOR' && d.status === 'PENDING');
+            } else {
+                doc = currentStudent?.documents.find(d => d.category === type.id);
+            }
+            
             const color = doc?.status === 'APPROVED' ? 'text-green-600 bg-green-50 border-green-200' : doc?.status === 'REVISION' ? 'text-red-600 bg-red-50 border-red-200' : doc?.status === 'PENDING' ? 'text-yellow-600 bg-yellow-50 border-yellow-200 shadow-sm animate-pulse' : 'text-gray-400 border-transparent';
             return (
                 <button 
@@ -408,6 +423,41 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       {currentStudent ? (
         <div className="flex-1 flex flex-col lg:flex-row gap-4 overflow-hidden relative">
             <div className={`bg-white rounded-xl border border-gray-200 flex flex-col shadow-sm transition-all duration-300 ${layoutMode === 'full-doc' ? 'hidden' : 'w-full lg:w-96'}`}>
+                {/* Rapor Controls - Only visible when Rapor Tab is Active */}
+                {activeDocType === 'RAPOR' && (
+                    <div className="p-3 border-b border-gray-200 bg-blue-50 flex flex-col gap-2">
+                        <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-bold text-blue-700 uppercase">Semester</label>
+                            <div className="flex gap-1">
+                                {[1,2,3,4,5,6].map(s => {
+                                    const hasPending = currentStudent.documents.some(d => d.category === 'RAPOR' && d.subType?.semester === s && d.status === 'PENDING');
+                                    return (
+                                        <button key={s} onClick={() => setRaporSemester(s)} className={`w-6 h-6 text-[10px] font-bold rounded relative ${raporSemester === s ? 'bg-blue-600 text-white' : 'bg-white text-blue-600 border border-blue-200'}`}>
+                                            {s}
+                                            {hasPending && <span className="absolute -top-1 -right-1 w-2 h-2 bg-yellow-500 rounded-full border border-white"></span>}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-bold text-blue-700 uppercase">Halaman</label>
+                            <div className="flex gap-1">
+                                {/* UPDATED: Only show 3 Pages */}
+                                {[1,2,3].map(p => {
+                                    const docStatus = currentStudent.documents.find(d => d.category === 'RAPOR' && d.subType?.semester === raporSemester && d.subType?.page === p)?.status;
+                                    const statusColor = docStatus === 'PENDING' ? 'text-yellow-600 border-yellow-200' : docStatus === 'APPROVED' ? 'text-green-600 border-green-200' : 'text-blue-600 border-blue-200';
+                                    return (
+                                        <button key={p} onClick={() => setRaporPage(p)} className={`w-6 h-6 text-[10px] font-bold rounded border ${raporPage === p ? 'bg-blue-600 text-white border-blue-600' : `bg-white ${statusColor}`}`}>
+                                            {p}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div className="p-3 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                     <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2"><Activity className="w-4 h-4 text-blue-600" /> Data Buku Induk</h3>
                     <button onClick={async () => {
@@ -415,7 +465,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                             setIsSaving(true);
                             if (onSave) await onSave(currentStudent); else await api.updateStudent(currentStudent);
                             setIsSaving(false);
-                            // Do not call onUpdate() here to avoid stale data refetch
                         }
                         setIsEditing(!isEditing);
                     }} className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-bold transition-colors ${isEditing ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600'}`}>{isEditing ? <><Save className="w-3 h-3" /> Selesai</> : <><Pencil className="w-3 h-3" /> Edit Data</>}</button>
@@ -463,7 +512,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                     )
                 ) : (
                     <div className="p-4 border-t border-gray-200 bg-gray-50 text-center text-xs text-gray-400 italic">
-                        Tidak ada file untuk diverifikasi.
+                        {activeDocType === 'RAPOR' ? `Halaman ${raporPage} Sem ${raporSemester} belum diupload.` : 'Tidak ada file untuk diverifikasi.'}
                     </div>
                 )}
             </div>

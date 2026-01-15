@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Student } from '../types';
-import { Search, Trash, UploadCloud, Download, Loader2, CheckCircle2, Plus, X } from 'lucide-react';
+import { Search, Trash, UploadCloud, Download, Loader2, CheckCircle2, Plus, X, FileMinus } from 'lucide-react';
 import { api } from '../services/api';
 
 interface DatabaseViewProps {
@@ -41,6 +41,40 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
         onUpdateStudents(emptyList);
         alert("Data tampilan telah dikosongkan.");
     }
+  };
+
+  const handleRemoveDuplicates = () => {
+      if (!window.confirm("Hapus data ganda berdasarkan NISN? Sistem akan menyimpan data pertama dan menghapus duplikatnya.")) return;
+
+      const seenNISN = new Set<string>();
+      const uniqueStudents: Student[] = [];
+      let duplicateCount = 0;
+
+      localStudents.forEach(student => {
+          // Normalize NISN: string and trimmed
+          const nisn = student.nisn ? String(student.nisn).trim() : '';
+          
+          if (nisn && seenNISN.has(nisn)) {
+              // If we have seen this NISN, skip adding to unique list (this is a duplicate)
+              duplicateCount++;
+          } else {
+              // If it's a new NISN or empty NISN (we keep empties usually, or safeguard them), add to list
+              if (nisn) seenNISN.add(nisn);
+              uniqueStudents.push(student);
+          }
+      });
+
+      if (duplicateCount > 0) {
+          setLocalStudents(uniqueStudents);
+          onUpdateStudents(uniqueStudents);
+          
+          // Optionally sync to cloud if needed immediately
+          api.updateStudentsBulk(uniqueStudents).catch(console.error);
+          
+          alert(`✅ Berhasil menghapus ${duplicateCount} data duplikat.`);
+      } else {
+          alert("Tidak ditemukan duplikat NISN.");
+      }
   };
 
   const handleDeleteRow = (id: string) => {
@@ -448,6 +482,9 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
                 <div className="flex gap-2">
                     <button onClick={() => setIsAddModalOpen(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 flex items-center gap-2 shadow-sm">
                         <Plus className="w-4 h-4" /> Tambah Siswa
+                    </button>
+                    <button onClick={handleRemoveDuplicates} className="px-4 py-2 bg-orange-100 text-orange-700 border border-orange-200 rounded-lg text-xs font-bold hover:bg-orange-200 transition-colors flex items-center gap-2">
+                        <FileMinus className="w-4 h-4" /> Hapus Duplikat
                     </button>
                     <button onClick={handleDeleteAll} className="px-4 py-2 bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-bold hover:bg-red-200 transition-colors">Kosongkan</button>
                     <button onClick={handleDownloadTemplate} className="px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-xs font-bold hover:bg-blue-100 flex items-center gap-2"><Download className="w-4 h-4"/> Download Data/Template</button>
