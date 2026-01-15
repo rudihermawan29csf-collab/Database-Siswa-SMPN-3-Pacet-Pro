@@ -3,6 +3,26 @@ import { Student, DocumentFile } from '../types';
 // URL Deployment Google Apps Script
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxdJ-8ZAhkZSi4Q21jab9ZvROpeIOurf_ER-ajpRhOF4Y-rUvEXvy9zRgEgafXFa_D6/exec';
 
+// Helper for fetch with timeout
+const fetchWithTimeout = async (resource: string, options: RequestInit = {}) => {
+  const { timeout = 5000 } = options as any; // 5s timeout
+  
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  
+  try {
+    const response = await fetch(resource, {
+      ...options,
+      signal: controller.signal  
+    });
+    clearTimeout(id);
+    return response;
+  } catch (error) {
+    clearTimeout(id);
+    throw error;
+  }
+}
+
 export const api = {
   // Fetch all students
   getStudents: async (): Promise<Student[]> => {
@@ -13,7 +33,7 @@ export const api = {
 
     try {
       const timestamp = new Date().getTime();
-      const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getStudents&t=${timestamp}`);
+      const response = await fetchWithTimeout(`${GOOGLE_SCRIPT_URL}?action=getStudents&t=${timestamp}`);
       
       if (!response.ok) {
           throw new Error(`HTTP Status: ${response.status}`);
@@ -25,7 +45,7 @@ export const api = {
       }
       throw new Error(result.message || 'Gagal mengambil data');
     } catch (error) {
-      console.error("Error fetching data:", error);
+      console.warn("API Error (getStudents), falling back to mock data:", error);
       throw error;
     }
   },
@@ -36,14 +56,14 @@ export const api = {
 
     try {
       const timestamp = new Date().getTime();
-      const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getUsers&t=${timestamp}`);
+      const response = await fetchWithTimeout(`${GOOGLE_SCRIPT_URL}?action=getUsers&t=${timestamp}`);
       const result = await response.json();
       if (result.status === 'success') {
         return result.data;
       }
       return [];
     } catch (error) {
-      console.error("Error fetching users:", error);
+      console.warn("Error fetching users:", error);
       return [];
     }
   },
@@ -57,7 +77,7 @@ export const api = {
             action: 'updateUsers',
             users: users
         };
-        const response = await fetch(GOOGLE_SCRIPT_URL, {
+        const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
             method: 'POST',
             body: JSON.stringify(payload)
         });
@@ -75,14 +95,14 @@ export const api = {
 
     try {
         const timestamp = new Date().getTime();
-        const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getSettings&t=${timestamp}`);
+        const response = await fetchWithTimeout(`${GOOGLE_SCRIPT_URL}?action=getSettings&t=${timestamp}`);
         const result = await response.json();
         if (result.status === 'success') {
             return result.data; // Object containing all configs
         }
         return null;
     } catch (e) {
-        console.error("Error fetching settings:", e);
+        console.warn("Error fetching settings:", e);
         return null;
     }
   },
@@ -96,7 +116,7 @@ export const api = {
               action: 'saveSettings',
               settings: settings
           };
-          const response = await fetch(GOOGLE_SCRIPT_URL, {
+          const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
               method: 'POST',
               body: JSON.stringify(payload)
           });
@@ -131,10 +151,11 @@ export const api = {
             category: category
           };
 
-          const response = await fetch(GOOGLE_SCRIPT_URL, {
+          const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
             method: 'POST',
-            body: JSON.stringify(payload)
-          });
+            body: JSON.stringify(payload),
+            timeout: 30000 // Longer timeout for upload
+          } as any);
           
           const result = await response.json();
           if (result.status === 'success') {
@@ -160,7 +181,7 @@ export const api = {
         action: 'updateStudent',
         student: student
       };
-      const response = await fetch(GOOGLE_SCRIPT_URL, {
+      const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
         method: 'POST',
         body: JSON.stringify(payload)
       });
@@ -184,7 +205,7 @@ export const api = {
             students: students
         };
         
-        const response = await fetch(GOOGLE_SCRIPT_URL, {
+        const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
             method: 'POST',
             body: JSON.stringify(payload)
         });
@@ -211,10 +232,11 @@ export const api = {
       };
       
       console.log("Mulai sinkronisasi data...");
-      const response = await fetch(GOOGLE_SCRIPT_URL, {
+      const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
         method: 'POST',
-        body: JSON.stringify(payload)
-      });
+        body: JSON.stringify(payload),
+        timeout: 60000 // Long timeout for sync
+      } as any);
 
       const result = await response.json();
       console.log("Sync Result:", result);
