@@ -1,11 +1,11 @@
 import { Student, DocumentFile } from '../types';
 
 // URL Deployment Google Apps Script
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxdJ-8ZAhkZSi4Q21jab9ZvROpeIOurf_ER-ajpRhOF4Y-rUvEXvy9zRgEgafXFa_D6/exec';
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyLeUDR_iMNcbxz8f016dn-u2LrCU4xeU59XVWW3iqfFVBob5V_hO_NpA2xOHh33jQg/exec';
 
 // Helper for fetch with timeout
 const fetchWithTimeout = async (resource: string, options: RequestInit = {}) => {
-  const { timeout = 5000 } = options as any; // 5s timeout
+  const { timeout = 8000 } = options as any; // Default 8s timeout for general requests
   
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
@@ -154,7 +154,7 @@ export const api = {
           const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
             method: 'POST',
             body: JSON.stringify(payload),
-            timeout: 30000 // Longer timeout for upload
+            timeout: 60000 // 60s timeout for upload to allow Drive processing
           } as any);
           
           const result = await response.json();
@@ -235,7 +235,7 @@ export const api = {
       const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
         method: 'POST',
         body: JSON.stringify(payload),
-        timeout: 60000 // Long timeout for sync
+        timeout: 90000 // 90s timeout for full sync
       } as any);
 
       const result = await response.json();

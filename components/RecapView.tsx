@@ -30,10 +30,15 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
   ];
 
   useEffect(() => {
-      // Load Config from Settings
+      // Load Config from Settings with Safety Check
       const savedRecapConfig = localStorage.getItem('sys_recap_config');
       if (savedRecapConfig) {
-          setSelected5SemSubjects(JSON.parse(savedRecapConfig));
+          try {
+              setSelected5SemSubjects(JSON.parse(savedRecapConfig));
+          } catch (e) {
+              console.error("Failed to parse recap config, using default", e);
+              setSelected5SemSubjects(SUBJECT_MAP.map(s => s.key));
+          }
       } else {
           setSelected5SemSubjects(SUBJECT_MAP.map(s => s.key));
       }

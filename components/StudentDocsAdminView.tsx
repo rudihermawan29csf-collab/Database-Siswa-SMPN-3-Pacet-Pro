@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Student } from '../types';
-import { Search, Filter, FolderOpen, FileText } from 'lucide-react';
+import { Search, Filter, FolderOpen, FileText, Loader2 } from 'lucide-react';
 import FileManager from './FileManager';
 import UploadRaporView from './UploadRaporView';
 
@@ -9,32 +9,48 @@ interface StudentDocsAdminViewProps {
   onUpdate?: () => void;
 }
 
-const CLASS_LIST = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
-
 const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, onUpdate }) => {
-  const [selectedClass, setSelectedClass] = useState(CLASS_LIST[0]);
+  // DINAMIS: Ambil daftar kelas unik dari data siswa yang ada
+  const uniqueClasses = useMemo(() => {
+      const classes = Array.from(new Set(students.map(s => s.className))).filter(Boolean).sort();
+      return classes.length > 0 ? classes : ['VII A']; // Fallback jika data kosong
+  }, [students]);
+
+  const [selectedClass, setSelectedClass] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [activeTab, setActiveTab] = useState<'DOCS' | 'RAPOR'>('DOCS');
 
+  // Set default class saat data dimuat pertama kali
+  useEffect(() => {
+      if ((!selectedClass || !uniqueClasses.includes(selectedClass)) && uniqueClasses.length > 0) {
+          setSelectedClass(uniqueClasses[0]);
+      }
+  }, [uniqueClasses, selectedClass]);
+
+  // Filter Students based on selected Class
   const filteredStudents = useMemo(() => {
+      if (!selectedClass) return [];
       return students.filter(s => s.className === selectedClass).sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [students, selectedClass]);
 
   const currentStudent = students.find(s => s.id === selectedStudentId);
 
-  // Initialize selected student when class changes
-  React.useEffect(() => {
+  // Auto-select first student when list updates or class changes
+  useEffect(() => {
       if (filteredStudents.length > 0) {
-          setSelectedStudentId(filteredStudents[0].id);
+          const isCurrentSelectedValid = filteredStudents.find(s => s.id === selectedStudentId);
+          if (!selectedStudentId || !isCurrentSelectedValid) {
+              setSelectedStudentId(filteredStudents[0].id);
+          }
       } else {
           setSelectedStudentId('');
       }
-  }, [selectedClass]);
+  }, [filteredStudents, selectedStudentId]);
 
   const handleUpload = (file: File, category: string) => {
     if (!currentStudent) return;
     
-    // Direct mutation for mock update - in real app, call API
+    // Optimistic Update
     const newDocs = category === 'LAINNYA' ? [...currentStudent.documents] : currentStudent.documents.filter(d => d.category !== category);
     currentStudent.documents = [...newDocs, {
         id: Math.random().toString(36).substr(2, 9),
@@ -70,21 +86,25 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
                  <div className="flex items-center gap-2 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200">
                     <Filter className="w-4 h-4 text-gray-500" />
                     <select 
-                        className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer"
+                        className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer min-w-[100px]"
                         value={selectedClass}
                         onChange={(e) => setSelectedClass(e.target.value)}
                     >
-                        {CLASS_LIST.map(c => <option key={c} value={c}>Kelas {c}</option>)}
+                        {uniqueClasses.map(c => <option key={c} value={c}>Kelas {c}</option>)}
                     </select>
                 </div>
-                <div className="flex items-center gap-2 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200 w-64">
-                    <Search className="w-4 h-4 text-gray-500" />
+                <div className="flex items-center gap-2 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200 w-64 relative">
+                    <Search className="w-4 h-4 text-gray-500 absolute left-3 pointer-events-none" />
                     <select 
-                        className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-full"
+                        className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-full pl-6"
                         value={selectedStudentId}
                         onChange={(e) => setSelectedStudentId(e.target.value)}
                     >
-                        {filteredStudents.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}
+                        {filteredStudents.length > 0 ? (
+                            filteredStudents.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)
+                        ) : (
+                            <option value="">Tidak ada siswa</option>
+                        )}
                     </select>
                 </div>
             </div>
@@ -96,13 +116,13 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
                 <div className="flex border-b border-gray-200">
                     <button 
                         onClick={() => setActiveTab('DOCS')}
-                        className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 ${activeTab === 'DOCS' ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}
+                        className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 transition-colors ${activeTab === 'DOCS' ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}
                     >
                         <FolderOpen className="w-4 h-4" /> Dokumen Persyaratan
                     </button>
                     <button 
                         onClick={() => setActiveTab('RAPOR')}
-                        className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 ${activeTab === 'RAPOR' ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}
+                        className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 transition-colors ${activeTab === 'RAPOR' ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}
                     >
                         <FileText className="w-4 h-4" /> File Rapor
                     </button>
@@ -124,8 +144,15 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
                 </div>
             </div>
         ) : (
-            <div className="flex-1 flex items-center justify-center text-gray-400">
-                Pilih Siswa untuk memulai.
+            <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                {students.length === 0 ? (
+                    <>
+                        <Loader2 className="w-10 h-10 animate-spin mb-2 opacity-50" />
+                        <p>Memuat data siswa...</p>
+                    </>
+                ) : (
+                    <p>Pilih Siswa untuk memulai.</p>
+                )}
             </div>
         )}
     </div>

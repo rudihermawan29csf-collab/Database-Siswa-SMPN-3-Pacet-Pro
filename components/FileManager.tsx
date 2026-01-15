@@ -71,7 +71,7 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
   };
 
   return (
-    <div className="bg-gray-50 rounded-xl border border-gray-200 h-[550px] flex flex-col relative">
+    <div className="bg-gray-50 rounded-xl border border-gray-200 h-full min-h-[500px] flex flex-col relative">
       <input 
         type="file" 
         ref={fileInputRef} 

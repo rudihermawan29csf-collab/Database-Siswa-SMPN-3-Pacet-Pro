@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Save, Pencil, AlertTriangle, X, CheckCircle2, XCircle, MessageSquare, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Pencil, AlertTriangle, X, CheckCircle2, XCircle, MessageSquare, Loader2, FileText } from 'lucide-react';
 import { Student, CorrectionRequest } from '../types';
 
 interface StudentDetailProps {
@@ -120,97 +120,84 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
       }
   };
 
-  // Reusable Compact Field Group (Matches Admin Verification View)
-  const FieldGroup = ({ label, value, fieldKey, fullWidth = false }: { label: string, value: string | number, fieldKey?: string, fullWidth?: boolean }) => {
-    const displayValue = (value !== null && value !== undefined && value !== '') ? value : '-';
-    const stringValue = String(displayValue);
-    const pendingReq = fieldKey ? student.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING') : null;
+  // PENDING REQUEST CARD (For Admin View) - Helper Function
+  const renderPendingRequestCard = (req: CorrectionRequest) => (
+      <div key={req.id} className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg shadow-sm mb-4 animate-fade-in">
+          <div className="flex justify-between items-start mb-2">
+              <div>
+                  <span className="text-[10px] font-bold bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded-full uppercase tracking-wider">Permintaan Perubahan</span>
+                  <h4 className="text-sm font-bold text-gray-800 mt-1">{req.fieldName}</h4>
+              </div>
+              <span className="text-[10px] text-gray-500">{new Date(req.requestDate).toLocaleDateString()}</span>
+          </div>
+          
+          <div className="flex items-center gap-3 text-sm mb-3">
+              <div className="bg-white px-2 py-1 rounded border border-gray-200 text-gray-400 line-through decoration-red-400">{req.originalValue || '-'}</div>
+              <span className="text-gray-400">➔</span>
+              <div className="bg-blue-50 px-2 py-1 rounded border border-blue-200 text-blue-700 font-bold">{req.proposedValue}</div>
+          </div>
+          
+          {req.studentReason && (
+              <div className="text-[11px] italic text-gray-600 mb-3 bg-white/50 p-2 rounded border border-gray-100">
+                  "<span className="font-semibold">Alasan:</span> {req.studentReason}"
+              </div>
+          )}
 
-    // IF ADMIN VIEW & PENDING REQUEST EXISTS -> SHOW APPROVAL UI
-    if (!readOnly && pendingReq) {
-        return (
-            <div id={fieldKey ? `field-${fieldKey}` : undefined} className={`mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg relative ${fullWidth ? 'w-full' : ''} shadow-sm animate-pulse`}>
-                <div className="flex justify-between items-start mb-2">
-                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide">{label}</label>
-                    <span className="text-[9px] font-bold text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full border border-yellow-200">
-                        Verifikasi Diperlukan
-                    </span>
-                </div>
-                
-                <div className="flex flex-col gap-2">
-                    {/* Comparison */}
-                    <div className="flex items-center gap-2 text-sm">
-                        <div className="bg-white px-2 py-1 rounded border border-gray-200 text-gray-400 line-through decoration-red-400" title="Data Lama">
-                            {stringValue}
-                        </div>
-                        <span className="text-gray-400">➔</span>
-                        <div className="bg-blue-50 px-2 py-1 rounded border border-blue-200 text-blue-700 font-bold shadow-sm flex-1" title="Data Baru (Usulan)">
-                            {pendingReq.proposedValue}
-                        </div>
-                    </div>
-                    
-                    {/* Reason */}
-                    {pendingReq.studentReason && (
-                        <div className="text-[10px] italic text-gray-600 bg-white/50 p-1.5 rounded border border-gray-100">
-                            "<span className="font-semibold text-gray-700">Alasan:</span> {pendingReq.studentReason}"
-                        </div>
-                    )}
+          <div className="flex gap-2 justify-end">
+              <button onClick={() => openRejectModal(req)} className="px-3 py-1.5 bg-white border border-red-200 text-red-600 rounded text-xs font-bold hover:bg-red-50 flex items-center gap-1">
+                  <XCircle className="w-3 h-3" /> Tolak
+              </button>
+              <button onClick={() => handleVerifyRequest(req, 'APPROVED')} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs font-bold hover:bg-green-700 flex items-center gap-1 shadow-sm">
+                  <CheckCircle2 className="w-3 h-3" /> Setujui
+              </button>
+          </div>
+      </div>
+  );
 
-                    {/* Actions */}
-                    <div className="flex gap-2 mt-1">
-                        <button 
-                            onClick={() => handleVerifyRequest(pendingReq, 'APPROVED')} 
-                            className="flex-1 bg-green-600 text-white px-3 py-1.5 rounded text-xs font-bold hover:bg-green-700 flex items-center justify-center gap-1 shadow-sm transition-transform active:scale-95"
-                        >
-                            <CheckCircle2 className="w-3 h-3"/> Terima
-                        </button>
-                        <button 
-                            onClick={() => openRejectModal(pendingReq)}
-                            className="flex-1 bg-white border border-red-200 text-red-600 px-3 py-1.5 rounded text-xs font-bold hover:bg-red-50 flex items-center justify-center gap-1 shadow-sm transition-transform active:scale-95"
-                        >
-                            <XCircle className="w-3 h-3"/> Tolak
-                        </button>
-                    </div>
-                </div>
+  // INTERACTIVE FIELD (Matches Buku Induk View Layout but Clickable)
+  const FormField = ({ label, value, fieldKey, labelCol = "w-1/3", valueCol = "flex-1", className = "" }: any) => {
+      const displayValue = (value !== null && value !== undefined && value !== '') ? value : '-';
+      const stringValue = String(displayValue);
+      const pendingReq = fieldKey ? student.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING') : null;
+      
+      const isInteractive = readOnly && fieldKey && !pendingReq;
+
+      return (
+        <div id={fieldKey ? `field-${fieldKey}` : undefined} className={`flex border-b border-gray-300 min-h-[20px] ${className}`}>
+            <div className={`${labelCol} px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center`}>
+                {label}
             </div>
-        );
-    }
-
-    // STANDARD VIEW
-    return (
-        <div id={fieldKey ? `field-${fieldKey}` : undefined} className={`mb-2 ${fullWidth ? 'w-full' : ''} relative group`}>
-            <div className="flex justify-between items-center mb-0.5">
-                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide">{label}</label>
-                {pendingReq && <span className="text-[9px] text-yellow-600 bg-yellow-50 px-1 rounded border border-yellow-200">Menunggu</span>}
-            </div>
-            <div className={`relative p-2 bg-gray-50 border rounded text-gray-900 text-sm font-medium break-words min-h-[36px] flex items-center ${pendingReq ? 'border-yellow-400 bg-yellow-50/30' : 'border-gray-300'}`}>
-                {pendingReq ? pendingReq.proposedValue : stringValue}
+            <div 
+                className={`
+                    ${valueCol} px-1.5 py-0.5 text-[9px] font-medium flex items-center uppercase leading-tight relative group transition-colors
+                    ${pendingReq ? 'bg-yellow-100 text-yellow-800' : 'bg-white'}
+                    ${isInteractive ? 'cursor-pointer hover:bg-blue-50' : ''}
+                `}
+                onClick={() => isInteractive && handleOpenCorrection(fieldKey, label, stringValue)}
+                title={isInteractive ? "Klik untuk mengajukan perbaikan" : ""}
+            >
+                <span className="flex-1">{pendingReq ? pendingReq.proposedValue : stringValue}</span>
                 
-                {/* Edit Button visible on hover (Only for Students to request change) */}
-                {readOnly && fieldKey && !pendingReq && (
-                    <button 
-                        onClick={() => handleOpenCorrection(fieldKey, label, stringValue)}
-                        className="absolute right-1 top-1 p-1 bg-white rounded shadow border border-gray-200 text-gray-400 hover:text-blue-600 hover:border-blue-300 opacity-0 group-hover:opacity-100 transition-all z-10"
-                        title="Ajukan Perbaikan"
-                    >
-                        <Pencil className="w-3 h-3" />
-                    </button>
+                {pendingReq && <span className="text-[8px] bg-yellow-200 text-yellow-800 px-1 rounded ml-2 border border-yellow-300">Menunggu</span>}
+                
+                {isInteractive && (
+                    <Pencil className="w-3 h-3 text-blue-400 opacity-0 group-hover:opacity-100 absolute right-1 top-1/2 -translate-y-1/2" />
                 )}
             </div>
         </div>
-    );
+      );
   };
 
-  const SectionHeader = ({ title }: { title: string }) => (
-    <div className="bg-gray-100 px-3 py-1.5 text-xs font-bold text-gray-800 uppercase border-y border-gray-300 mt-6 mb-3 first:mt-0 rounded-sm">
-        {title}
+  const SubHeader = ({ children }: { children?: React.ReactNode }) => (
+    <div className="bg-gray-200 px-2 py-0.5 text-[9px] font-bold border-y border-gray-400 text-center uppercase mt-1">
+        {children}
     </div>
   );
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full relative">
       
-      {/* Correction Modal (Student) */}
+      {/* Correction Modal */}
       {correctionModalOpen && (
           <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
               <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col max-h-[90vh]">
@@ -219,46 +206,43 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                       <button onClick={() => setCorrectionModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>
                   </div>
                   <div className="mb-4 bg-blue-50 p-3 rounded border border-blue-100">
-                      <p className="text-xs text-gray-500 uppercase">Data Lama</p>
+                      <p className="text-xs text-gray-500 uppercase">Data Lama ({targetField?.label})</p>
                       <p className="text-sm font-bold text-gray-700">{targetField?.currentValue || '-'}</p>
                   </div>
                   <div className="space-y-3">
                       <div>
                           <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Data Baru</label>
-                          <input className="w-full p-2 border rounded text-sm" value={proposedValue} onChange={(e) => setProposedValue(e.target.value)} />
+                          <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={proposedValue} onChange={(e) => setProposedValue(e.target.value)} autoFocus />
                       </div>
                       <div>
                           <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Alasan Perubahan</label>
-                          <textarea className="w-full p-2 border rounded text-sm" rows={2} value={studentReason} onChange={(e) => setStudentReason(e.target.value)} placeholder="Wajib diisi..." />
+                          <textarea className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none" rows={2} value={studentReason} onChange={(e) => setStudentReason(e.target.value)} placeholder="Contoh: Salah penulisan nama..." />
                       </div>
                   </div>
                   <div className="flex justify-end gap-2 mt-6">
                       <button onClick={() => setCorrectionModalOpen(false)} className="px-4 py-2 bg-gray-100 rounded text-sm font-bold text-gray-600">Batal</button>
-                      <button onClick={submitCorrection} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-bold hover:bg-blue-700">Kirim</button>
+                      <button onClick={submitCorrection} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-bold hover:bg-blue-700">Kirim Pengajuan</button>
                   </div>
               </div>
           </div>
       )}
 
-      {/* Rejection Modal (Admin) */}
+      {/* Rejection Modal */}
       {rejectModalOpen && (
           <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
               <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col">
                   <h3 className="font-bold text-red-600 mb-2">Tolak Perubahan Data</h3>
-                  <p className="text-xs text-gray-500 mb-3">Berikan alasan mengapa pengajuan ini ditolak.</p>
                   <textarea 
                       className="w-full p-3 border border-gray-300 rounded-lg text-sm mb-4 focus:ring-2 focus:ring-red-500 outline-none" 
                       rows={3} 
                       value={rejectionNote} 
                       onChange={e => setRejectionNote(e.target.value)} 
-                      placeholder="Contoh: Data tidak sesuai dengan dokumen fisik..."
+                      placeholder="Alasan penolakan..."
                       autoFocus
                   />
                   <div className="flex justify-end gap-2">
-                      <button onClick={()=>setRejectModalOpen(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-bold text-xs hover:bg-gray-200">Batal</button>
-                      <button onClick={confirmRejection} className="px-4 py-2 bg-red-600 text-white rounded-lg font-bold text-xs hover:bg-red-700">
-                          Tolak Pengajuan
-                      </button>
+                      <button onClick={()=>setRejectModalOpen(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-bold text-xs">Batal</button>
+                      <button onClick={confirmRejection} className="px-4 py-2 bg-red-600 text-white rounded-lg font-bold text-xs hover:bg-red-700">Tolak</button>
                   </div>
               </div>
           </div>
@@ -273,111 +257,132 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                      <p className="text-xs text-gray-500">{student.fullName} • {student.className}</p>
                  </div>
             </div>
-            {readOnly ? (
-                <div className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full border border-blue-200">
-                    Mode Siswa
-                </div>
-            ) : (
-                <div className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-bold rounded-full border border-purple-200">
-                    Mode Verifikator
+            {readOnly && (
+                <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full border border-blue-200">
+                    <FileText className="w-3 h-3" />
+                    Klik Data untuk Koreksi
                 </div>
             )}
        </div>
 
-       {/* Scrollable Content - Single Vertical View */}
-       <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-white">
-            <div className="max-w-3xl mx-auto space-y-1">
-                {/* 1. IDENTITAS */}
-                <SectionHeader title="1. Identitas Peserta Didik" />
-                <FieldGroup label="Nama Lengkap" value={student.fullName} fieldKey="fullName" fullWidth />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FieldGroup label="NISN" value={student.nisn} fieldKey="nisn" />
-                    <FieldGroup label="NIK" value={student.dapodik.nik} fieldKey="dapodik.nik" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FieldGroup label="Tempat Lahir" value={student.birthPlace} fieldKey="birthPlace" />
-                    <FieldGroup label="Tanggal Lahir" value={student.birthDate} fieldKey="birthDate" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FieldGroup label="Jenis Kelamin" value={student.gender === 'L' ? 'Laki-laki' : 'Perempuan'} fieldKey="gender" />
-                    <FieldGroup label="Agama" value={student.religion} fieldKey="religion" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FieldGroup label="Anak Ke" value={student.childOrder} fieldKey="childOrder" />
-                    <FieldGroup label="Jml Saudara" value={student.siblingCount} fieldKey="siblingCount" />
-                </div>
+       {/* Scrollable Content */}
+       <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-50/50 flex justify-center pb-32">
+            
+            <div className="w-full max-w-[800px]">
+                {/* Admin: Show Pending Requests at Top */}
+                {!readOnly && student.correctionRequests?.filter(r => r.status === 'PENDING').map(req => renderPendingRequestCard(req))}
 
-                {/* 2. ALAMAT */}
-                <SectionHeader title="2. Alamat Tempat Tinggal" />
-                <FieldGroup label="Alamat Jalan" value={student.address} fieldKey="address" fullWidth />
-                <div className="grid grid-cols-3 gap-4">
-                    <FieldGroup label="RT" value={student.dapodik.rt} fieldKey="dapodik.rt" />
-                    <FieldGroup label="RW" value={student.dapodik.rw} fieldKey="dapodik.rw" />
-                    <FieldGroup label="Kode Pos" value={student.postalCode} fieldKey="postalCode" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FieldGroup label="Dusun" value={student.dapodik.dusun} fieldKey="dapodik.dusun" />
-                    <FieldGroup label="Kelurahan/Desa" value={student.dapodik.kelurahan} fieldKey="dapodik.kelurahan" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FieldGroup label="Kecamatan" value={student.subDistrict} fieldKey="subDistrict" />
-                    <FieldGroup label="Kabupaten" value={student.district} fieldKey="district" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FieldGroup label="Transportasi" value={student.dapodik.transportation} fieldKey="dapodik.transportation" />
-                    <FieldGroup label="Jenis Tinggal" value={student.dapodik.livingStatus} fieldKey="dapodik.livingStatus" />
-                </div>
+                {/* FORMULIR LAYOUT */}
+                <div className="bg-white p-5 border border-gray-200 shadow-sm text-gray-800">
+                    
+                    <div className="border-2 border-gray-800 p-1 mb-2 bg-gray-800 text-white text-center">
+                        <h1 className="text-sm font-black tracking-widest uppercase">FORMULIR PESERTA DIDIK</h1>
+                    </div>
 
-                {/* 3. ORTU */}
-                <SectionHeader title="3. Data Orang Tua / Wali" />
-                <div className="bg-gray-50 p-3 rounded border border-gray-200 mb-2">
-                    <h4 className="text-xs font-bold text-gray-500 uppercase mb-2 border-b border-gray-300 pb-1">Data Ayah</h4>
-                    <FieldGroup label="Nama Ayah" value={student.father.name} fieldKey="father.name" fullWidth />
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <FieldGroup label="NIK Ayah" value={student.father.nik} fieldKey="father.nik" />
-                        <FieldGroup label="Tahun Lahir" value={student.father.birthPlaceDate} fieldKey="father.birthPlaceDate" />
+                    {/* SECTION 1: IDENTITAS */}
+                    <SubHeader>IDENTITAS PESERTA DIDIK</SubHeader>
+                    <div className="border-x border-t border-gray-300 mt-1">
+                        <FormField label="1. Nama Lengkap" value={student.fullName} fieldKey="fullName" />
+                        <FormField label="2. Jenis Kelamin" value={student.gender === 'L' ? 'Laki-Laki' : 'Perempuan'} fieldKey="gender" />
+                        <div className="flex border-b border-gray-300 min-h-[20px]">
+                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">3. NISN</div>
+                            <div className="w-1/3 px-1.5 py-0.5 text-[9px] font-medium uppercase bg-white">{student.nisn}</div>
+                            <div className="w-12 px-1.5 py-0.5 bg-gray-100 border-x border-gray-300 text-[9px] font-bold">NIS :</div>
+                            <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">{student.nis}</div>
+                        </div>
+                        <FormField label="4. No Seri Ijazah" value={student.diplomaNumber} fieldKey="diplomaNumber" />
+                        <FormField label="5. No Seri SKHUN" value={student.dapodik.skhun} fieldKey="dapodik.skhun" />
+                        <FormField label="6. No. Ujian Nasional" value={student.dapodik.unExamNumber} fieldKey="dapodik.unExamNumber" />
+                        <FormField label="7. NIK" value={student.dapodik.nik} fieldKey="dapodik.nik" />
+                        <FormField label="NPSN Sekolah Asal" value={student.previousSchool ? "20502873" : "-"} />
+                        <FormField label="Nama Sekolah Asal" value={student.previousSchool} fieldKey="previousSchool" />
+                        <FormField label="8. Tempat, Tgl Lahir" value={`${student.birthPlace}, ${student.birthDate}`} fieldKey="birthPlace" />
+                        <FormField label="9. Agama" value={student.religion} fieldKey="religion" />
+                        <FormField label="10. Berkebutuhan Khusus" value={student.dapodik.specialNeeds} fieldKey="dapodik.specialNeeds" />
+                        <FormField label="11. Alamat Jalan" value={student.address} fieldKey="address" />
+                        <div className="flex border-b border-gray-300 min-h-[20px]">
+                            <div className="w-1/3 flex flex-col">
+                                <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic bg-gray-50"> - Dusun</div>
+                                <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic bg-gray-50"> - Kelurahan / Desa</div>
+                                <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic bg-gray-50"> - Kecamatan</div>
+                                <div className="flex-1 px-1.5 py-0.5 text-[8px] italic bg-gray-50"> - Kabupaten</div>
+                            </div>
+                            <div className="w-2/3 flex flex-col border-l border-gray-300 bg-white">
+                                <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{student.dapodik.dusun}</div>
+                                <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{student.dapodik.kelurahan}</div>
+                                <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{student.subDistrict}</div>
+                                <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase">{student.district}</div>
+                            </div>
+                        </div>
+                        <div className="flex border-b border-gray-300 min-h-[20px]">
+                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">RT / RW</div>
+                            <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase bg-white">{student.dapodik.rt} / {student.dapodik.rw}</div>
+                            <div className="w-20 px-1.5 py-0.5 bg-gray-50 border-x border-gray-300 text-[9px]">Kode Pos</div>
+                            <div className="w-16 px-1.5 py-0.5 text-[9px] bg-white">{student.postalCode}</div>
+                        </div>
+                        <FormField label="12. Transportasi" value={student.dapodik.transportation} fieldKey="dapodik.transportation" />
+                        <FormField label="13. Jenis Tinggal" value={student.dapodik.livingStatus} fieldKey="dapodik.livingStatus" />
+                        <FormField label="14. No HP" value={student.father.phone || student.mother.phone || '-'} fieldKey="father.phone" />
+                        <FormField label="15. Email" value={student.dapodik.email} fieldKey="dapodik.email" />
+                        <FormField label="16. No. KKS" value={student.dapodik.kksNumber} fieldKey="dapodik.kksNumber" />
+                        <FormField label="17. Penerima KPS/KPH" value={student.dapodik.kpsReceiver} fieldKey="dapodik.kpsReceiver" />
+                        <FormField label=" - No. KPS" value={student.dapodik.kpsNumber} fieldKey="dapodik.kpsNumber" />
+                        <FormField label=" - Penerima KIP" value={student.dapodik.kipReceiver} fieldKey="dapodik.kipReceiver" />
+                        <FormField label=" - No. KIP" value={student.dapodik.kipNumber} fieldKey="dapodik.kipNumber" />
+                        <FormField label=" - Nama di KIP" value={student.dapodik.kipName} fieldKey="dapodik.kipName" />
+                        <FormField label=" - No Reg Akta Lahir" value={student.dapodik.birthRegNumber} fieldKey="dapodik.birthRegNumber" />
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <FieldGroup label="Pekerjaan" value={student.father.job} fieldKey="father.job" />
-                        <FieldGroup label="Penghasilan" value={student.father.income} fieldKey="father.income" />
-                    </div>
-                </div>
-                <div className="bg-gray-50 p-3 rounded border border-gray-200 mb-2">
-                    <h4 className="text-xs font-bold text-gray-500 uppercase mb-2 border-b border-gray-300 pb-1">Data Ibu</h4>
-                    <FieldGroup label="Nama Ibu" value={student.mother.name} fieldKey="mother.name" fullWidth />
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <FieldGroup label="NIK Ibu" value={student.mother.nik} fieldKey="mother.nik" />
-                        <FieldGroup label="Tahun Lahir" value={student.mother.birthPlaceDate} fieldKey="mother.birthPlaceDate" />
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <FieldGroup label="Pekerjaan" value={student.mother.job} fieldKey="mother.job" />
-                        <FieldGroup label="Penghasilan" value={student.mother.income} fieldKey="mother.income" />
-                    </div>
-                </div>
 
-                {/* 4. PERIODIK */}
-                <SectionHeader title="4. Data Periodik" />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FieldGroup label="Tinggi Badan (cm)" value={student.height} fieldKey="height" />
-                    <FieldGroup label="Berat Badan (kg)" value={student.weight} fieldKey="weight" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FieldGroup label="Jarak Sekolah" value={student.dapodik.distanceToSchool} fieldKey="dapodik.distanceToSchool" />
-                    <FieldGroup label="Waktu Tempuh (Menit)" value={student.dapodik.travelTimeMinutes} fieldKey="dapodik.travelTimeMinutes" />
-                </div>
+                    {/* SECTION 2: DATA AYAH */}
+                    <SubHeader>DATA AYAH KANDUNG</SubHeader>
+                    <div className="border-x border-t border-gray-300 mt-1">
+                        <FormField label="18. Nama Ayah" value={student.father.name} fieldKey="father.name" />
+                        <FormField label=" - NIK Ayah" value={student.father.nik} fieldKey="father.nik" />
+                        <FormField label=" - Tahun Lahir" value={student.father.birthPlaceDate} fieldKey="father.birthPlaceDate" />
+                        <FormField label=" - Pekerjaan" value={student.father.job} fieldKey="father.job" />
+                        <FormField label=" - Pendidikan" value={student.father.education} fieldKey="father.education" />
+                        <FormField label=" - Penghasilan" value={student.father.income} fieldKey="father.income" />
+                    </div>
 
-                {/* 5. KESEJAHTERAAN */}
-                <SectionHeader title="5. Kesejahteraan Peserta Didik" />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FieldGroup label="Penerima KIP" value={student.dapodik.kipReceiver} fieldKey="dapodik.kipReceiver" />
-                    <FieldGroup label="Nomor KIP" value={student.dapodik.kipNumber} fieldKey="dapodik.kipNumber" />
+                    {/* SECTION 3: DATA IBU */}
+                    <SubHeader>DATA IBU KANDUNG</SubHeader>
+                    <div className="border-x border-t border-gray-300 mt-1">
+                        <FormField label="19. Nama Ibu" value={student.mother.name} fieldKey="mother.name" />
+                        <FormField label=" - NIK Ibu" value={student.mother.nik} fieldKey="mother.nik" />
+                        <FormField label=" - Tahun Lahir" value={student.mother.birthPlaceDate} fieldKey="mother.birthPlaceDate" />
+                        <FormField label=" - Pekerjaan" value={student.mother.job} fieldKey="mother.job" />
+                        <FormField label=" - Pendidikan" value={student.mother.education} fieldKey="mother.education" />
+                        <FormField label=" - Penghasilan" value={student.mother.income} fieldKey="mother.income" />
+                    </div>
+
+                    {/* SECTION 4: DATA WALI */}
+                    <SubHeader>DATA WALI</SubHeader>
+                    <div className="border-x border-t border-gray-300 mt-1">
+                        <FormField label="20. Nama Wali" value={student.guardian?.name} fieldKey="guardian.name" />
+                        <FormField label=" - Tahun Lahir" value={student.guardian?.birthPlaceDate} fieldKey="guardian.birthPlaceDate" />
+                        <FormField label=" - Pekerjaan" value={student.guardian?.job} fieldKey="guardian.job" />
+                        <FormField label=" - Pendidikan" value={student.guardian?.education} fieldKey="guardian.education" />
+                        <FormField label=" - Penghasilan" value={student.guardian?.income} fieldKey="guardian.income" />
+                    </div>
+
+                    {/* SECTION 5: PERIODIK */}
+                    <SubHeader>DATA PERIODIK</SubHeader>
+                    <div className="border-x border-t border-gray-300 mt-1 mb-2">
+                        <div className="flex border-b border-gray-300 min-h-[20px]">
+                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">Tinggi / Berat</div>
+                            <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">{student.height} cm / {student.weight} kg</div>
+                        </div>
+                        <div className="flex border-b border-gray-300 min-h-[20px]">
+                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">Jarak / Waktu</div>
+                            <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">{student.dapodik.distanceToSchool} km / {student.dapodik.travelTimeMinutes} menit</div>
+                        </div>
+                        <div className="flex border-b border-gray-300 min-h-[20px]">
+                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">Jml Saudara</div>
+                            <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">{student.siblingCount}</div>
+                        </div>
+                    </div>
+
                 </div>
-                <FieldGroup label="Nama Tertera di KIP" value={student.dapodik.kipName} fieldKey="dapodik.kipName" fullWidth />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FieldGroup label="Penerima KPS" value={student.dapodik.kpsReceiver} fieldKey="dapodik.kpsReceiver" />
-                    <FieldGroup label="Nomor KPS" value={student.dapodik.kpsNumber} fieldKey="dapodik.kpsNumber" />
-                </div>
-                <FieldGroup label="Nomor KKS (Kartu Keluarga Sejahtera)" value={student.dapodik.kksNumber} fieldKey="dapodik.kksNumber" fullWidth />
             </div>
        </div>
     </div>
