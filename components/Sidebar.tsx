@@ -47,22 +47,22 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, onLogout, isCol
   return (
     <div 
         id="sidebar"
-        className={`${isCollapsed ? 'w-20' : 'w-64'} h-full flex flex-col pt-6 pb-6 transition-all duration-300 ease-in-out relative z-30`}
+        className={`${isCollapsed ? 'w-20' : 'w-64'} flex flex-col pt-4 pb-4 transition-all duration-300 ease-in-out relative z-30 h-full md:h-[calc(100vh-6rem)] md:rounded-2xl md:bg-gray-900/80 md:backdrop-blur-xl md:shadow-xl md:text-white`}
     >
-      {/* "Traffic Lights" Window Controls (Decorative) */}
-      <div className={`px-6 mb-6 flex gap-2 ${isCollapsed ? 'justify-center' : ''}`}>
+      {/* "Traffic Lights" Window Controls (Decorative - Only on Desktop) */}
+      <div className={`px-6 mb-6 flex gap-2 ${isCollapsed ? 'justify-center' : ''} hidden md:flex`}>
           <div className="w-3 h-3 rounded-full bg-red-500 hover:bg-red-600 transition-colors shadow-sm"></div>
           <div className="w-3 h-3 rounded-full bg-yellow-500 hover:bg-yellow-600 transition-colors shadow-sm"></div>
           <div className="w-3 h-3 rounded-full bg-green-500 hover:bg-green-600 transition-colors shadow-sm"></div>
       </div>
 
       {/* Header / Logo Area */}
-      <div className={`px-5 mb-8 flex items-center ${isCollapsed ? 'justify-center' : 'justify-start'} space-x-3 h-12`}>
-        <div className="bg-white/20 backdrop-blur-md p-2 rounded-xl shadow-inner border border-white/20 flex-shrink-0">
-            <GraduationCap className="text-white w-6 h-6" />
+      <div className={`px-5 mb-6 flex items-center ${isCollapsed ? 'justify-center' : 'justify-start'} space-x-3 h-10`}>
+        <div className="bg-white/20 backdrop-blur-md p-2 rounded-xl shadow-inner border border-white/20 flex-shrink-0 text-white">
+            <GraduationCap className="w-6 h-6" />
         </div>
-        <div className={`transition-all duration-300 ${isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'}`}>
-          <h1 className="text-base font-bold text-white leading-none tracking-tight drop-shadow-md">SiData</h1>
+        <div className={`transition-all duration-300 ${isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'} text-white`}>
+          <h1 className="text-base font-bold leading-none tracking-tight drop-shadow-md">SiData</h1>
           <p className="text-[10px] text-blue-100 font-medium tracking-wide uppercase mt-1 opacity-80">SMPN 3 Pacet</p>
         </div>
       </div>
@@ -77,7 +77,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, onLogout, isCol
       </button>
 
       {/* Menu Items */}
-      <div className="flex-1 px-4 space-y-2 overflow-y-auto no-scrollbar">
+      <div className="flex-1 px-4 space-y-2 overflow-y-auto no-scrollbar custom-scrollbar">
         {!isCollapsed && (
             <p className="px-3 text-[10px] font-bold text-blue-100/60 uppercase tracking-wider mb-2 mt-2">Menu Utama</p>
         )}

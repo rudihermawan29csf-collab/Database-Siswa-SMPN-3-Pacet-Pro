@@ -21,7 +21,7 @@ import Login from './components/Login';
 import { MOCK_STUDENTS } from './services/mockData'; 
 import { api } from './services/api'; 
 import { Student, DocumentFile } from './types';
-import { Search, Bell, ChevronDown, LogOut, User, Loader2, Cloud, CloudOff, RefreshCw } from 'lucide-react';
+import { Search, Bell, ChevronDown, LogOut, User, Loader2, Cloud, CloudOff, RefreshCw, Menu } from 'lucide-react';
 
 type UserRole = 'ADMIN' | 'STUDENT' | 'GURU';
 
@@ -46,6 +46,7 @@ const App: React.FC = () => {
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu toggle
 
   // FETCH DATA ON MOUNT & UPDATE
   useEffect(() => {
@@ -375,7 +376,7 @@ const App: React.FC = () => {
       );
     } else if (selectedStudent && currentView === 'documents') {
         content = (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-full overflow-hidden flex flex-col">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 md:p-6 h-full overflow-hidden flex flex-col">
                 <div className="mb-4">
                     <h3 className="text-lg font-bold text-gray-800">Dokumen Digital</h3>
                     <p className="text-sm text-gray-500">Kelola dokumen persyaratan sekolah Anda di sini.</p>
@@ -395,7 +396,6 @@ const App: React.FC = () => {
             case 'dapodik':
                 content = (userRole === 'ADMIN') ? <DapodikList students={studentsData} onSelectStudent={(s) => setSelectedStudent(s)} /> : null; break;
             case 'database':
-                // PASS setStudentsData HERE
                 content = userRole === 'ADMIN' ? <DatabaseView students={studentsData} onUpdateStudents={setStudentsData} /> : null; break;
             case 'buku-induk':
                 content = <BukuIndukView students={studentsData} />; break;
@@ -416,12 +416,11 @@ const App: React.FC = () => {
             case 'ijazah':
                 content = <IjazahView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />; break;
             case 'verification':
-                // Pass saveStudentToCloud as onSave to ensure local state persists
                 content = <VerificationView 
                     students={studentsData} 
                     targetStudentId={targetVerificationStudentId} 
                     onUpdate={refreshData}
-                    onSave={saveStudentToCloud} // NEW: Direct state update prop
+                    onSave={saveStudentToCloud} 
                     currentUser={currentUser || undefined} 
                 />; 
                 break;
@@ -448,56 +447,80 @@ const App: React.FC = () => {
   };
 
   return (
+    // ROOT: min-h-screen allows scroll. Padding top added for safe area on all devices.
     <div 
-        className="flex h-screen font-sans text-gray-900 overflow-hidden selection:bg-blue-200 bg-cover bg-center transition-all duration-700"
+        className="flex min-h-screen font-sans text-gray-900 bg-cover bg-center transition-all duration-700 pb-10"
         style={{ backgroundImage: `url('https://4kwallpapers.com/images/wallpapers/macos-big-sur-apple-layers-fluidic-colorful-wwdc-stock-3840x2160-1455.jpg')` }}
     >
-      <div className="absolute inset-0 bg-black/10 backdrop-blur-[2px] z-0"></div>
+      <div className="absolute inset-0 bg-black/10 backdrop-blur-[2px] z-0 fixed h-full w-full pointer-events-none"></div>
 
-      <div className="relative z-10 flex h-full w-full">
-        {/* Sidebar */}
-        <Sidebar 
-            currentView={currentView} 
-            setView={(view) => {
-                setCurrentView(view);
-                if(view === 'dashboard' && (userRole === 'ADMIN' || userRole === 'GURU')) setSelectedStudent(null);
-            }} 
-            onLogout={handleLogout} 
-            isCollapsed={isSidebarCollapsed}
-            toggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            userRole={userRole}
-        />
+      {/* MOBILE HEADER BAR - Visible only on small screens */}
+      <div className="fixed top-0 left-0 right-0 bg-white/90 backdrop-blur-md z-50 p-4 flex justify-between items-center md:hidden border-b border-gray-200 shadow-sm">
+          <div className="font-bold text-gray-800">SiData SMPN 3</div>
+          <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 bg-gray-100 rounded-lg">
+              <Menu className="w-5 h-5 text-gray-700" />
+          </button>
+      </div>
 
-        {/* Main Content */}
+      {/* MAIN CONTAINER: Padded top to avoid browser address bar overlap */}
+      <div className="relative z-10 flex flex-col md:flex-row w-full pt-16 md:pt-16 md:px-6 md:pb-6 gap-4">
+        
+        {/* SIDEBAR: Sticky on Desktop, Toggle on Mobile */}
+        <div className={`
+            fixed inset-0 z-40 bg-black/50 md:static md:bg-transparent md:z-auto md:w-auto
+            ${isMobileMenuOpen ? 'block' : 'hidden md:block'}
+        `}>
+            <div className={`
+                h-full md:h-auto md:sticky md:top-20
+                ${isMobileMenuOpen ? 'w-64 bg-gray-900 absolute top-0 left-0 bottom-0 shadow-2xl p-4' : ''}
+            `}>
+                <Sidebar 
+                    currentView={currentView} 
+                    setView={(view) => {
+                        setCurrentView(view);
+                        setIsMobileMenuOpen(false); // Close mobile menu on click
+                        if(view === 'dashboard' && (userRole === 'ADMIN' || userRole === 'GURU')) setSelectedStudent(null);
+                    }} 
+                    onLogout={handleLogout} 
+                    isCollapsed={isSidebarCollapsed}
+                    toggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                    userRole={userRole}
+                />
+            </div>
+            {/* Close overlay for mobile */}
+            {isMobileMenuOpen && <div className="absolute inset-0 z-[-1]" onClick={() => setIsMobileMenuOpen(false)}></div>}
+        </div>
+
+        {/* MAIN CONTENT AREA */}
         <main 
-            className={`flex-1 flex flex-col h-full overflow-hidden relative transition-all duration-300 rounded-tl-3xl shadow-[0_0_40px_rgba(0,0,0,0.1)] border-l border-white/20 bg-[#F5F5F7]/95 backdrop-blur-md`}
+            className={`flex-1 flex flex-col relative transition-all duration-300 rounded-2xl shadow-[0_0_40px_rgba(0,0,0,0.1)] border border-white/20 bg-[#F5F5F7]/95 backdrop-blur-md overflow-hidden min-h-[85vh] mx-2 md:mx-0 mb-4`}
         >
-            {/* Header - Added bg-white/50 backdrop-blur-xl for visual occlusion */}
-            <header className="h-16 flex items-center justify-between px-8 border-b border-gray-200/60 sticky top-0 z-30 print:hidden shrink-0 bg-white/60 backdrop-blur-xl">
-                <div className="flex items-center gap-4">
-                    <h2 className="text-xl font-bold text-gray-800 capitalize tracking-tight flex items-center gap-2 drop-shadow-sm">
-                        {currentView === 'monitoring' ? 'Monitoring Kelengkapan' :
-                        currentView === 'dashboard' ? 'Dashboard Utama' : 'SiData System'}
+            {/* Header Content */}
+            <header className="h-16 flex items-center justify-between px-4 md:px-8 border-b border-gray-200/60 sticky top-0 z-30 bg-white/60 backdrop-blur-xl">
+                <div className="flex items-center gap-2 md:gap-4 overflow-hidden">
+                    <h2 className="text-base md:text-xl font-bold text-gray-800 capitalize tracking-tight truncate drop-shadow-sm">
+                        {currentView === 'monitoring' ? 'Monitoring' :
+                        currentView === 'dashboard' ? 'Dashboard' : 'SiData'}
                     </h2>
                     
                     {/* CONNECTION STATUS & REFRESH BUTTON */}
-                    <div className="flex items-center gap-2 ml-4">
-                        <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border transition-colors ${isCloudConnected ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
+                    <div className="flex items-center gap-1 md:gap-2 ml-2">
+                        <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] md:text-[10px] font-bold border transition-colors ${isCloudConnected ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
                             {isCloudConnected ? <Cloud className="w-3 h-3" /> : <CloudOff className="w-3 h-3" />}
-                            {isCloudConnected ? 'Online (Cloud)' : 'Offline (Mock Data)'}
+                            <span className="hidden sm:inline">{isCloudConnected ? 'Online' : 'Offline'}</span>
                         </div>
                         <button 
                             onClick={refreshData} 
                             className="p-1.5 bg-white border border-gray-200 rounded-full hover:bg-gray-100 text-gray-600 transition-all active:scale-95"
-                            title="Refresh Data dari Server"
+                            title="Refresh Data"
                         >
-                            <RefreshCw className="w-4 h-4" />
+                            <RefreshCw className="w-3.5 h-3.5" />
                         </button>
                     </div>
                 </div>
 
-                <div className="flex items-center space-x-6">
-                    <div className="flex items-center gap-4">
+                <div className="flex items-center space-x-2 md:space-x-6">
+                    <div className="flex items-center gap-2 md:gap-4">
                         <button className="relative p-2 text-gray-600 hover:bg-gray-200/50 rounded-full transition-colors">
                             <Bell className="w-5 h-5" />
                             {notifications.length > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>}
@@ -507,16 +530,16 @@ const App: React.FC = () => {
                             className="relative"
                             onClick={() => setIsProfileOpen(!isProfileOpen)}
                         >
-                            <div className="flex items-center gap-3 pl-4 border-l border-gray-300/50 cursor-pointer hover:bg-gray-200/50 p-1 rounded-lg transition-colors group">
+                            <div className="flex items-center gap-2 md:gap-3 pl-2 md:pl-4 border-l border-gray-300/50 cursor-pointer hover:bg-gray-200/50 p-1 rounded-lg transition-colors group">
                                 <div className="text-right hidden sm:block">
                                     <p className="text-sm font-bold text-gray-800 group-hover:text-blue-600 transition-colors">
-                                        {currentUser?.name || (userRole === 'ADMIN' ? 'Admin TU' : 'User')}
+                                        {currentUser?.name || (userRole === 'ADMIN' ? 'Admin' : 'User')}
                                     </p>
                                     <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">
                                         {currentUser?.role || userRole}
                                     </p>
                                 </div>
-                                <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 p-[2px] shadow-md">
+                                <div className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 p-[2px] shadow-md">
                                     <img 
                                         src={profileImageSrc} 
                                         alt="Profile" 
@@ -530,6 +553,10 @@ const App: React.FC = () => {
                                 <>
                                     <div className="fixed inset-0 z-40" onClick={() => setIsProfileOpen(false)}></div>
                                     <div className="absolute right-0 mt-2 w-48 bg-white/80 backdrop-blur-xl rounded-xl shadow-xl border border-white/50 py-1 z-50 animate-fade-in">
+                                        <div className="px-4 py-2 border-b border-gray-100 sm:hidden">
+                                            <p className="text-sm font-bold text-gray-800">{currentUser?.name}</p>
+                                            <p className="text-xs text-gray-500">{userRole}</p>
+                                        </div>
                                         <button onClick={() => { setIsProfileOpen(false); handleLogout(); }} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-500 hover:text-white flex items-center gap-2 transition-colors rounded-xl">
                                             <LogOut className="w-4 h-4" /> Keluar
                                         </button>
@@ -541,8 +568,8 @@ const App: React.FC = () => {
                 </div>
             </header>
 
-            {/* Main Render Area */}
-            <div className="flex-1 p-6 overflow-hidden relative">
+            {/* Main Render Area - Allow it to hold content naturally */}
+            <div className="flex-1 p-4 md:p-6 relative">
                 {renderContent()}
             </div>
         </main>

@@ -2,7 +2,7 @@
 <html lang="id">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>SiData SMPN 3 Pacet</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -50,7 +50,8 @@
       ::-webkit-scrollbar-track { background: transparent; }
       ::-webkit-scrollbar-thumb { background: #C1C1C5; border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
       ::-webkit-scrollbar-thumb:hover { background: #A8A8AD; }
-      body { -webkit-font-smoothing: antialiased; -moz-osx-grayscale; background-color: #F0F2F5; }
+      /* Allow body scroll */
+      body { -webkit-font-smoothing: antialiased; -moz-osx-grayscale; background-color: #F0F2F5; min-height: 100vh; overflow-x: hidden; }
       .glass-panel { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.5); }
       .glass-sidebar { background: rgba(240, 240, 245, 0.6); backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px); border-right: 1px solid rgba(0, 0, 0, 0.05); }
       @media print { @page { size: A4 portrait; margin: 0; } body { background: white; } .no-print { display: none !important; } #root { overflow: visible !important; } }
@@ -72,7 +73,7 @@
 }
 </script>
 </head>
-  <body class="bg-mac-bg text-mac-text overflow-hidden h-screen selection:bg-mac-accent selection:text-white">
+  <body class="bg-mac-bg text-mac-text selection:bg-mac-accent selection:text-white">
     <div id="root"></div>
     <script type="module" src="./index.tsx"></script>
   </body>
