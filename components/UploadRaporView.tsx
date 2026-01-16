@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { Student, DocumentFile } from '../types';
-import { UploadCloud, CheckCircle2, Eye, Trash2, AlertCircle, FileText, Image as ImageIcon, X, Lock, RefreshCw, Loader2 } from 'lucide-react';
+import { UploadCloud, CheckCircle2, Eye, Trash2, AlertCircle, FileText, Image as ImageIcon, X, Lock, RefreshCw, Loader2, Maximize2 } from 'lucide-react';
 import { api } from '../services/api';
 
 interface UploadRaporViewProps {
@@ -10,11 +10,42 @@ interface UploadRaporViewProps {
 
 const SEMESTERS = [1, 2, 3, 4, 5, 6];
 
+// Helper untuk format URL Google Drive agar bisa dipreview/tampil
+const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
+    if (!url) return '';
+    if (url.startsWith('blob:')) return url; // Handle local preview blobs
+
+    // Cek pattern Google Drive
+    if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
+        let id = '';
+        // Ekstrak ID dari berbagai format URL Drive
+        const matchId = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        const matchIdParam = new URLSearchParams(new URL(url).search).get('id');
+
+        if (matchId && matchId[1]) {
+            id = matchId[1];
+        } else if (matchIdParam) {
+            id = matchIdParam;
+        }
+
+        if (id) {
+            // Preview: Cocok untuk PDF/Iframe
+            if (type === 'preview') return `https://drive.google.com/file/d/${id}/preview`;
+            // Direct: Cocok untuk tag <img src="...">
+            if (type === 'direct') return `https://drive.google.com/uc?export=view&id=${id}`;
+        }
+    }
+    return url;
+};
+
 const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) => {
   const [activeSemester, setActiveSemester] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [stagingPage, setStagingPage] = useState<number | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  
+  // State untuk Modal Preview
+  const [previewDoc, setPreviewDoc] = useState<DocumentFile | null>(null);
 
   // Dynamic Page Count from Settings
   const pagesPerSemester = useMemo(() => {
@@ -45,25 +76,16 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
       if (file && stagingPage !== null) {
           setIsUploading(true);
           
-          // 1. Optimistic Update (Preview) - Create temporary list
-          // We do NOT mutate student prop directly, we assume parent refresh will handle final state
-          // But for immediate visual feedback we can create a temp visual representation if we wanted,
-          // but here we will rely on the API call finishing.
-          
-          // However, to prevent flickering or if API is slow, we might want to update local state passed down?
-          // Since we can't mutate props, we rely on the final onUpdate call.
-          
           try {
-              // 2. Upload to Google Drive via API
+              // Upload to Google Drive via API
               const driveUrl = await api.uploadFile(file, student.id, 'RAPOR');
               
               if (driveUrl) {
-                  // 3. Construct the new Document Object
                   const newDoc: DocumentFile = {
                       id: Math.random().toString(36).substr(2, 9),
                       name: file.name,
                       type: file.type.includes('pdf') ? 'PDF' : 'IMAGE',
-                      url: driveUrl, // The Drive URL returned by API
+                      url: driveUrl, 
                       category: 'RAPOR',
                       uploadDate: new Date().toISOString().split('T')[0],
                       size: `${(file.size / 1024).toFixed(0)} KB`,
@@ -71,8 +93,7 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
                       subType: { semester: activeSemester, page: stagingPage }
                   };
 
-                  // 4. Update Student Data (Clone to avoid mutation issues)
-                  // Filter out old doc for this slot if exists
+                  // Filter old doc out
                   const otherDocs = student.documents.filter(d => 
                       !(d.category === 'RAPOR' && d.subType?.semester === activeSemester && d.subType?.page === stagingPage)
                   );
@@ -82,14 +103,8 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
                       documents: [...otherDocs, newDoc]
                   };
 
-                  // 5. Persist the updated student data containing the new Drive URL
-                  const success = await api.updateStudent(updatedStudent);
-                  
-                  if (success) {
-                      if (onUpdate) onUpdate(); // Trigger parent refresh
-                  } else {
-                      alert("Gagal menyimpan data ke database.");
-                  }
+                  await api.updateStudent(updatedStudent);
+                  if (onUpdate) onUpdate();
               } else {
                   alert("Gagal upload ke Google Drive (URL kosong).");
               }
@@ -101,7 +116,6 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
           }
       }
       
-      // Reset Input
       if (fileInputRef.current) fileInputRef.current.value = '';
       setStagingPage(null);
   };
@@ -141,11 +155,65 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
 
   return (
     <div className="flex flex-col h-full space-y-4 animate-fade-in relative">
+        {/* Loading Overlay */}
         {isUploading && (
             <div className="absolute inset-0 z-50 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-xl">
                 <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-2" />
                 <p className="text-gray-600 font-bold animate-pulse">Mengupload ke Google Drive...</p>
                 <p className="text-xs text-gray-400">Mohon jangan tutup halaman ini.</p>
+            </div>
+        )}
+
+        {/* PREVIEW MODAL */}
+        {previewDoc && (
+            <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                <div className="relative w-full max-w-5xl h-[85vh] bg-gray-900 rounded-xl flex flex-col overflow-hidden shadow-2xl border border-gray-700">
+                    {/* Modal Header */}
+                    <div className="flex justify-between items-center p-4 bg-gray-800 border-b border-gray-700">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-gray-700 rounded-lg">
+                                {previewDoc.type === 'PDF' ? <FileText className="w-5 h-5 text-red-400"/> : <ImageIcon className="w-5 h-5 text-blue-400"/>}
+                            </div>
+                            <div>
+                                <h3 className="text-white font-bold text-sm">{previewDoc.name}</h3>
+                                <p className="text-gray-400 text-xs">Semester {previewDoc.subType?.semester} - Halaman {previewDoc.subType?.page}</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <a 
+                                href={previewDoc.url} 
+                                target="_blank" 
+                                rel="noreferrer"
+                                className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold rounded-lg transition-colors"
+                            >
+                                Buka Tab Baru
+                            </a>
+                            <button 
+                                onClick={() => setPreviewDoc(null)} 
+                                className="p-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Modal Content */}
+                    <div className="flex-1 bg-black/50 flex items-center justify-center overflow-auto p-4">
+                        {previewDoc.type === 'PDF' ? (
+                            <iframe 
+                                src={getDriveUrl(previewDoc.url, 'preview')} 
+                                className="w-full h-full rounded bg-white shadow-lg" 
+                                title="PDF Viewer"
+                            />
+                        ) : (
+                            <img 
+                                src={getDriveUrl(previewDoc.url, 'direct')} 
+                                alt="Preview" 
+                                className="max-w-full max-h-full object-contain rounded shadow-lg" 
+                            />
+                        )}
+                    </div>
+                </div>
             </div>
         )}
 
@@ -219,11 +287,11 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
                                 {doc ? (
                                     <>
                                         {doc.type === 'IMAGE' ? (
-                                            <img src={doc.url} alt={`Hal ${page}`} className="w-full h-full object-cover rounded-lg shadow-sm" />
+                                            <img src={getDriveUrl(doc.url, 'direct')} alt={`Hal ${page}`} className="w-full h-full object-cover rounded-lg shadow-sm" />
                                         ) : (
                                             <div className="flex flex-col items-center justify-center text-center">
                                                 <FileText className="w-12 h-12 text-red-500 mb-2" />
-                                                <span className="text-[10px] text-gray-500 line-clamp-2">{doc.name}</span>
+                                                <span className="text-[10px] text-gray-500 line-clamp-2 px-2">{doc.name}</span>
                                             </div>
                                         )}
                                         
@@ -235,9 +303,12 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
 
                                         {/* Overlay Hover Actions */}
                                         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex flex-col items-center justify-center gap-2 p-4 z-20">
-                                            <a href={doc.url} target="_blank" rel="noreferrer" className="px-3 py-1.5 bg-white text-blue-600 rounded text-xs font-bold flex items-center gap-1 hover:bg-gray-100 w-full justify-center shadow-sm">
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); setPreviewDoc(doc); }} 
+                                                className="px-3 py-1.5 bg-white text-blue-600 rounded text-xs font-bold flex items-center gap-1 hover:bg-gray-100 w-full justify-center shadow-sm"
+                                            >
                                                 <Eye className="w-3 h-3" /> Lihat
-                                            </a>
+                                            </button>
                                             {!isApproved && (
                                                 <>
                                                     <button onClick={(e) => { e.stopPropagation(); handleUploadClick(page); }} className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-bold hover:bg-blue-700 w-full flex items-center justify-center gap-1 shadow-sm">
