@@ -9,6 +9,7 @@ const createMockRecord = (semester: number, className: string): AcademicRecord =
   return {
     semester,
     classLevel: level,
+    className: className, // Default to current class, can be changed later
     phase: 'D',
     year: semester <= 2 ? '2024/2025' : '2023/2024',
     subjects: [
@@ -141,6 +142,10 @@ export const MOCK_STUDENTS: Student[] = (() => {
     // Safety check
     if (cols.length < 5) return null;
 
+    // Normalize Class Name (remove "Kelas " if exists) to ensure compatibility with dropdowns
+    const rawClass = cols[41]?.trim() || 'VII A';
+    const normalizedClass = rawClass.replace(/^Kelas\s+/i, '');
+
     // Mapping based on the exact columns 0-64 provided in the prompt
     return {
         id: Math.random().toString(36).substr(2, 9),
@@ -184,7 +189,7 @@ export const MOCK_STUDENTS: Student[] = (() => {
             unExamNumber: cols[42]?.trim() || '',
             travelTimeMinutes: 0 
         },
-        className: cols[41]?.trim() || 'VII A',
+        className: normalizedClass,
         religion: cols[7]?.trim() || 'Islam',
         nationality: 'WNI',
         address: cols[8]?.trim() || '',
@@ -234,12 +239,12 @@ export const MOCK_STUDENTS: Student[] = (() => {
         correctionRequests: [],
         // Generate academic records for S1-S6
         academicRecords: {
-            1: createMockRecord(1, cols[41]?.trim() || 'VII A'),
-            2: createMockRecord(2, cols[41]?.trim() || 'VII A'),
-            3: createMockRecord(3, cols[41]?.trim() || 'VIII A'),
-            4: createMockRecord(4, cols[41]?.trim() || 'VIII A'),
-            5: createMockRecord(5, cols[41]?.trim() || 'IX A'),
-            6: createMockRecord(6, cols[41]?.trim() || 'IX A'),
+            1: createMockRecord(1, normalizedClass),
+            2: createMockRecord(2, normalizedClass),
+            3: createMockRecord(3, normalizedClass),
+            4: createMockRecord(4, normalizedClass),
+            5: createMockRecord(5, normalizedClass),
+            6: createMockRecord(6, normalizedClass),
         }
     };
   }).filter(Boolean) as Student[];

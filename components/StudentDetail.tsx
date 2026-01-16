@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Save, Pencil, AlertTriangle, X, CheckCircle2, XCircle, MessageSquare, Loader2, FileText } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ArrowLeft, Save, Pencil, AlertTriangle, X, CheckCircle2, XCircle, MessageSquare, Loader2, FileText, ListChecks } from 'lucide-react';
 import { Student, CorrectionRequest } from '../types';
+import { api } from '../services/api';
 
 interface StudentDetailProps {
   student: Student;
@@ -24,8 +25,9 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionNote, setRejectionNote] = useState('');
   const [requestToReject, setRequestToReject] = useState<CorrectionRequest | null>(null);
+  const [isProcessing, setIsProcessing] = useState<string | null>(null); // Track ID being processed
 
-  // Auto-scroll logic kept for compatibility
+  // Auto-scroll logic
   useEffect(() => {
     if (highlightFieldKey) {
         setTimeout(() => {
@@ -46,7 +48,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
       setCorrectionModalOpen(true);
   };
 
-  const submitCorrection = () => {
+  const submitCorrection = async () => {
       if (!targetField) return;
       if (!studentReason.trim()) {
         alert("Mohon isi alasan perubahan data.");
@@ -63,43 +65,75 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
           requestDate: new Date().toISOString(),
       };
       
-      if (!student.correctionRequests) student.correctionRequests = [];
-      student.correctionRequests = student.correctionRequests.filter(
+      // Clone student to avoid mutation issues before save
+      const updatedStudent = { ...student };
+      if (!updatedStudent.correctionRequests) updatedStudent.correctionRequests = [];
+      
+      // Remove pending dupes for same key
+      updatedStudent.correctionRequests = updatedStudent.correctionRequests.filter(
           r => !(r.fieldKey === targetField.key && r.status === 'PENDING')
       );
       
-      student.correctionRequests.push(newRequest);
+      updatedStudent.correctionRequests.push(newRequest);
+      
+      await api.updateStudent(updatedStudent);
       setCorrectionModalOpen(false);
-      if (onUpdate) onUpdate();
       alert("✅ Usulan perbaikan berhasil dikirim. Menunggu verifikasi admin.");
+      if (onUpdate) onUpdate();
   };
 
-  // ADMIN ACTION: Verify Request
-  const handleVerifyRequest = (request: CorrectionRequest, status: 'APPROVED' | 'REJECTED', note?: string) => {
+  // ADMIN ACTION: Verify Request PER ITEM
+  const handleVerifyRequest = async (request: CorrectionRequest, status: 'APPROVED' | 'REJECTED', note?: string) => {
       if (!request) return;
       
-      request.status = status;
-      request.verifierName = currentUser?.name || 'Admin';
-      request.processedDate = new Date().toISOString();
+      setIsProcessing(request.id);
 
+      // 1. Clone Student Data
+      const updatedStudent = JSON.parse(JSON.stringify(student));
+
+      // 2. Find and Update the Specific Request
+      updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((req: CorrectionRequest) => {
+          if (req.id === request.id) {
+              return {
+                  ...req,
+                  status: status,
+                  verifierName: currentUser?.name || 'Admin',
+                  processedDate: new Date().toISOString(),
+                  adminNote: note || (status === 'APPROVED' ? 'Disetujui.' : 'Ditolak.')
+              };
+          }
+          return req;
+      });
+
+      // 3. If Approved, Apply Data Changes specifically for this item
       if (status === 'APPROVED') {
-          // Update Actual Data dynamically
           const keys = request.fieldKey.split('.');
-          let current: any = student;
+          let current: any = updatedStudent;
           // Traverse to the parent object
           for (let i = 0; i < keys.length - 1; i++) {
                if (!current[keys[i]]) current[keys[i]] = {};
                current = current[keys[i]];
           }
-          // Set the value
-          current[keys[keys.length - 1]] = request.proposedValue;
-          
-          request.adminNote = note || "Perubahan data disetujui.";
-      } else {
-          request.adminNote = note || "Perubahan data ditolak.";
+          // Set the value (Handle numbers if needed)
+          const lastKey = keys[keys.length - 1];
+          // Check if original value was a number to maintain type
+          if (typeof current[lastKey] === 'number') {
+              current[lastKey] = Number(request.proposedValue);
+          } else {
+              current[lastKey] = request.proposedValue;
+          }
       }
 
-      if (onUpdate) onUpdate();
+      // 4. Save to API immediately
+      try {
+          await api.updateStudent(updatedStudent);
+          if (onUpdate) onUpdate(); // Refresh parent UI
+      } catch (e) {
+          alert("Gagal menyimpan verifikasi.");
+          console.error(e);
+      } finally {
+          setIsProcessing(null);
+      }
   };
 
   const openRejectModal = (req: CorrectionRequest) => {
@@ -120,39 +154,77 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
       }
   };
 
-  // PENDING REQUEST CARD (For Admin View) - Helper Function
-  const renderPendingRequestCard = (req: CorrectionRequest) => (
-      <div key={req.id} className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg shadow-sm mb-4 animate-fade-in">
-          <div className="flex justify-between items-start mb-2">
-              <div>
-                  <span className="text-[10px] font-bold bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded-full uppercase tracking-wider">Permintaan Perubahan</span>
-                  <h4 className="text-sm font-bold text-gray-800 mt-1">{req.fieldName}</h4>
-              </div>
-              <span className="text-[10px] text-gray-500">{new Date(req.requestDate).toLocaleDateString()}</span>
-          </div>
-          
-          <div className="flex items-center gap-3 text-sm mb-3">
-              <div className="bg-white px-2 py-1 rounded border border-gray-200 text-gray-400 line-through decoration-red-400">{req.originalValue || '-'}</div>
-              <span className="text-gray-400">➔</span>
-              <div className="bg-blue-50 px-2 py-1 rounded border border-blue-200 text-blue-700 font-bold">{req.proposedValue}</div>
-          </div>
-          
-          {req.studentReason && (
-              <div className="text-[11px] italic text-gray-600 mb-3 bg-white/50 p-2 rounded border border-gray-100">
-                  "<span className="font-semibold">Alasan:</span> {req.studentReason}"
-              </div>
-          )}
+  // RENDER REQUEST CARD (Handles Pending, Approved, Rejected)
+  const renderRequestCard = (req: CorrectionRequest) => {
+      const isPending = req.status === 'PENDING';
+      const isApproved = req.status === 'APPROVED';
+      const isRejected = req.status === 'REJECTED';
 
-          <div className="flex gap-2 justify-end">
-              <button onClick={() => openRejectModal(req)} className="px-3 py-1.5 bg-white border border-red-200 text-red-600 rounded text-xs font-bold hover:bg-red-50 flex items-center gap-1">
-                  <XCircle className="w-3 h-3" /> Tolak
-              </button>
-              <button onClick={() => handleVerifyRequest(req, 'APPROVED')} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs font-bold hover:bg-green-700 flex items-center gap-1 shadow-sm">
-                  <CheckCircle2 className="w-3 h-3" /> Setujui
-              </button>
-          </div>
-      </div>
-  );
+      return (
+        <div key={req.id} className={`border-l-4 p-4 rounded-r-lg shadow-sm mb-3 animate-fade-in relative bg-white ${isPending ? 'border-yellow-400' : isApproved ? 'border-green-500 bg-green-50/20' : 'border-red-500 bg-red-50/20'}`}>
+            <div className="flex justify-between items-start mb-2">
+                <div className="flex items-center gap-2">
+                    <div className={`p-1.5 rounded-full ${isPending ? 'bg-yellow-100' : isApproved ? 'bg-green-100' : 'bg-red-100'}`}>
+                        <Pencil className={`w-3 h-3 ${isPending ? 'text-yellow-700' : isApproved ? 'text-green-700' : 'text-red-700'}`} />
+                    </div>
+                    <div>
+                        <h4 className="text-sm font-bold text-gray-800">{req.fieldName}</h4>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-gray-500">{new Date(req.requestDate).toLocaleDateString()}</span>
+                            {!isPending && (
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${isApproved ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                    {isApproved ? 'DISETUJUI' : 'DITOLAK'}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-2 mb-3 bg-gray-50 p-2 rounded border border-gray-100">
+                <div>
+                    <p className="text-[9px] text-gray-400 uppercase font-bold">Data Lama</p>
+                    <p className="text-xs font-medium text-gray-500 line-through decoration-red-400">{req.originalValue || '(Kosong)'}</p>
+                </div>
+                <div>
+                    <p className="text-[9px] text-blue-500 uppercase font-bold">Data Baru</p>
+                    <p className="text-xs font-bold text-blue-700">{req.proposedValue}</p>
+                </div>
+            </div>
+            
+            {req.studentReason && (
+                <div className="text-[11px] italic text-gray-600 mb-2 bg-yellow-50/50 p-2 rounded">
+                    "<span className="font-semibold">Alasan:</span> {req.studentReason}"
+                </div>
+            )}
+
+            {!isPending && req.adminNote && (
+                <div className={`text-[10px] italic p-2 rounded mb-2 ${isApproved ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+                    <span className="font-bold">Admin:</span> {req.adminNote}
+                </div>
+            )}
+
+            {isPending && (
+                <div className="flex gap-2 justify-end pt-2 border-t border-gray-100">
+                    <button 
+                        onClick={() => openRejectModal(req)} 
+                        disabled={isProcessing === req.id}
+                        className="px-3 py-1.5 bg-white border border-red-200 text-red-600 rounded text-xs font-bold hover:bg-red-50 flex items-center gap-1 transition-colors"
+                    >
+                        <XCircle className="w-3 h-3" /> Tolak
+                    </button>
+                    <button 
+                        onClick={() => handleVerifyRequest(req, 'APPROVED')} 
+                        disabled={isProcessing === req.id}
+                        className="px-3 py-1.5 bg-green-600 text-white rounded text-xs font-bold hover:bg-green-700 flex items-center gap-1 shadow-sm transition-colors"
+                    >
+                        {isProcessing === req.id ? <Loader2 className="w-3 h-3 animate-spin"/> : <CheckCircle2 className="w-3 h-3" />} Setujui
+                    </button>
+                </div>
+            )}
+        </div>
+      );
+  };
 
   // INTERACTIVE FIELD (Matches Buku Induk View Layout but Clickable)
   const FormField = ({ label, value, fieldKey, labelCol = "w-1/3", valueCol = "flex-1", className = "", labelClassName = "" }: any) => {
@@ -193,6 +265,20 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
         {children}
     </div>
   );
+
+  // Filter for ALL requests but sort Pending first
+  const allRequests = useMemo(() => {
+      if (!student.correctionRequests) return [];
+      return [...student.correctionRequests].sort((a, b) => {
+          // Priority 1: Pending Status
+          if (a.status === 'PENDING' && b.status !== 'PENDING') return -1;
+          if (a.status !== 'PENDING' && b.status === 'PENDING') return 1;
+          // Priority 2: Date (Newest first)
+          return new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime();
+      });
+  }, [student]);
+
+  const pendingCount = allRequests.filter(r => r.status === 'PENDING').length;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full relative">
@@ -257,21 +343,35 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                      <p className="text-xs text-gray-500">{student.fullName} • {student.className}</p>
                  </div>
             </div>
-            {readOnly && (
+            {readOnly ? (
                 <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full border border-blue-200">
                     <FileText className="w-3 h-3" />
                     Klik Data untuk Koreksi
                 </div>
+            ) : (
+                pendingCount > 0 && (
+                    <div className="flex items-center gap-2 bg-yellow-100 text-yellow-800 px-3 py-1 rounded-lg text-xs font-bold border border-yellow-200 animate-pulse">
+                        <ListChecks className="w-4 h-4" />
+                        {pendingCount} Menunggu Verifikasi
+                    </div>
+                )
             )}
        </div>
 
        {/* Scrollable Content */}
-       <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-50/50 flex justify-center pb-32">
+       <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-50/50 flex flex-col md:flex-row gap-6 justify-center pb-32">
             
-            <div className="w-full max-w-[800px]">
-                {/* Admin: Show Pending Requests at Top */}
-                {!readOnly && student.correctionRequests?.filter(r => r.status === 'PENDING').map(req => renderPendingRequestCard(req))}
+            {/* Admin Side Panel for Pending Requests */}
+            {!readOnly && allRequests.length > 0 && (
+                <div className="w-full md:w-80 md:sticky md:top-0 h-fit space-y-3">
+                    <div className="flex items-center gap-2 text-gray-700 font-bold text-sm mb-2 px-1 bg-white p-2 rounded shadow-sm border border-gray-100">
+                        <ListChecks className="w-4 h-4" /> Riwayat Perubahan
+                    </div>
+                    {allRequests.map(req => renderRequestCard(req))}
+                </div>
+            )}
 
+            <div className="w-full max-w-[800px]">
                 {/* FORMULIR LAYOUT */}
                 <div className="bg-white p-5 border border-gray-200 shadow-sm text-gray-800">
                     
@@ -376,17 +476,26 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                     {/* SECTION 5: PERIODIK */}
                     <SubHeader>DATA PERIODIK</SubHeader>
                     <div className="border-x border-t border-gray-300 mt-1 mb-2">
+                        {/* REPLACED STATIC DIVS WITH FORMFIELDS FOR EDITING */}
                         <div className="flex border-b border-gray-300 min-h-[20px]">
-                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">Tinggi / Berat</div>
-                            <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">{student.height} cm / {student.weight} kg</div>
+                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">21. Tinggi (cm)</div>
+                            <FormField label="" value={student.height} fieldKey="height" labelCol="hidden" valueCol="flex-1 pl-0" className="flex-1 border-none" />
                         </div>
                         <div className="flex border-b border-gray-300 min-h-[20px]">
-                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">Jarak / Waktu</div>
-                            <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">{student.dapodik.distanceToSchool} km / {student.dapodik.travelTimeMinutes} menit</div>
+                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">22. Berat (kg)</div>
+                            <FormField label="" value={student.weight} fieldKey="weight" labelCol="hidden" valueCol="flex-1 pl-0" className="flex-1 border-none" />
                         </div>
                         <div className="flex border-b border-gray-300 min-h-[20px]">
-                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">Jml Saudara</div>
-                            <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">{student.siblingCount}</div>
+                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">23. Jarak (km)</div>
+                            <FormField label="" value={student.dapodik.distanceToSchool} fieldKey="dapodik.distanceToSchool" labelCol="hidden" valueCol="flex-1 pl-0" className="flex-1 border-none" />
+                        </div>
+                        <div className="flex border-b border-gray-300 min-h-[20px]">
+                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">24. Waktu (menit)</div>
+                            <FormField label="" value={student.dapodik.travelTimeMinutes} fieldKey="dapodik.travelTimeMinutes" labelCol="hidden" valueCol="flex-1 pl-0" className="flex-1 border-none" />
+                        </div>
+                        <div className="flex border-b border-gray-300 min-h-[20px]">
+                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">25. Jml Saudara</div>
+                            <FormField label="" value={student.siblingCount} fieldKey="siblingCount" labelCol="hidden" valueCol="flex-1 pl-0" className="flex-1 border-none" />
                         </div>
                     </div>
 

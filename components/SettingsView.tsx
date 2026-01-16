@@ -39,6 +39,7 @@ const MASTER_DOC_LIST = [
     { id: 'KARTU_PELAJAR', label: 'Kartu Pelajar', desc: 'Depan Belakang' },
     { id: 'KIP', label: 'KIP / PKH', desc: 'Jika ada' },
     { id: 'SKL', label: 'SKL', desc: 'Surat Ket Lulus' },
+    { id: 'NISN', label: 'Kartu/Bukti NISN', desc: 'Dokumen NISN' },
 ];
 
 const SettingsView: React.FC = () => {

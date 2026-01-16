@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Student, CorrectionRequest } from '../types';
 import { 
   CheckCircle2, FileText, Maximize2, ZoomIn, ZoomOut, Save, 
-  FileCheck2, Loader2, Pencil, Search, Filter, ExternalLink, RefreshCw, AlertCircle, Eye, File, ImageIcon, FileType, X
+  FileCheck2, Loader2, Pencil, Search, Filter, ExternalLink, RefreshCw, AlertCircle, Eye, File, ImageIcon, FileType, X, Send, XCircle, ListChecks, History
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -89,6 +89,23 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   const [rejectionNote, setRejectionNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const isStudent = userRole === 'STUDENT';
+  const isAdmin = userRole === 'ADMIN' || userRole === 'GURU';
+
+  // --- CORRECTION STATE (STUDENT) ---
+  const [correctionModalOpen, setCorrectionModalOpen] = useState(false);
+  const [targetCorrection, setTargetCorrection] = useState<{
+      key: string; 
+      label: string; 
+      currentValue: string;
+      type: 'CLASS' | 'GRADE';
+  } | null>(null);
+  const [proposedValue, setProposedValue] = useState('');
+  const [correctionReason, setCorrectionReason] = useState('');
+
+  // --- ADMIN VERIFICATION STATE ---
+  const [adminVerifyModalOpen, setAdminVerifyModalOpen] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<CorrectionRequest | null>(null);
+  const [adminResponseNote, setAdminResponseNote] = useState('');
 
   // PDF States
   const [isPdfLoading, setIsPdfLoading] = useState(false);
@@ -161,6 +178,11 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   // Calculate Display Class based on Semester
   const getDisplayClass = () => {
       if (!currentStudent) return '';
+      // Use academic record specific class if available, else fallback to current class logic
+      if (currentRecord && currentRecord.className) {
+          return currentRecord.className;
+      }
+
       let level = '';
       if (activeSemester <= 2) level = 'VII';
       else if (activeSemester <= 4) level = 'VIII';
@@ -171,9 +193,28 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       return `${level} ${suffix}`.trim();
   };
 
+  // Get Dynamic Dropdown Options based on Semester
+  const getClassOptions = () => {
+      if (activeSemester <= 2) return ['VII A', 'VII B', 'VII C'];
+      if (activeSemester <= 4) return ['VIII A', 'VIII B', 'VIII C'];
+      return ['IX A', 'IX B', 'IX C'];
+  };
+
   // Get Academic Year from settings or fallback
   const getAcademicYear = () => {
       return appSettings?.academicData?.semesterYears?.[activeSemester] || '2024/2025';
+  };
+
+  // AUTOMATED COMPETENCY GENERATOR
+  const getCompetencyDescription = (score: number, subjectName: string) => {
+      if (!score) return '-';
+      let predikat = '';
+      if (score >= 91) predikat = 'Sangat baik';
+      else if (score >= 81) predikat = 'Baik';
+      else if (score >= 75) predikat = 'Cukup';
+      else predikat = 'Perlu bimbingan';
+
+      return `${predikat} dalam memahami materi ${subjectName}.`;
   };
 
   // VIEWER LOGIC IMPLEMENTATION
@@ -183,8 +224,6 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
     const loadPdf = async () => {
         if (!isMounted) return;
-        
-        // Reset states
         setPdfDoc(null);
         setIsPdfLoading(false);
         setPdfError(false);
@@ -193,16 +232,12 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
         if (!currentStudent || !currentDoc) return;
 
-        // Drive URL handling: Default to Iframe, unless explicit image request which allows direct
         if (isDriveUrl && !isImageFile(currentDoc)) {
             if(isMounted) setUseFallbackViewer(true);
             return;
         }
 
-        // Only try PDF.js if it is a local/direct PDF and NOT a Drive link
         if (currentDoc.type === 'PDF' || currentDoc.name.toLowerCase().endsWith('.pdf')) {
-            
-            // PREVENT FETCH ERROR: Only try to fetch if it's a blob URL. 
             if (!currentDoc.url.startsWith('blob:')) {
                 if(isMounted) setUseFallbackViewer(true);
                 return;
@@ -229,28 +264,19 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                 const pdf = await loadingTask.promise;
                 
                 if(isMounted) {
-                    setPdfDoc(pdf); 
-                    setNumPages(pdf.numPages); 
-                    setIsPdfLoading(false);
+                    setPdfDoc(pdf); setNumPages(pdf.numPages); setIsPdfLoading(false);
                 }
             } catch (error: any) { 
                 if (error.name === 'AbortError') return;
-                
                 if(isMounted) {
-                    if (error.message !== 'Failed to fetch') {
-                        console.error("Error loading PDF, trying fallback:", error);
-                    }
-                    setUseFallbackViewer(true);
-                    setIsPdfLoading(false); 
+                    if (error.message !== 'Failed to fetch') console.error("Error loading PDF, trying fallback:", error);
+                    setUseFallbackViewer(true); setIsPdfLoading(false); 
                 }
             }
         }
     };
     loadPdf();
-    return () => { 
-        isMounted = false; 
-        controller.abort();
-    };
+    return () => { isMounted = false; controller.abort(); };
   }, [currentDoc]);
   
   const handleApproveDoc = async () => { 
@@ -274,10 +300,165 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   };
   
   const handleGradeChange = (subjectIndex: number, newScore: string) => { if (currentRecord) { currentRecord.subjects[subjectIndex].score = Number(newScore); setForceUpdate(prev => prev + 1); } };
-  const saveGrades = async () => { /* ... */ };
+  const saveGrades = async () => { /* Logic handled by generic updates if needed */ };
+
+  // --- CORRECTION HANDLERS (STUDENT) ---
+  const handleOpenCorrection = (key: string, label: string, currentValue: string, type: 'CLASS' | 'GRADE') => {
+      setTargetCorrection({ key, label, currentValue, type });
+      if (type === 'CLASS') {
+          const opts = getClassOptions();
+          setProposedValue(opts.includes(currentValue) ? currentValue : opts[0]);
+      } else {
+          setProposedValue(currentValue);
+      }
+      setCorrectionReason('');
+      setCorrectionModalOpen(true);
+  };
+
+  const submitCorrection = async () => {
+      if (!currentStudent || !targetCorrection) return;
+      if (!proposedValue || !correctionReason.trim()) { alert("Mohon lengkapi data."); return; }
+
+      // Handle Key for Class correction (semester specific)
+      const finalKey = targetCorrection.type === 'CLASS' ? `class-${activeSemester}` : targetCorrection.key;
+
+      const newRequest: CorrectionRequest = {
+          id: Math.random().toString(36).substr(2, 9),
+          fieldKey: finalKey,
+          fieldName: targetCorrection.label,
+          originalValue: targetCorrection.currentValue,
+          proposedValue: proposedValue,
+          studentReason: correctionReason,
+          status: 'PENDING',
+          requestDate: new Date().toISOString(),
+      };
+
+      // Clone for safety
+      const updatedStudent = { ...currentStudent };
+      if (!updatedStudent.correctionRequests) updatedStudent.correctionRequests = [];
+      
+      // Remove dups for same key
+      updatedStudent.correctionRequests = updatedStudent.correctionRequests.filter(r => !(r.fieldKey === finalKey && r.status === 'PENDING'));
+      updatedStudent.correctionRequests.push(newRequest);
+
+      await api.updateStudent(updatedStudent);
+      setCorrectionModalOpen(false); alert("✅ Pengajuan revisi berhasil dikirim."); if (onUpdate) onUpdate();
+  };
+
+  // --- ADMIN VERIFICATION HANDLERS (PER ITEM) ---
+  const handleAdminVerifyClick = (request: CorrectionRequest) => {
+      // Allow viewing details even if processed, but only act if PENDING
+      setSelectedRequest(request);
+      setAdminResponseNote(request.adminNote || '');
+      setAdminVerifyModalOpen(true);
+  };
+
+  const processVerification = async (action: 'APPROVED' | 'REJECTED') => {
+      if (!currentStudent || !selectedRequest) return;
+      
+      if (action === 'REJECTED' && !adminResponseNote.trim()) {
+          alert("Mohon isi alasan penolakan.");
+          return;
+      }
+
+      setIsSaving(true);
+
+      // 1. Update Request Status specifically for this ID
+      // Clone student to avoid direct mutation
+      const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+      
+      updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((req: CorrectionRequest) => {
+          if (req.id === selectedRequest.id) {
+              return {
+                  ...req,
+                  status: action,
+                  adminNote: adminResponseNote || (action === 'APPROVED' ? 'Disetujui.' : 'Ditolak.'),
+                  verifierName: currentUser?.name || 'Admin',
+                  processedDate: new Date().toISOString()
+              };
+          }
+          return req;
+      });
+
+      // 2. If Approved, Apply Data Changes specifically for this request
+      if (action === 'APPROVED') {
+          const { fieldKey, proposedValue } = selectedRequest;
+          
+          if (fieldKey === 'className') {
+              // Should not happen for grading view corrections anymore, but kept for legacy
+              updatedStudent.className = proposedValue;
+          } else if (fieldKey.startsWith('class-')) {
+              // Format: class-[semester]
+              const sem = parseInt(fieldKey.split('-')[1]);
+              if (!isNaN(sem)) {
+                  // Ensure semester record exists
+                  if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
+                  if (!updatedStudent.academicRecords[sem]) {
+                      // Initialize bare minimum record if missing
+                      const level = (sem <= 2) ? 'VII' : (sem <= 4) ? 'VIII' : 'IX';
+                      updatedStudent.academicRecords[sem] = { 
+                          semester: sem, 
+                          classLevel: level, 
+                          className: proposedValue,
+                          phase: 'D', 
+                          year: '2024', 
+                          subjects: [], p5Projects: [], extracurriculars: [], teacherNote: '', attendance: {sick:0, permitted:0, noReason:0}
+                      };
+                  }
+                  
+                  updatedStudent.academicRecords[sem].className = proposedValue;
+              }
+          } else if (fieldKey.startsWith('grade-')) {
+              // format: grade-[sem]-[subjectName]
+              const parts = fieldKey.split('-');
+              if (parts.length >= 3) {
+                  const sem = parseInt(parts[1]);
+                  const subjectName = parts.slice(2).join('-');
+                  
+                  if (updatedStudent.academicRecords && updatedStudent.academicRecords[sem]) {
+                      const subjectRecord = updatedStudent.academicRecords[sem].subjects.find((s: any) => s.subject === subjectName);
+                      if (subjectRecord) {
+                          subjectRecord.score = Number(proposedValue);
+                      }
+                  }
+              }
+          }
+      }
+
+      // 3. Save
+      try {
+          await api.updateStudent(updatedStudent);
+          setAdminVerifyModalOpen(false);
+          setForceUpdate(prev => prev + 1);
+          if (onUpdate) onUpdate();
+      } catch (e) {
+          alert("Gagal menyimpan perubahan.");
+          console.error(e);
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
+  // Helper to check pending status for a key
+  const getPendingRequest = (key: string) => {
+      return currentStudent?.correctionRequests?.find(r => r.fieldKey === key && r.status === 'PENDING');
+  };
+
+  // List for Admin Side Panel - Include ALL requests but sorted
+  const allRequests = useMemo(() => {
+      if (!currentStudent?.correctionRequests) return [];
+      
+      return [...currentStudent.correctionRequests].sort((a, b) => {
+          // Sort: Pending first, then by date (newest first)
+          if (a.status === 'PENDING' && b.status !== 'PENDING') return -1;
+          if (a.status !== 'PENDING' && b.status === 'PENDING') return 1;
+          return new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime();
+      });
+  }, [currentStudent]);
 
   return (
     <div className="flex flex-col h-full animate-fade-in relative">
+        {/* REJECT DOCUMENT MODAL */}
         {rejectModalOpen && (
             <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col">
@@ -287,6 +468,139 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                         <button onClick={()=>setRejectModalOpen(false)} className="px-3 py-1 bg-gray-100 rounded">Batal</button>
                         <button onClick={confirmRejectDoc} disabled={isSaving} className="px-3 py-1 bg-red-600 text-white rounded flex items-center">{isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Simpan'}</button>
                     </div>
+                </div>
+            </div>
+        )}
+
+        {/* CORRECTION MODAL (STUDENT) */}
+        {correctionModalOpen && targetCorrection && (
+            <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform scale-100 transition-all">
+                    <div className="flex justify-between items-center mb-4 border-b pb-2">
+                        <h3 className="text-lg font-bold text-gray-800">Ajukan Revisi Data</h3>
+                        <button onClick={() => setCorrectionModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>
+                    </div>
+                    
+                    <div className="mb-4 bg-blue-50 p-3 rounded border border-blue-100">
+                        <p className="text-xs text-gray-500 uppercase">{targetCorrection.label} (Saat Ini)</p>
+                        <p className="text-sm font-bold text-gray-700">{targetCorrection.currentValue || '-'}</p>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Data Baru / Usulan</label>
+                            {targetCorrection.type === 'CLASS' ? (
+                                <select 
+                                    className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none font-bold"
+                                    value={proposedValue}
+                                    onChange={(e) => setProposedValue(e.target.value)}
+                                >
+                                    {getClassOptions().map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                            ) : (
+                                <input 
+                                    type="number" 
+                                    className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none font-bold"
+                                    value={proposedValue}
+                                    onChange={(e) => setProposedValue(e.target.value)}
+                                    placeholder="Masukkan nilai yang benar"
+                                />
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Alasan Revisi</label>
+                            <textarea 
+                                className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none"
+                                rows={2}
+                                placeholder="Jelaskan alasan perubahan..."
+                                value={correctionReason}
+                                onChange={(e) => setCorrectionReason(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex gap-2 mt-6">
+                        <button onClick={() => setCorrectionModalOpen(false)} className="flex-1 py-2 bg-gray-100 text-gray-600 font-bold rounded-lg text-sm hover:bg-gray-200">Batal</button>
+                        <button onClick={submitCorrection} className="flex-1 py-2 bg-blue-600 text-white font-bold rounded-lg text-sm hover:bg-blue-700 flex items-center justify-center gap-2">
+                            <Send className="w-3 h-3" /> Kirim
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* ADMIN VERIFICATION MODAL */}
+        {adminVerifyModalOpen && selectedRequest && (
+            <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform scale-100 transition-all">
+                    <div className="flex justify-between items-center mb-4 border-b pb-2">
+                        <h3 className="text-lg font-bold text-gray-800">Verifikasi Pengajuan</h3>
+                        <button onClick={() => setAdminVerifyModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>
+                    </div>
+
+                    <div className="space-y-4 mb-6">
+                        <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <p className="text-xs font-bold text-gray-500 uppercase mb-1">Item Perubahan</p>
+                            <p className="text-sm font-semibold text-gray-800">{selectedRequest.fieldName}</p>
+                        </div>
+                        
+                        <div className="flex items-center gap-3">
+                            <div className="flex-1 p-3 bg-red-50 border border-red-100 rounded-lg">
+                                <p className="text-[10px] text-red-500 font-bold uppercase">Data Lama</p>
+                                <p className="text-sm font-bold text-gray-700 line-through decoration-red-400">{selectedRequest.originalValue}</p>
+                            </div>
+                            <div className="flex-1 p-3 bg-green-50 border border-green-100 rounded-lg">
+                                <p className="text-[10px] text-green-600 font-bold uppercase">Usulan Baru</p>
+                                <p className="text-sm font-bold text-gray-800">{selectedRequest.proposedValue}</p>
+                            </div>
+                        </div>
+
+                        <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100">
+                            <p className="text-xs font-bold text-yellow-700 uppercase mb-1">Alasan Siswa</p>
+                            <p className="text-sm text-gray-700 italic">"{selectedRequest.studentReason}"</p>
+                        </div>
+
+                        {selectedRequest.status !== 'PENDING' && (
+                            <div className={`p-3 rounded-lg border ${selectedRequest.status === 'APPROVED' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                <p className={`text-xs font-bold uppercase mb-1 ${selectedRequest.status === 'APPROVED' ? 'text-green-700' : 'text-red-700'}`}>
+                                    Status: {selectedRequest.status === 'APPROVED' ? 'Disetujui' : 'Ditolak'}
+                                </p>
+                                <p className="text-sm text-gray-700 italic">"{selectedRequest.adminNote}"</p>
+                            </div>
+                        )}
+
+                        {selectedRequest.status === 'PENDING' && (
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Catatan Admin (Opsional)</label>
+                                <textarea 
+                                    className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                    rows={2}
+                                    placeholder="Alasan penolakan atau catatan..."
+                                    value={adminResponseNote}
+                                    onChange={(e) => setAdminResponseNote(e.target.value)}
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    {selectedRequest.status === 'PENDING' && (
+                        <div className="flex gap-2">
+                            <button 
+                                onClick={() => processVerification('REJECTED')} 
+                                disabled={isSaving}
+                                className="flex-1 py-2 bg-white border border-red-200 text-red-600 font-bold rounded-lg text-sm hover:bg-red-50 flex items-center justify-center gap-2"
+                            >
+                                <XCircle className="w-4 h-4" /> Tolak
+                            </button>
+                            <button 
+                                onClick={() => processVerification('APPROVED')} 
+                                disabled={isSaving}
+                                className="flex-1 py-2 bg-green-600 text-white font-bold rounded-lg text-sm hover:bg-green-700 flex items-center justify-center gap-2"
+                            >
+                                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Setujui
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
         )}
@@ -310,7 +624,10 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                     </select>
                 </div>
             ) : (
-                <div className="font-bold text-lg text-gray-800">{currentStudent?.fullName} (Nilai Saya)</div>
+                <div className="font-bold text-lg text-gray-800 flex flex-col">
+                    <span>{currentStudent?.fullName}</span>
+                    <span className="text-xs text-gray-500 font-normal">Menu Verifikasi Nilai & Rapor</span>
+                </div>
             )}
             
             <div className="flex items-center gap-2">
@@ -411,53 +728,168 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                 )}
 
                 {/* RIGHT SIDE: DATA */}
-                <div className={`bg-white rounded-xl border border-gray-200 flex flex-col shadow-sm transition-all duration-300 ${layoutMode === 'full-doc' && !isStudent ? 'hidden' : 'flex-1'}`}>
+                <div className={`bg-white rounded-xl border border-gray-200 flex flex-col shadow-sm transition-all duration-300 ${layoutMode === 'full-doc' && !isStudent ? 'hidden' : 'flex-1'} overflow-hidden`}>
                     <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-                        <h3 className="font-bold text-gray-800 flex items-center gap-2"><FileCheck2 className="w-5 h-5 text-purple-600" /> Verifikasi Nilai</h3>
-                        <div className="flex gap-2">
-                            <button onClick={saveGrades} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${isEditing ? 'bg-green-600 text-white shadow-lg' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'}`}>
-                                {isEditing ? <><Save className="w-3 h-3" /> {isSaving ? 'Menyimpan...' : 'Simpan'}</> : <><Pencil className="w-3 h-3" /> Edit Nilai</>}
-                            </button>
-                        </div>
+                        <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                            <FileCheck2 className="w-5 h-5 text-purple-600" /> {isStudent ? 'Nilai Rapor Saya' : 'Verifikasi Nilai'}
+                        </h3>
+                        {/* Only Admin edits directly here, Student edits via click */}
+                        {!isStudent && (
+                            <div className="flex gap-2">
+                                <button onClick={saveGrades} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${isEditing ? 'bg-green-600 text-white shadow-lg' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'}`}>
+                                    {isEditing ? <><Save className="w-3 h-3" /> {isSaving ? 'Menyimpan...' : 'Simpan'}</> : <><Pencil className="w-3 h-3" /> Edit Nilai</>}
+                                </button>
+                            </div>
+                        )}
+                        {isStudent && (
+                            <div className="text-[10px] text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-100">
+                                * Klik pada Kelas atau Nilai untuk mengajukan perbaikan
+                            </div>
+                        )}
                     </div>
                     
-                    <div className="flex-1 overflow-auto p-4 md:p-6 bg-white" id="grades-table-container">
-                        <div className="mb-6 border-b-2 border-gray-800 pb-4">
-                            <div className="flex justify-between text-sm font-bold text-gray-900 mb-2">
-                                <span>NAMA: {currentStudent.fullName.toUpperCase()}</span>
-                                {/* UPDATED: Display Class based on Semester logic */}
-                                <span>KELAS: {getDisplayClass()}</span>
+                    <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+                        
+                        {/* ADMIN SIDEBAR LIST FOR ALL REQUESTS (SORTED BY STATUS & TIME) */}
+                        {isAdmin && allRequests.length > 0 && (
+                            <div className="w-full md:w-64 border-r border-gray-200 bg-gray-50 p-3 overflow-y-auto">
+                                <div className="text-xs font-bold text-gray-700 flex items-center gap-2 mb-3 bg-white p-2 rounded shadow-sm">
+                                    <ListChecks className="w-4 h-4 text-blue-600" />
+                                    Riwayat Verifikasi ({allRequests.length})
+                                </div>
+                                <div className="space-y-2">
+                                    {allRequests.map(req => {
+                                        const isPending = req.status === 'PENDING';
+                                        const isApproved = req.status === 'APPROVED';
+                                        
+                                        return (
+                                            <div 
+                                                key={req.id} 
+                                                className={`
+                                                    border rounded-lg p-2 shadow-sm cursor-pointer transition-colors
+                                                    ${isPending ? 'bg-white border-yellow-300 hover:bg-yellow-50' : ''}
+                                                    ${isApproved ? 'bg-green-50 border-green-200 opacity-80 hover:opacity-100' : ''}
+                                                    ${req.status === 'REJECTED' ? 'bg-red-50 border-red-200 opacity-80 hover:opacity-100' : ''}
+                                                `}
+                                                onClick={() => handleAdminVerifyClick(req)}
+                                            >
+                                                <div className="flex justify-between items-start">
+                                                    <p className="text-xs font-bold text-gray-800">{req.fieldName}</p>
+                                                    {isPending ? (
+                                                        <span className="text-[9px] bg-yellow-100 text-yellow-700 px-1 rounded font-bold">Pending</span>
+                                                    ) : isApproved ? (
+                                                        <span className="text-[9px] bg-green-100 text-green-700 px-1 rounded font-bold">Disetujui</span>
+                                                    ) : (
+                                                        <span className="text-[9px] bg-red-100 text-red-700 px-1 rounded font-bold">Ditolak</span>
+                                                    )}
+                                                </div>
+                                                <div className="mt-1 flex items-center gap-1 text-[10px] text-gray-500">
+                                                    <span className="line-through decoration-red-300 truncate max-w-[40%]">{req.originalValue}</span>
+                                                    <span>➔</span>
+                                                    <span className="font-bold text-gray-800">{req.proposedValue}</span>
+                                                </div>
+                                                {!isPending && (
+                                                    <p className="text-[9px] text-gray-400 mt-1 italic">
+                                                        Oleh: {req.verifierName || 'Admin'}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             </div>
-                            <div className="flex justify-between text-xs text-gray-600">
-                                <span>NISN: {currentStudent.nisn}</span>
-                                {/* UPDATED: Display Academic Year from Settings */}
-                                <span>SEMESTER: {activeSemester} ({getAcademicYear()})</span>
+                        )}
+
+                        <div className="flex-1 overflow-auto p-4 md:p-6 bg-white" id="grades-table-container">
+                            <div className="mb-6 border-b-2 border-gray-800 pb-4">
+                                <div className="flex justify-between text-sm font-bold text-gray-900 mb-2">
+                                    <span>NAMA: {currentStudent.fullName.toUpperCase()}</span>
+                                    
+                                    {/* DYNAMIC CLASS DISPLAY */}
+                                    {(() => {
+                                        const displayClass = getDisplayClass();
+                                        const classPending = getPendingRequest(`class-${activeSemester}`);
+                                        
+                                        return (
+                                            <span 
+                                                className={`
+                                                    flex items-center gap-2 px-2 py-0.5 rounded transition-colors
+                                                    ${isStudent ? 'cursor-pointer hover:bg-blue-50 text-blue-800' : ''}
+                                                    ${isAdmin && classPending ? 'bg-yellow-200 border border-yellow-300 cursor-pointer animate-pulse' : ''}
+                                                    ${classPending && !isAdmin ? 'bg-yellow-100 text-yellow-800' : ''}
+                                                `}
+                                                onClick={() => {
+                                                    if (isStudent && !classPending) handleOpenCorrection('className', 'KELAS', displayClass, 'CLASS');
+                                                    if (isAdmin && classPending) handleAdminVerifyClick(classPending);
+                                                }}
+                                                title={isStudent ? "Klik untuk koreksi Kelas" : (isAdmin && classPending ? "Klik untuk memverifikasi perubahan" : "")}
+                                            >
+                                                KELAS: {classPending ? classPending.proposedValue : displayClass}
+                                                {classPending && <span className="text-[9px] bg-yellow-300 border border-yellow-400 px-1 rounded font-bold text-yellow-900">Menunggu Verifikasi</span>}
+                                                {isStudent && !classPending && <Pencil className="w-3 h-3 opacity-50" />}
+                                            </span>
+                                        )
+                                    })()}
+                                </div>
+                                <div className="flex justify-between text-xs text-gray-600">
+                                    <span>NISN: {currentStudent.nisn}</span>
+                                    <span>SEMESTER: {activeSemester} ({getAcademicYear()})</span>
+                                </div>
                             </div>
-                        </div>
-                        {currentRecord ? (
-                            <table className="w-full text-sm border-collapse">
-                                <thead>
-                                    <tr className="bg-gray-100 border-y-2 border-gray-800 text-xs font-bold text-gray-700 uppercase">
-                                        <th className="py-2 text-left pl-2">Mata Pelajaran</th>
-                                        <th className="py-2 text-center w-20">Nilai</th>
-                                        <th className="py-2 text-left pl-4">Capaian Kompetensi</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-200">
-                                    {currentRecord.subjects.map((sub, idx) => (
-                                        <tr key={idx} className="hover:bg-blue-50/50 transition-colors">
-                                            <td className="py-3 pl-2 font-medium text-gray-800">{sub.subject}</td>
-                                            <td className="py-3 text-center font-bold text-gray-900">
-                                                {isEditing ? (
-                                                    <input type="number" className="w-12 text-center border border-blue-300 rounded p-1" value={sub.score} onChange={(e) => handleGradeChange(idx, e.target.value)} />
-                                                ) : <span className={sub.score < 75 ? 'text-red-600' : ''}>{sub.score}</span>}
-                                            </td>
-                                            <td className="py-3 pl-4 text-xs text-gray-500 italic">{sub.competency || '-'}</td>
+                            
+                            {currentRecord ? (
+                                <table className="w-full text-sm border-collapse">
+                                    <thead>
+                                        <tr className="bg-gray-100 border-y-2 border-gray-800 text-xs font-bold text-gray-700 uppercase">
+                                            <th className="py-2 text-left pl-2">Mata Pelajaran</th>
+                                            <th className="py-2 text-center w-24">Nilai</th>
+                                            <th className="py-2 text-left pl-4">Capaian Kompetensi</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        ) : <div className="text-center py-10 text-gray-400 italic">Data nilai belum diinput.</div>}
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200">
+                                        {currentRecord.subjects.map((sub, idx) => {
+                                            // Generate a unique key for correction: grade-[sem]-[subject]
+                                            const gradeKey = `grade-${activeSemester}-${sub.subject}`;
+                                            const gradePending = getPendingRequest(gradeKey);
+                                            // Auto-generate competency description
+                                            const competencyText = getCompetencyDescription(sub.score, sub.subject);
+
+                                            return (
+                                                <tr key={idx} className="hover:bg-blue-50/50 transition-colors">
+                                                    <td className="py-3 pl-2 font-medium text-gray-800">{sub.subject}</td>
+                                                    <td className="py-3 text-center font-bold text-gray-900">
+                                                        {isEditing && !isStudent ? (
+                                                            <input type="number" className="w-12 text-center border border-blue-300 rounded p-1" value={sub.score} onChange={(e) => handleGradeChange(idx, e.target.value)} />
+                                                        ) : (
+                                                            <div 
+                                                                className={`
+                                                                    inline-flex items-center gap-1 px-2 py-1 rounded transition-colors
+                                                                    ${sub.score < 75 ? 'text-red-600' : ''}
+                                                                    ${isStudent ? 'cursor-pointer hover:bg-blue-50 border border-transparent hover:border-blue-200' : ''}
+                                                                    ${isAdmin && gradePending ? 'bg-yellow-200 border border-yellow-300 cursor-pointer animate-pulse' : ''}
+                                                                    ${gradePending && !isAdmin ? 'bg-yellow-100 text-yellow-800 border-yellow-200' : ''}
+                                                                `}
+                                                                onClick={() => {
+                                                                    if (isStudent && !gradePending) handleOpenCorrection(gradeKey, `Nilai ${sub.subject} (Sem ${activeSemester})`, String(sub.score), 'GRADE');
+                                                                    if (isAdmin && gradePending) handleAdminVerifyClick(gradePending);
+                                                                }}
+                                                                title={isStudent ? "Klik untuk mengajukan perbaikan nilai" : (isAdmin && gradePending ? "Klik untuk memverifikasi" : "")}
+                                                            >
+                                                                {gradePending ? gradePending.proposedValue : sub.score}
+                                                                {gradePending && <span className="text-[8px] ml-1 opacity-70">(Rev)</span>}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-3 pl-4 text-xs text-gray-600 italic">
+                                                        {competencyText}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            ) : <div className="text-center py-10 text-gray-400 italic">Data nilai belum diinput.</div>}
+                        </div>
                     </div>
                 </div>
             </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, FileText, Settings, LogOut, GraduationCap, Database, ClipboardCheck, PanelLeftClose, PanelLeft, UserCircle, History, Book, ClipboardList, FolderOpen, Upload, FileCheck2, Calculator, Award, FileInput, LayoutTemplate } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Settings, LogOut, GraduationCap, Database, ClipboardCheck, PanelLeftClose, PanelLeft, UserCircle, History, Book, ClipboardList, FolderOpen, Upload, FileCheck2, Calculator, Award, FileInput, LayoutTemplate, ScrollText } from 'lucide-react';
 
 interface SidebarProps {
   currentView: string;
@@ -21,12 +21,16 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, onLogout, isCol
     { id: 'buku-induk', label: 'Buku Induk', icon: Book, visible: true },
     { id: 'grades', label: 'Nilai Siswa', icon: ClipboardList, visible: true },
     { id: 'recap', label: 'Rekap 5 Semester', icon: Calculator, visible: true },
-    { id: 'ijazah', label: 'Nilai Ijazah', icon: Award, visible: true },
+    // Consolidated Ijazah Menu
+    { id: 'data-ijazah', label: 'Manajemen Ijazah', icon: Award, visible: true },
+    
     { id: 'verification', label: 'Verifikasi Buku Induk', icon: ClipboardCheck, visible: true },
+    // NEW: Verifikasi Data Ijazah (Above Grade Verification)
+    { id: 'ijazah-verification', label: 'Verifikasi Data Ijazah', icon: ScrollText, visible: true },
     { id: 'grade-verification', label: 'Verifikasi Nilai', icon: FileCheck2, visible: true },
     { id: 'student-docs', label: 'Dokumen Siswa', icon: FileInput, visible: true },
     { id: 'history', label: 'Riwayat Verifikasi', icon: History, visible: true },
-    { id: 'monitoring', label: 'Monitoring', icon: LayoutTemplate, visible: true }, // Changed from Reports
+    { id: 'monitoring', label: 'Monitoring', icon: LayoutTemplate, visible: true }, 
   ];
 
   const studentMenuItems = [
@@ -34,11 +38,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, onLogout, isCol
       { id: 'dapodik', label: 'Buku Induk', icon: Book, visible: true }, 
       { id: 'documents', label: 'Dokumen Saya', icon: FolderOpen, visible: true },
       { id: 'upload-rapor', label: 'Upload Rapor', icon: Upload, visible: true },
-      { id: 'grades', label: 'Nilai Saya', icon: ClipboardList, visible: true }, // Renamed here
+      { id: 'grades', label: 'Nilai Saya', icon: ClipboardList, visible: true }, 
       { id: 'recap', label: 'Rekap 5 Semester', icon: Calculator, visible: true },
-      { id: 'ijazah', label: 'Nilai Ijazah', icon: Award, visible: true },
+      { id: 'data-ijazah', label: 'Ijazah & Transkrip', icon: Award, visible: true },
       { id: 'history', label: 'Riwayat', icon: History, visible: true },
-      { id: 'monitoring', label: 'Monitoring', icon: LayoutTemplate, visible: true }, // Added Monitoring for Student
+      { id: 'monitoring', label: 'Monitoring', icon: LayoutTemplate, visible: true }, 
   ];
 
   const rawItems = (userRole === 'ADMIN' || userRole === 'GURU') ? adminMenuItems : studentMenuItems;

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Student } from '../types';
-import { Search, Trash, UploadCloud, Download, Loader2, CheckCircle2, Plus, X, FileMinus, FileX } from 'lucide-react';
+import { Search, Trash, UploadCloud, Download, Loader2, CheckCircle2, Plus, X, FileMinus, Pencil, Save } from 'lucide-react';
 import { api } from '../services/api';
 
 interface DatabaseViewProps {
@@ -22,11 +22,32 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
       setLocalStudents(initialStudents);
   }, [initialStudents]);
 
-  // Add Manual Student State
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [newStudent, setNewStudent] = useState<Partial<Student>>({
-      fullName: '', nisn: '', nis: '', className: 'VII A', gender: 'L'
-  });
+  // Add/Edit Manual Student State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  
+  // Initialize with a complete default structure to avoid undefined errors
+  const defaultStudentState: Student = {
+      id: '',
+      fullName: '', nisn: '', nis: '', className: 'VII A', gender: 'L',
+      birthPlace: '', birthDate: '', religion: 'Islam', nationality: 'WNI',
+      address: '', subDistrict: '', district: 'Mojokerto', postalCode: '',
+      father: { name: '', nik: '', birthPlaceDate: '', education: '', job: '', income: '', phone: '' },
+      mother: { name: '', nik: '', birthPlaceDate: '', education: '', job: '', income: '', phone: '' },
+      guardian: { name: '', nik: '', birthPlaceDate: '', education: '', job: '', income: '', phone: '' },
+      dapodik: {
+          nik: '', noKK: '', rt: '', rw: '', dusun: '', kelurahan: '', kecamatan: '', kodePos: '',
+          livingStatus: '', transportation: '', email: '', skhun: '', kpsReceiver: 'Tidak', kpsNumber: '',
+          kipReceiver: 'Tidak', kipNumber: '', kipName: '', kksNumber: '', birthRegNumber: '', bank: '',
+          bankAccount: '', bankAccountName: '', pipEligible: 'Tidak', pipReason: '', specialNeeds: 'Tidak',
+          latitude: '', longitude: '', headCircumference: 0, distanceToSchool: '', unExamNumber: '', travelTimeMinutes: 0
+      },
+      documents: [], correctionRequests: [],
+      childOrder: 1, siblingCount: 0, height: 0, weight: 0, bloodType: '-', entryYear: new Date().getFullYear(),
+      status: 'AKTIF', previousSchool: '', graduationYear: 0, diplomaNumber: '', averageScore: 0, achievements: []
+  };
+
+  const [formData, setFormData] = useState<Student>(defaultStudentState);
 
   const filteredStudents = localStudents.filter(s => 
     s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -55,10 +76,8 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
           const nisn = student.nisn ? String(student.nisn).trim() : '';
           
           if (nisn && seenNISN.has(nisn)) {
-              // If we have seen this NISN, skip adding to unique list (this is a duplicate)
               duplicateCount++;
           } else {
-              // If it's a new NISN or empty NISN (we keep empties usually), add to list
               if (nisn) seenNISN.add(nisn);
               uniqueStudents.push(student);
           }
@@ -67,10 +86,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
       if (duplicateCount > 0) {
           setLocalStudents(uniqueStudents);
           onUpdateStudents(uniqueStudents);
-          
-          // Optionally sync to cloud if needed immediately
           api.updateStudentsBulk(uniqueStudents).catch(console.error);
-          
           alert(`✅ Berhasil menghapus ${duplicateCount} data duplikat.`);
       } else {
           alert("Tidak ditemukan data duplikat (NISN ganda).");
@@ -85,11 +101,55 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
       }
   };
 
+  // --- EDIT HANDLER ---
+  const handleEditRow = (student: Student) => {
+      setFormData(JSON.parse(JSON.stringify(student))); // Deep copy to avoid reference issues
+      setIsEditMode(true);
+      setIsModalOpen(true);
+  };
+
+  const handleOpenAdd = () => {
+      setFormData({ ...defaultStudentState, id: Math.random().toString(36).substr(2, 9) });
+      setIsEditMode(false);
+      setIsModalOpen(true);
+  };
+
+  const handleSaveStudent = () => {
+      if (!formData.fullName || !formData.nisn) {
+          alert("Nama dan NISN wajib diisi!");
+          return;
+      }
+
+      let updatedList: Student[];
+
+      if (isEditMode) {
+          // Update Existing
+          updatedList = localStudents.map(s => s.id === formData.id ? formData : s);
+          api.updateStudent(formData).catch(err => console.error("Cloud update failed", err));
+          alert("Data siswa berhasil diperbarui.");
+      } else {
+          // Check Duplicate NISN for new entries
+          if (localStudents.some(s => s.nisn === formData.nisn)) {
+              alert("Gagal: NISN ini sudah terdaftar di database.");
+              return;
+          }
+          // Create New
+          updatedList = [formData, ...localStudents];
+          api.updateStudent(formData).catch(err => console.error("Cloud save failed", err));
+          alert("Siswa berhasil ditambahkan.");
+      }
+
+      setLocalStudents(updatedList);
+      onUpdateStudents(updatedList); 
+      setIsModalOpen(false);
+  };
+
   const handleImportClick = () => {
       if (fileInputRef.current) fileInputRef.current.click();
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      // ... (Existing Import Logic remains unchanged) ...
       const file = e.target.files?.[0];
       if (!file) return;
 
@@ -110,22 +170,15 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
               const data = window.XLSX.utils.sheet_to_json(ws);
               
               setImportProgress(50);
-
-              // 1. Identify Existing NISNs for deduplication
               const existingNisns = new Set(localStudents.map(s => String(s.nisn).trim()));
 
-              // Process Data dengan Mapping Lengkap & Robust Key Handling
               const processedStudents: Student[] = data.map((rawRow: any) => {
-                  // Normalize Keys (Trim spaces & Handle variasi nama kolom)
                   const row: any = {};
                   Object.keys(rawRow).forEach(k => row[k.trim()] = rawRow[k]);
 
-                  // Helper untuk ambil value dari beberapa kemungkinan key
                   const getVal = (keys: string[], def: any = '') => {
                       for (const k of keys) {
-                          // Check exact match
                           if (row[k] !== undefined) return row[k];
-                          // Check loose match (case insensitive)
                           const looseKey = Object.keys(row).find(rk => rk.toLowerCase() === k.toLowerCase());
                           if (looseKey && row[looseKey] !== undefined) return row[looseKey];
                       }
@@ -137,7 +190,6 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
 
                   return {
                       id: Math.random().toString(36).substr(2, 9),
-                      // 1. Identitas
                       fullName: getVal(['Nama Peserta Didik', 'Nama Lengkap', 'Nama'], ''),
                       nis: String(getVal(['NIS', 'NIPD'], '')),
                       nisn: String(getVal(['NISN'], '')),
@@ -147,14 +199,10 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
                       birthDate: getVal(['Tanggal Lahir'], ''),
                       religion: getVal(['Agama'], 'Islam'),
                       nationality: 'WNI',
-                      
-                      // 2. Alamat
                       address: getVal(['Alamat Jalan', 'Alamat'], ''),
                       postalCode: String(getVal(['Kode Pos'], '')),
                       subDistrict: getVal(['Kecamatan'], ''),
                       district: getVal(['Kabupaten', 'Kabupaten/Kota'], 'Mojokerto'),
-                      
-                      // 3. Periodik
                       childOrder: Number(getVal(['Anak Ke', 'Anak ke-berapa'], 1)),
                       siblingCount: Number(getVal(['Jml Saudara', 'Jumlah Saudara Kandung', 'Jml. Saudara Kandung'], 0)),
                       height: Number(getVal(['Tinggi Badan'], 0)),
@@ -167,8 +215,6 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
                       diplomaNumber: getVal(['No Seri Ijazah'], ''),
                       averageScore: 0,
                       achievements: [],
-
-                      // 4. Orang Tua
                       father: { 
                           name: getVal(['Nama Ayah', 'Data Ayah', 'Nama Ayah Kandung'], ''), 
                           nik: String(getVal(['NIK Ayah'], '')), 
@@ -196,8 +242,6 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
                           income: getVal(['Penghasilan Wali'], ''),
                           phone: ''
                       },
-
-                      // 5. Dapodik Detail
                       dapodik: {
                           nik: String(getVal(['NIK', 'NIK Peserta Didik'], '')),
                           noKK: String(getVal(['No KK'], '')),
@@ -237,7 +281,6 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
                   };
               });
 
-              // 2. Filter out Duplicates (Only keep new NISNs)
               const newUniqueStudents = processedStudents.filter(s => {
                   const nisn = String(s.nisn).trim();
                   return nisn && !existingNisns.has(nisn);
@@ -245,13 +288,11 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
 
               const skippedCount = processedStudents.length - newUniqueStudents.length;
 
-              // UPDATE STATE & NOTIFY PARENT & SAVE TO CLOUD
               setTimeout(() => {
                   const updatedList = [...localStudents, ...newUniqueStudents];
                   setLocalStudents(updatedList);
-                  onUpdateStudents(updatedList); // Update Parent/Global State
+                  onUpdateStudents(updatedList); 
                   
-                  // Persist to Cloud
                   if (newUniqueStudents.length > 0) {
                       api.updateStudentsBulk(newUniqueStudents).catch(err => console.error("Cloud sync failed", err));
                   }
@@ -264,9 +305,9 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
               console.error(error);
               setIsImporting(false);
               if (error.message?.includes("Unsupported ZIP encryption")) {
-                  alert("Gagal: File Excel dilindungi password. Harap hilangkan password sebelum upload.");
+                  alert("Gagal: File Excel dilindungi password.");
               } else {
-                  alert("Gagal memproses file Excel. Pastikan format valid.");
+                  alert("Gagal memproses file Excel.");
               }
           }
       };
@@ -277,60 +318,14 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
       };
 
       reader.readAsArrayBuffer(file);
-
       if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleAddStudent = () => {
-      if (!newStudent.fullName || !newStudent.nisn) {
-          alert("Nama dan NISN wajib diisi!");
-          return;
-      }
-
-      // Check Duplicate NISN
-      if (localStudents.some(s => s.nisn === newStudent.nisn)) {
-          alert("Gagal: NISN ini sudah terdaftar di database.");
-          return;
-      }
-
-      const createdStudent: Student = {
-          id: Math.random().toString(36).substr(2, 9),
-          fullName: newStudent.fullName || '',
-          nis: newStudent.nis || '',
-          nisn: newStudent.nisn || '',
-          className: newStudent.className || 'VII A',
-          gender: newStudent.gender as 'L' | 'P',
-          birthPlace: '', birthDate: '', address: '',
-          father: { name: '', nik: '', birthPlaceDate: '', education: '', job: '', income: '', phone: '' },
-          mother: { name: '', nik: '', birthPlaceDate: '', education: '', job: '', income: '', phone: '' },
-          dapodik: {
-              nik: '', noKK: '', rt: '', rw: '', dusun: '', kelurahan: '', kecamatan: '', kodePos: '',
-              livingStatus: '', transportation: '', email: '', skhun: '', kpsReceiver: 'Tidak', kpsNumber: '',
-              kipReceiver: 'Tidak', kipNumber: '', kipName: '', kksNumber: '', birthRegNumber: '', bank: '',
-              bankAccount: '', bankAccountName: '', pipEligible: 'Tidak', pipReason: '', specialNeeds: 'Tidak',
-              latitude: '', longitude: '', headCircumference: 0, distanceToSchool: '', unExamNumber: ''
-          },
-          documents: [], correctionRequests: [],
-          religion: 'Islam', nationality: 'WNI', subDistrict: '', district: '', postalCode: '',
-          childOrder: 1, siblingCount: 0, height: 0, weight: 0, bloodType: '-', entryYear: new Date().getFullYear(),
-          status: 'AKTIF', previousSchool: '', graduationYear: 0, diplomaNumber: '', averageScore: 0, achievements: []
-      };
-
-      const updatedList = [createdStudent, ...localStudents];
-      setLocalStudents(updatedList);
-      onUpdateStudents(updatedList); // Update Parent/Global State
-      api.updateStudent(createdStudent).catch(err => console.error("Cloud save failed", err));
-
-      setIsAddModalOpen(false);
-      setNewStudent({ fullName: '', nisn: '', nis: '', className: 'VII A', gender: 'L' });
-      alert("Siswa berhasil ditambahkan.");
-  };
-
   const handleDownloadTemplate = () => {
+      // ... (Existing download logic remains unchanged) ...
       try {
           // @ts-ignore
           const xlsx = window.XLSX;
-          // Full Dapodik Headers
           const headers = [[
               'Nama Peserta Didik', 'NIS', 'NISN', 'Kelas', 'L/P', 'Tempat Lahir', 'Tanggal Lahir', 'Agama',
               'NIK', 'No KK', 'Alamat Jalan', 'RT', 'RW', 'Dusun', 'Kelurahan', 'Kecamatan', 'Kabupaten', 'Kode Pos',
@@ -380,10 +375,9 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
 
           xlsx.utils.sheet_add_json(ws, dataRows, {skipHeader: true, origin: -1});
           xlsx.utils.book_append_sheet(wb, ws, "Database Siswa");
-          const filename = localStudents.length > 0 ? "Database_Siswa_SMPN3Pacet.xlsx" : "Template_Dapodik_Kosong.xlsx";
-          xlsx.writeFile(wb, filename);
+          xlsx.writeFile(wb, localStudents.length > 0 ? "Database_Siswa_SMPN3Pacet.xlsx" : "Template_Dapodik_Kosong.xlsx");
       } catch (e) {
-          alert("Gagal download template. Pastikan library XLSX dimuat.");
+          alert("Gagal download template.");
       }
   };
 
@@ -432,46 +426,104 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
             </div>
         )}
 
-        {/* MODAL ADD STUDENT */}
-        {isAddModalOpen && (
+        {/* MODAL ADD/EDIT STUDENT - EXPANDED */}
+        {isModalOpen && (
             <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl p-6 flex flex-col max-h-[90vh]">
                     <div className="flex justify-between items-center mb-4 border-b pb-2">
-                        <h3 className="font-bold text-gray-800 text-lg">Tambah Siswa Baru</h3>
-                        <button onClick={() => setIsAddModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>
+                        <h3 className="font-bold text-gray-800 text-lg">{isEditMode ? 'Edit Data Siswa' : 'Tambah Siswa Baru'}</h3>
+                        <button onClick={() => setIsModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>
                     </div>
-                    <div className="space-y-3">
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nama Lengkap</label>
-                            <input type="text" className="w-full p-2 border rounded" value={newStudent.fullName} onChange={(e) => setNewStudent({...newStudent, fullName: e.target.value})} placeholder="Nama Siswa" />
+                    
+                    <div className="overflow-y-auto pr-2 space-y-4">
+                        {/* IDENTITAS UTAMA */}
+                        <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                            <h4 className="text-xs font-bold text-blue-700 uppercase mb-2">Identitas Utama</h4>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="col-span-2">
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Nama Lengkap</label>
+                                    <input type="text" className="w-full p-2 border rounded text-sm font-bold" value={formData.fullName} onChange={(e) => setFormData({...formData, fullName: e.target.value})} placeholder="Nama Siswa" />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">NISN</label>
+                                    <input type="text" className="w-full p-2 border rounded text-sm" value={formData.nisn} onChange={(e) => setFormData({...formData, nisn: e.target.value})} placeholder="NISN" />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">NIS Lokal</label>
+                                    <input type="text" className="w-full p-2 border rounded text-sm" value={formData.nis} onChange={(e) => setFormData({...formData, nis: e.target.value})} placeholder="NIS Lokal" />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Kelas</label>
+                                    <select className="w-full p-2 border rounded text-sm" value={formData.className} onChange={(e) => setFormData({...formData, className: e.target.value})}>
+                                        {['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'].map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Gender</label>
+                                    <select className="w-full p-2 border rounded text-sm" value={formData.gender} onChange={(e) => setFormData({...formData, gender: e.target.value as 'L'|'P'})}>
+                                        <option value="L">Laki-Laki</option>
+                                        <option value="P">Perempuan</option>
+                                    </select>
+                                </div>
+                            </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">NISN</label>
-                                <input type="text" className="w-full p-2 border rounded" value={newStudent.nisn} onChange={(e) => setNewStudent({...newStudent, nisn: e.target.value})} placeholder="NISN" />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">NIS</label>
-                                <input type="text" className="w-full p-2 border rounded" value={newStudent.nis} onChange={(e) => setNewStudent({...newStudent, nis: e.target.value})} placeholder="NIS Lokal" />
+
+                        {/* BIODATA TAMBAHAN */}
+                        <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <h4 className="text-xs font-bold text-gray-600 uppercase mb-2">Biodata & Alamat</h4>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">NIK</label>
+                                    <input type="text" className="w-full p-2 border rounded text-sm" value={formData.dapodik.nik} onChange={(e) => setFormData({...formData, dapodik: {...formData.dapodik, nik: e.target.value}})} placeholder="Nomor Induk Kependudukan" />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Tempat Lahir</label>
+                                    <input type="text" className="w-full p-2 border rounded text-sm" value={formData.birthPlace} onChange={(e) => setFormData({...formData, birthPlace: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Tanggal Lahir</label>
+                                    <input type="date" className="w-full p-2 border rounded text-sm" value={formData.birthDate} onChange={(e) => setFormData({...formData, birthDate: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Agama</label>
+                                    <select className="w-full p-2 border rounded text-sm" value={formData.religion} onChange={(e) => setFormData({...formData, religion: e.target.value})}>
+                                        <option value="Islam">Islam</option>
+                                        <option value="Kristen">Kristen</option>
+                                        <option value="Katolik">Katolik</option>
+                                        <option value="Hindu">Hindu</option>
+                                        <option value="Budha">Budha</option>
+                                        <option value="Konghucu">Konghucu</option>
+                                    </select>
+                                </div>
+                                <div className="col-span-2">
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Alamat Jalan</label>
+                                    <input type="text" className="w-full p-2 border rounded text-sm" value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} />
+                                </div>
                             </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Kelas</label>
-                                <select className="w-full p-2 border rounded" value={newStudent.className} onChange={(e) => setNewStudent({...newStudent, className: e.target.value})}>
-                                    {['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'].map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Gender</label>
-                                <select className="w-full p-2 border rounded" value={newStudent.gender} onChange={(e) => setNewStudent({...newStudent, gender: e.target.value as 'L'|'P'})}>
-                                    <option value="L">Laki-Laki</option>
-                                    <option value="P">Perempuan</option>
-                                </select>
+
+                        {/* DATA ORANG TUA */}
+                        <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <h4 className="text-xs font-bold text-gray-600 uppercase mb-2">Data Orang Tua</h4>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Nama Ayah</label>
+                                    <input type="text" className="w-full p-2 border rounded text-sm" value={formData.father.name} onChange={(e) => setFormData({...formData, father: {...formData.father, name: e.target.value}})} />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Nama Ibu</label>
+                                    <input type="text" className="w-full p-2 border rounded text-sm" value={formData.mother.name} onChange={(e) => setFormData({...formData, mother: {...formData.mother, name: e.target.value}})} />
+                                </div>
                             </div>
                         </div>
                     </div>
-                    <button onClick={handleAddStudent} className="mt-6 w-full py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700">Simpan Data</button>
+
+                    <div className="mt-6 pt-4 border-t flex justify-end gap-2">
+                        <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 bg-gray-100 text-gray-600 font-bold rounded hover:bg-gray-200 text-sm">Batal</button>
+                        <button onClick={handleSaveStudent} className="px-4 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700 text-sm flex items-center gap-2">
+                            <Save className="w-4 h-4" /> Simpan Data
+                        </button>
+                    </div>
                 </div>
             </div>
         )}
@@ -480,7 +532,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
              <div className="flex items-center gap-3">
                 <h2 className="text-lg font-bold text-gray-800">Database Dapodik</h2>
                 <div className="flex gap-2">
-                    <button onClick={() => setIsAddModalOpen(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 flex items-center gap-2 shadow-sm">
+                    <button onClick={handleOpenAdd} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 flex items-center gap-2 shadow-sm">
                         <Plus className="w-4 h-4" /> Tambah Siswa
                     </button>
                     <button onClick={handleRemoveDuplicates} className="px-4 py-2 bg-orange-100 text-orange-700 border border-orange-200 rounded-lg text-xs font-bold hover:bg-orange-200 transition-colors flex items-center gap-2">
@@ -521,7 +573,8 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
                         {filteredStudents.length > 0 ? filteredStudents.map((s, idx) => (
                             <tr key={s.id || idx} className="hover:bg-blue-50">
                                 <td className="px-2 py-2 text-center border border-gray-200 flex items-center justify-center gap-1">
-                                    <button onClick={() => handleDeleteRow(s.id)} className="p-1.5 bg-red-100 text-red-600 rounded hover:bg-red-200"><Trash className="w-4 h-4" /></button>
+                                    <button onClick={() => handleEditRow(s)} className="p-1.5 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200" title="Edit"><Pencil className="w-3 h-3" /></button>
+                                    <button onClick={() => handleDeleteRow(s.id)} className="p-1.5 bg-red-100 text-red-600 rounded hover:bg-red-200" title="Hapus"><Trash className="w-3 h-3" /></button>
                                 </td>
                                 <Td className="text-center font-bold">{idx + 1}</Td>
                                 <Td className="font-semibold text-gray-800">{s.fullName}</Td>

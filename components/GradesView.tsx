@@ -114,7 +114,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       if (!s.academicRecords[dbSemester]) {
           const level = (dbSemester <= 2) ? 'VII' : (dbSemester <= 4) ? 'VIII' : 'IX';
           s.academicRecords[dbSemester] = { 
-              semester: dbSemester, classLevel: level, phase: 'D', year: '2024', 
+              semester: dbSemester, classLevel: level, className: s.className, phase: 'D', year: '2024', 
               subjects: [], p5Projects: [], extracurriculars: [], teacherNote: '', promotionStatus: '', 
               attendance: { sick: 0, permitted: 0, noReason: 0 } 
           };
@@ -144,7 +144,8 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
   // --- CORRECTION HANDLER ---
   const handleOpenClassCorrection = () => {
       if (selectedStudent) {
-          setProposedClass(selectedStudent.className);
+          const record = selectedStudent.academicRecords?.[dbSemester];
+          setProposedClass(record?.className || selectedStudent.className);
           setClassReason('');
           setIsClassModalOpen(true);
       }
@@ -156,11 +157,14 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
           return;
       }
 
+      // NOTE: Key uses dbSemester to allow per-semester class changes
+      const correctionKey = `class-${dbSemester}`;
+
       const newRequest: CorrectionRequest = {
           id: Math.random().toString(36).substr(2, 9),
-          fieldKey: 'className',
-          fieldName: 'KELAS (Dari Rapor)',
-          originalValue: selectedStudent.className,
+          fieldKey: correctionKey,
+          fieldName: `KELAS (Semester ${dbSemester})`,
+          originalValue: selectedStudent.academicRecords?.[dbSemester]?.className || selectedStudent.className,
           proposedValue: proposedClass,
           studentReason: classReason,
           status: 'PENDING',
@@ -169,9 +173,9 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
 
       if (!selectedStudent.correctionRequests) selectedStudent.correctionRequests = [];
       
-      // Remove any existing pending request for class to avoid duplicates
+      // Remove any existing pending request for THIS semester class to avoid duplicates
       selectedStudent.correctionRequests = selectedStudent.correctionRequests.filter(
-          r => !(r.fieldKey === 'className' && r.status === 'PENDING')
+          r => !(r.fieldKey === correctionKey && r.status === 'PENDING')
       );
 
       const updatedStudent = {
@@ -198,19 +202,15 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       const headmaster = appSettings?.schoolData?.headmaster || 'Didik Sulistyo, M.M.Pd';
       const headmasterNip = appSettings?.schoolData?.nip || '19660518 198901 1 002';
       
-      // Check if there is a pending correction for class
-      const pendingClassReq = student.correctionRequests?.find(r => r.fieldKey === 'className' && r.status === 'PENDING');
+      // Check if there is a pending correction for class THIS SEMESTER
+      const correctionKey = `class-${dbSemester}`;
+      const pendingClassReq = student.correctionRequests?.find(r => r.fieldKey === correctionKey && r.status === 'PENDING');
 
       const getClassDisplay = () => {
-          let level = '';
-          if (dbSemester <= 2) level = 'VII';
-          else if (dbSemester <= 4) level = 'VIII';
-          else level = 'IX';
+          // Priority: 1. Academic Record specific class, 2. Student Main Class
+          const rawClass = record?.className || student.className;
           
-          const parts = student.className.split(' ');
-          const suffix = parts.length > 1 ? parts.slice(1).join(' ') : '';
-          
-          return `${level} ${suffix}`.trim();
+          return rawClass;
       };
 
       const displayClass = getClassDisplay();
@@ -241,7 +241,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                                     ${userRole === 'STUDENT' ? 'bg-yellow-200 cursor-pointer hover:bg-yellow-300 text-blue-800 font-bold border border-yellow-400 border-dashed' : ''}
                                 `}
                                 onClick={() => userRole === 'STUDENT' && !pendingClassReq && handleOpenClassCorrection()}
-                                title={userRole === 'STUDENT' ? "Klik untuk mengajukan Revisi Kelas" : ""}
+                                title={userRole === 'STUDENT' ? "Klik untuk mengajukan Revisi Kelas Semester Ini" : ""}
                               >
                                   <div className="flex items-center gap-1">
                                     : {displayClass}
@@ -417,7 +417,8 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                           <Pencil className="w-6 h-6 text-yellow-600" />
                       </div>
                       <h3 className="text-lg font-bold text-gray-800">Ajukan Revisi Kelas</h3>
-                      <p className="text-xs text-gray-500">Data kelas saat ini: <span className="font-bold">{selectedStudent?.className}</span></p>
+                      <p className="text-xs text-gray-500">Semester {dbSemester}</p>
+                      <p className="text-xs text-gray-500">Data saat ini: <span className="font-bold">{selectedStudent?.academicRecords?.[dbSemester]?.className || selectedStudent?.className}</span></p>
                   </div>
                   
                   <div className="space-y-4">
