@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Student, CorrectionRequest } from '../types';
 import { 
   CheckCircle2, FileText, Maximize2, ZoomIn, ZoomOut, Save, 
-  FileCheck2, Loader2, Pencil, Search, Filter, ExternalLink, RefreshCw, AlertCircle, Eye, File, ImageIcon, FileType
+  FileCheck2, Loader2, Pencil, Search, Filter, ExternalLink, RefreshCw, AlertCircle, Eye, File, ImageIcon, FileType, X
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -124,11 +124,23 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   const currentStudent = students.find(s => s.id === selectedStudentId);
   const currentRecord = currentStudent?.academicRecords?.[activeSemester];
   
-  const currentDoc = currentStudent?.documents.find(d => 
-      d.category === 'RAPOR' && 
-      d.subType?.semester === activeSemester && 
-      d.subType?.page === activePage
-  );
+  const currentDoc = useMemo(() => {
+      return currentStudent?.documents.find(d => 
+          d.category === 'RAPOR' && 
+          d.subType?.semester == activeSemester && 
+          d.subType?.page == activePage
+      );
+  }, [currentStudent, activeSemester, activePage]);
+
+  // Enhanced File Type Detection
+  const isImageFile = (doc: any) => {
+      if (!doc) return false;
+      if (doc.type === 'IMAGE') return true;
+      const name = doc.name ? doc.name.toLowerCase() : '';
+      return name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png') || name.endsWith('.gif') || name.endsWith('.webp') || name.endsWith('.bmp');
+  };
+
+  const isDriveUrl = currentDoc && (currentDoc.url.includes('drive.google.com') || currentDoc.url.includes('docs.google.com') || currentDoc.url.includes('googleusercontent.com'));
 
   // VIEWER LOGIC IMPLEMENTATION
   useEffect(() => {
@@ -137,6 +149,8 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
     const loadPdf = async () => {
         if (!isMounted) return;
+        
+        // Reset states
         setPdfDoc(null);
         setIsPdfLoading(false);
         setPdfError(false);
@@ -145,8 +159,8 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
         if (!currentStudent || !currentDoc) return;
 
-        // Check if it's a Drive URL
-        if (currentDoc.url.includes('drive.google.com') || currentDoc.url.includes('docs.google.com') || currentDoc.url.includes('googleusercontent.com')) {
+        // Drive URL handling: Default to Iframe, unless explicit image request which allows direct
+        if (isDriveUrl && !isImageFile(currentDoc)) {
             if(isMounted) setUseFallbackViewer(true);
             return;
         }
@@ -155,7 +169,6 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
         if (currentDoc.type === 'PDF' || currentDoc.name.toLowerCase().endsWith('.pdf')) {
             
             // PREVENT FETCH ERROR: Only try to fetch if it's a blob URL. 
-            // External URLs (except Drive which is handled above) often block CORS, so fallback to iframe.
             if (!currentDoc.url.startsWith('blob:')) {
                 if(isMounted) setUseFallbackViewer(true);
                 return;
@@ -190,7 +203,6 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                 if (error.name === 'AbortError') return;
                 
                 if(isMounted) {
-                    // Suppress 'Failed to fetch' noise for blobs/imports
                     if (error.message !== 'Failed to fetch') {
                         console.error("Error loading PDF, trying fallback:", error);
                     }
@@ -229,8 +241,6 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   
   const handleGradeChange = (subjectIndex: number, newScore: string) => { if (currentRecord) { currentRecord.subjects[subjectIndex].score = Number(newScore); setForceUpdate(prev => prev + 1); } };
   const saveGrades = async () => { /* ... */ };
-
-  const isDriveUrl = currentDoc && (currentDoc.url.includes('drive.google.com') || currentDoc.url.includes('docs.google.com'));
 
   return (
     <div className="flex flex-col h-full animate-fade-in relative">
@@ -273,7 +283,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                 <span className="text-sm font-bold text-gray-600 mr-2">Semester:</span>
                 <div className="flex bg-gray-100 p-1 rounded-lg">
                     {[1, 2, 3, 4, 5, 6].map(sem => (
-                        <button key={sem} onClick={() => setActiveSemester(sem)} className={`w-8 h-8 rounded-md text-sm font-bold transition-all ${activeSemester === sem ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>{sem}</button>
+                        <button key={sem} onClick={() => { setActiveSemester(sem); setActivePage(1); }} className={`w-8 h-8 rounded-md text-sm font-bold transition-all ${activeSemester === sem ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>{sem}</button>
                     ))}
                 </div>
             </div>
@@ -299,9 +309,9 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                         </div>
                         
                         <div className="flex-1 overflow-auto p-4 bg-gray-900/50 flex items-start justify-center pb-32 relative">
-                            <div style={{ transform: `scale(${useFallbackViewer || isDriveUrl ? 1 : zoomLevel})`, transformOrigin: 'top center', width: '100%', display: 'flex', justifyContent: 'center' }}>
+                            <div style={{ transform: `scale(${useFallbackViewer || (isDriveUrl && !isImageFile(currentDoc)) ? 1 : zoomLevel})`, transformOrigin: 'top center', width: '100%', display: 'flex', justifyContent: 'center' }}>
                                 {currentDoc ? (
-                                    (useFallbackViewer || isDriveUrl) ? (
+                                    (useFallbackViewer || (isDriveUrl && !isImageFile(currentDoc))) ? (
                                         <iframe 
                                             src={getDriveUrl(currentDoc.url, 'preview')} 
                                             className="w-full min-h-[1100px] border-none rounded bg-white shadow-lg" 
@@ -309,9 +319,9 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                                             allow="autoplay"
                                         />
                                     ) : (
-                                        currentDoc.type === 'IMAGE' ? (
+                                        isImageFile(currentDoc) ? (
                                             <img 
-                                                src={currentDoc.url} 
+                                                src={isDriveUrl ? getDriveUrl(currentDoc.url, 'direct') : currentDoc.url} 
                                                 className="w-full h-auto object-contain bg-white shadow-sm rounded" 
                                                 alt="Document" 
                                                 onError={() => setUseFallbackViewer(true)}

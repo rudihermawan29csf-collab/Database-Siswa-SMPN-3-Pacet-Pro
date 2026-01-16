@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { Student, DocumentFile } from '../types';
-import { UploadCloud, CheckCircle2, Eye, Trash2, AlertCircle, FileText, Image as ImageIcon, X, Lock, RefreshCw } from 'lucide-react';
+import { UploadCloud, CheckCircle2, Eye, Trash2, AlertCircle, FileText, Image as ImageIcon, X, Lock, RefreshCw, Loader2 } from 'lucide-react';
+import { api } from '../services/api';
 
 interface UploadRaporViewProps {
   student: Student;
@@ -13,6 +14,7 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
   const [activeSemester, setActiveSemester] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [stagingPage, setStagingPage] = useState<number | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   // Dynamic Page Count from Settings
   const pagesPerSemester = useMemo(() => {
@@ -38,37 +40,75 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
       if (fileInputRef.current) fileInputRef.current.click();
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file && stagingPage !== null) {
-          const newDoc: DocumentFile = {
-              id: Math.random().toString(36).substr(2, 9),
+          setIsUploading(true);
+          
+          // 1. Optimistic Update (Tampilkan Preview dulu)
+          const tempId = 'temp-' + Math.random();
+          const tempDoc: DocumentFile = {
+              id: tempId,
               name: file.name,
               type: file.type.includes('pdf') ? 'PDF' : 'IMAGE',
               url: URL.createObjectURL(file),
               category: 'RAPOR',
               uploadDate: new Date().toISOString().split('T')[0],
-              size: `${(file.size / 1024).toFixed(0)} KB`,
+              size: 'Uploading...',
               status: 'PENDING',
               subType: { semester: activeSemester, page: stagingPage }
           };
 
-          // Remove existing file for this slot if any (replace)
-          const otherDocs = student.documents.filter(d => 
+          // Update local state sementara
+          const docsWithoutCurrentSlot = student.documents.filter(d => 
               !(d.category === 'RAPOR' && d.subType?.semester === activeSemester && d.subType?.page === stagingPage)
           );
+          student.documents = [...docsWithoutCurrentSlot, tempDoc];
           
-          student.documents = [...otherDocs, newDoc];
-          if (onUpdate) onUpdate();
+          // 2. Upload to Google Drive via API
+          try {
+              const driveUrl = await api.uploadFile(file, student.id, 'RAPOR');
+              
+              if (driveUrl) {
+                  // 3. Create Final Doc Object
+                  const realDoc: DocumentFile = {
+                      ...tempDoc,
+                      id: Math.random().toString(36).substr(2, 9),
+                      url: driveUrl, // URL dari Google Drive
+                      size: `${(file.size / 1024).toFixed(0)} KB`
+                  };
+
+                  // 4. Update Student Data Permanently
+                  // Replace temp doc with real doc
+                  student.documents = [...docsWithoutCurrentSlot, realDoc];
+                  
+                  // Save metadata to database
+                  await api.updateStudent(student);
+                  
+                  if (onUpdate) onUpdate();
+              } else {
+                  alert("Gagal mendapatkan URL dari Google Drive.");
+                  // Revert changes if failed
+                  student.documents = docsWithoutCurrentSlot;
+              }
+          } catch (error) {
+              console.error("Upload failed", error);
+              alert("Gagal mengupload file. Silakan coba lagi.");
+              student.documents = docsWithoutCurrentSlot;
+          } finally {
+              setIsUploading(false);
+          }
       }
-      // Reset
+      
+      // Reset Input
       if (fileInputRef.current) fileInputRef.current.value = '';
       setStagingPage(null);
   };
 
-  const handleDelete = (docId: string) => {
+  const handleDelete = async (docId: string) => {
       if (window.confirm("Hapus file ini?")) {
           student.documents = student.documents.filter(d => d.id !== docId);
+          await api.updateStudent(student);
           if (onUpdate) onUpdate();
       }
   };
@@ -97,7 +137,15 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
   };
 
   return (
-    <div className="flex flex-col h-full space-y-4 animate-fade-in">
+    <div className="flex flex-col h-full space-y-4 animate-fade-in relative">
+        {isUploading && (
+            <div className="absolute inset-0 z-50 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-xl">
+                <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-2" />
+                <p className="text-gray-600 font-bold animate-pulse">Mengupload ke Google Drive...</p>
+                <p className="text-xs text-gray-400">Mohon jangan tutup halaman ini.</p>
+            </div>
+        )}
+
         <input type="file" ref={fileInputRef} className="hidden" accept="image/*,application/pdf" onChange={handleFileChange} />
         
         {/* Header & Tabs */}

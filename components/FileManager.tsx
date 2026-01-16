@@ -7,6 +7,7 @@ interface FileManagerProps {
   onUpload: (file: File, category: string) => void;
   onDelete?: (id: string) => void;
   highlightDocumentId?: string; // New prop for visual highlighting
+  allowDeleteApproved?: boolean; // New prop to allow deleting approved docs (e.g. for Admin)
 }
 
 const MASTER_DOC_LIST = [
@@ -21,7 +22,7 @@ const MASTER_DOC_LIST = [
     { id: 'SKL', label: 'SKL', desc: 'Surat Ket. Lulus' },
 ];
 
-const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete, highlightDocumentId }) => {
+const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete, highlightDocumentId, allowDeleteApproved = false }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [targetCategory, setTargetCategory] = useState<string>('LAINNYA');
   
@@ -201,9 +202,9 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
                             
                             {/* Hover Actions / Re-upload button */}
                             <div className="absolute inset-0 bg-white/95 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex flex-col items-center justify-center gap-2 z-20 p-2">
-                                <button className="w-full px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold border border-blue-200 hover:bg-blue-100 flex items-center justify-center" title="Preview">
+                                <a href={doc.url} target="_blank" rel="noreferrer" className="w-full px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold border border-blue-200 hover:bg-blue-100 flex items-center justify-center" title="Preview">
                                     <Eye className="w-3 h-3 mr-1" /> Lihat
-                                </button>
+                                </a>
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); handleUploadTrigger(req.id); }}
                                     className={`w-full px-3 py-1.5 rounded-lg text-xs font-bold border flex items-center justify-center ${doc.status === 'REVISION' ? 'bg-red-600 text-white border-red-600 hover:bg-red-700' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'}`}
@@ -233,8 +234,12 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
             })}
 
             {/* Render 'Others' - Dynamic */}
-            {documents.filter(d => !activeDocs.find(r => r.id === d.category)).map((doc) => {
+            {/* Filter out Active Required Docs AND RAPOR (handled in separate view) */}
+            {documents.filter(d => !activeDocs.find(r => r.id === d.category) && d.category !== 'RAPOR').map((doc) => {
                 const isHighlighted = highlightDocumentId === doc.id;
+                // Allow deleting if NOT approved OR if explicitly allowed (e.g. for Admin)
+                const canDelete = doc.status !== 'APPROVED' || allowDeleteApproved;
+
                 return (
                     <div 
                         key={doc.id} 
@@ -264,7 +269,7 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
 
                         {/* Hover Actions */}
                         <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-1 z-10">
-                             {doc.status !== 'APPROVED' && onDelete && (
+                             {canDelete && onDelete && (
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); onDelete(doc.id); }}
                                     className="p-1.5 bg-white rounded-full shadow-md hover:text-red-600 text-gray-500 border border-gray-100" title="Delete"
@@ -274,11 +279,11 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
                             )}
                         </div>
                         
-                         {/* Hover Actions / Re-upload button */}
-                            <div className="absolute inset-0 bg-white/95 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex flex-col items-center justify-center gap-2 z-20 p-2">
-                                <button className="w-full px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold border border-blue-200 hover:bg-blue-100 flex items-center justify-center" title="Preview">
+                         {/* Hover Actions / Preview */}
+                            <div className="absolute inset-0 bg-white/95 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex flex-col items-center justify-center gap-2 z-20 p-2 pointer-events-none">
+                                <a href={doc.url} target="_blank" rel="noreferrer" className="w-full px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold border border-blue-200 hover:bg-blue-100 flex items-center justify-center pointer-events-auto" title="Preview">
                                     <Eye className="w-3 h-3 mr-1" /> Lihat
-                                </button>
+                                </a>
                             </div>
                     </div>
                 );
@@ -289,7 +294,7 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
       
       {/* Footer Status */}
       <div className="bg-gray-50 border-t border-gray-200 p-2 px-4 rounded-b-xl text-xs text-gray-500 flex justify-between items-center">
-          <span>Total {documents.length} dokumen tersimpan</span>
+          <span>Total {documents.filter(d => d.category !== 'RAPOR').length} dokumen tersimpan</span>
           <div className="flex gap-4">
               <span>{Math.round((documents.length * 1.5))} MB Terpakai</span>
           </div>

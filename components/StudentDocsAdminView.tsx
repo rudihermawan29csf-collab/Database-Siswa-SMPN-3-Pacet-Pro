@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Student } from '../types';
+import { Student, DocumentFile } from '../types';
 import { Search, Filter, FolderOpen, FileText, Loader2 } from 'lucide-react';
 import FileManager from './FileManager';
 import UploadRaporView from './UploadRaporView';
+import { api } from '../services/api';
 
 interface StudentDocsAdminViewProps {
   students: Student[];
@@ -19,6 +20,7 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [activeTab, setActiveTab] = useState<'DOCS' | 'RAPOR'>('DOCS');
+  const [isUploading, setIsUploading] = useState(false);
 
   // Set default class saat data dimuat pertama kali
   useEffect(() => {
@@ -47,35 +49,75 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
       }
   }, [filteredStudents, selectedStudentId]);
 
-  const handleUpload = (file: File, category: string) => {
+  const handleUpload = async (file: File, category: string) => {
     if (!currentStudent) return;
+    setIsUploading(true);
     
-    // Optimistic Update
+    // Optimistic Update (Temporary)
+    const tempId = 'temp-' + Math.random();
     const newDocs = category === 'LAINNYA' ? [...currentStudent.documents] : currentStudent.documents.filter(d => d.category !== category);
-    currentStudent.documents = [...newDocs, {
-        id: Math.random().toString(36).substr(2, 9),
+    
+    const tempDoc: DocumentFile = {
+        id: tempId,
         name: file.name,
         type: file.type.includes('pdf') ? 'PDF' : 'IMAGE',
         url: URL.createObjectURL(file), 
         category: category as any,
         uploadDate: new Date().toISOString().split('T')[0],
-        size: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
-        status: 'APPROVED' // Admin/Guru uploads are auto-approved
-    }];
+        size: 'Uploading...',
+        status: 'APPROVED' // Admin uploads are auto-approved
+    };
     
-    if (onUpdate) onUpdate();
+    currentStudent.documents = [...newDocs, tempDoc];
+    
+    try {
+        // Upload to Drive via API
+        const driveUrl = await api.uploadFile(file, currentStudent.id, category);
+        
+        if (driveUrl) {
+            const realDoc: DocumentFile = {
+                ...tempDoc,
+                id: Math.random().toString(36).substr(2, 9),
+                url: driveUrl,
+                size: `${(file.size / 1024 / 1024).toFixed(2)} MB`
+            };
+            
+            // Replace Temp with Real
+            currentStudent.documents = [...newDocs, realDoc];
+            
+            // Save Metadata
+            await api.updateStudent(currentStudent);
+            if (onUpdate) onUpdate();
+        } else {
+            alert("Gagal upload ke Drive. File hanya tersimpan lokal sementara.");
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Terjadi kesalahan saat upload.");
+        // Revert to prev state if needed, or keep local preview
+    } finally {
+        setIsUploading(false);
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
       if (!currentStudent) return;
       if (window.confirm('Hapus dokumen ini?')) {
           currentStudent.documents = currentStudent.documents.filter(d => d.id !== id);
+          await api.updateStudent(currentStudent);
           if (onUpdate) onUpdate();
       }
   };
 
   return (
-    <div className="flex flex-col h-full space-y-4 animate-fade-in">
+    <div className="flex flex-col h-full space-y-4 animate-fade-in relative">
+        {isUploading && (
+            <div className="absolute inset-0 z-50 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-xl">
+                <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-2" />
+                <p className="text-gray-600 font-bold animate-pulse">Mengupload ke Google Drive...</p>
+            </div>
+        )}
+
         {/* Toolbar */}
         <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
             <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
@@ -134,6 +176,7 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
                             documents={currentStudent.documents} 
                             onUpload={handleUpload}
                             onDelete={handleDelete}
+                            allowDeleteApproved={true} // Allow admin to delete
                         />
                     ) : (
                         <UploadRaporView 

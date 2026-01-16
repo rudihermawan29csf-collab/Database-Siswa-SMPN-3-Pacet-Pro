@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Student } from '../types';
-import { Search, Trash, UploadCloud, Download, Loader2, CheckCircle2, Plus, X, FileMinus } from 'lucide-react';
+import { Search, Trash, UploadCloud, Download, Loader2, CheckCircle2, Plus, X, FileMinus, FileX } from 'lucide-react';
 import { api } from '../services/api';
 
 interface DatabaseViewProps {
@@ -44,7 +44,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
   };
 
   const handleRemoveDuplicates = () => {
-      if (!window.confirm("Hapus data ganda berdasarkan NISN? Sistem akan menyimpan data pertama dan menghapus duplikatnya.")) return;
+      if (!window.confirm("Hapus data ganda berdasarkan NISN? Sistem akan menyimpan data pertama yang ditemukan dan menghapus duplikatnya.")) return;
 
       const seenNISN = new Set<string>();
       const uniqueStudents: Student[] = [];
@@ -58,7 +58,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
               // If we have seen this NISN, skip adding to unique list (this is a duplicate)
               duplicateCount++;
           } else {
-              // If it's a new NISN or empty NISN (we keep empties usually, or safeguard them), add to list
+              // If it's a new NISN or empty NISN (we keep empties usually), add to list
               if (nisn) seenNISN.add(nisn);
               uniqueStudents.push(student);
           }
@@ -73,7 +73,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
           
           alert(`✅ Berhasil menghapus ${duplicateCount} data duplikat.`);
       } else {
-          alert("Tidak ditemukan duplikat NISN.");
+          alert("Tidak ditemukan data duplikat (NISN ganda).");
       }
   };
 
@@ -484,7 +484,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students: initialStudents, 
                         <Plus className="w-4 h-4" /> Tambah Siswa
                     </button>
                     <button onClick={handleRemoveDuplicates} className="px-4 py-2 bg-orange-100 text-orange-700 border border-orange-200 rounded-lg text-xs font-bold hover:bg-orange-200 transition-colors flex items-center gap-2">
-                        <FileMinus className="w-4 h-4" /> Hapus Duplikat
+                        <FileMinus className="w-4 h-4" /> Hapus Duplikat (NISN)
                     </button>
                     <button onClick={handleDeleteAll} className="px-4 py-2 bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-bold hover:bg-red-200 transition-colors">Kosongkan</button>
                     <button onClick={handleDownloadTemplate} className="px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-xs font-bold hover:bg-blue-100 flex items-center gap-2"><Download className="w-4 h-4"/> Download Data/Template</button>
