@@ -433,7 +433,7 @@ const App: React.FC = () => {
             case 'settings':
                 content = <SettingsView />; break;
             case 'upload-rapor':
-                content = selectedStudent ? <UploadRaporView student={selectedStudent} onUpdate={() => saveStudentToCloud(selectedStudent)} /> : null; break;
+                content = selectedStudent ? <UploadRaporView student={selectedStudent} onUpdate={refreshData} /> : null; break;
             case 'grade-verification':
                 content = <GradeVerificationView students={studentsData} onUpdate={refreshData} currentUser={currentUser || undefined} userRole={userRole} />; break;
             case 'student-docs':

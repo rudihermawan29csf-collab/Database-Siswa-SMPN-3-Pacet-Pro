@@ -45,56 +45,57 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
       if (file && stagingPage !== null) {
           setIsUploading(true);
           
-          // 1. Optimistic Update (Tampilkan Preview dulu)
-          const tempId = 'temp-' + Math.random();
-          const tempDoc: DocumentFile = {
-              id: tempId,
-              name: file.name,
-              type: file.type.includes('pdf') ? 'PDF' : 'IMAGE',
-              url: URL.createObjectURL(file),
-              category: 'RAPOR',
-              uploadDate: new Date().toISOString().split('T')[0],
-              size: 'Uploading...',
-              status: 'PENDING',
-              subType: { semester: activeSemester, page: stagingPage }
-          };
-
-          // Update local state sementara
-          const docsWithoutCurrentSlot = student.documents.filter(d => 
-              !(d.category === 'RAPOR' && d.subType?.semester === activeSemester && d.subType?.page === stagingPage)
-          );
-          student.documents = [...docsWithoutCurrentSlot, tempDoc];
+          // 1. Optimistic Update (Preview) - Create temporary list
+          // We do NOT mutate student prop directly, we assume parent refresh will handle final state
+          // But for immediate visual feedback we can create a temp visual representation if we wanted,
+          // but here we will rely on the API call finishing.
           
-          // 2. Upload to Google Drive via API
+          // However, to prevent flickering or if API is slow, we might want to update local state passed down?
+          // Since we can't mutate props, we rely on the final onUpdate call.
+          
           try {
+              // 2. Upload to Google Drive via API
               const driveUrl = await api.uploadFile(file, student.id, 'RAPOR');
               
               if (driveUrl) {
-                  // 3. Create Final Doc Object
-                  const realDoc: DocumentFile = {
-                      ...tempDoc,
+                  // 3. Construct the new Document Object
+                  const newDoc: DocumentFile = {
                       id: Math.random().toString(36).substr(2, 9),
-                      url: driveUrl, // URL dari Google Drive
-                      size: `${(file.size / 1024).toFixed(0)} KB`
+                      name: file.name,
+                      type: file.type.includes('pdf') ? 'PDF' : 'IMAGE',
+                      url: driveUrl, // The Drive URL returned by API
+                      category: 'RAPOR',
+                      uploadDate: new Date().toISOString().split('T')[0],
+                      size: `${(file.size / 1024).toFixed(0)} KB`,
+                      status: 'PENDING',
+                      subType: { semester: activeSemester, page: stagingPage }
                   };
 
-                  // 4. Update Student Data Permanently
-                  // Replace temp doc with real doc
-                  student.documents = [...docsWithoutCurrentSlot, realDoc];
+                  // 4. Update Student Data (Clone to avoid mutation issues)
+                  // Filter out old doc for this slot if exists
+                  const otherDocs = student.documents.filter(d => 
+                      !(d.category === 'RAPOR' && d.subType?.semester === activeSemester && d.subType?.page === stagingPage)
+                  );
                   
-                  // Save metadata to database
-                  await api.updateStudent(student);
+                  const updatedStudent = {
+                      ...student,
+                      documents: [...otherDocs, newDoc]
+                  };
+
+                  // 5. Persist the updated student data containing the new Drive URL
+                  const success = await api.updateStudent(updatedStudent);
                   
-                  if (onUpdate) onUpdate();
+                  if (success) {
+                      if (onUpdate) onUpdate(); // Trigger parent refresh
+                  } else {
+                      alert("Gagal menyimpan data ke database.");
+                  }
               } else {
-                  alert("Gagal mendapatkan URL dari Google Drive.");
-                  // Revert changes if failed
-                  student.documents = docsWithoutCurrentSlot;
+                  alert("Gagal upload ke Google Drive (URL kosong).");
               }
           } catch (error) {
               console.error("Upload failed", error);
-              alert("Gagal mengupload file. Silakan coba lagi.");
-              student.documents = docsWithoutCurrentSlot;
+              alert("Terjadi kesalahan saat mengupload file.");
           } finally {
               setIsUploading(false);
           }
@@ -107,8 +108,10 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
 
   const handleDelete = async (docId: string) => {
       if (window.confirm("Hapus file ini?")) {
-          student.documents = student.documents.filter(d => d.id !== docId);
-          await api.updateStudent(student);
+          const updatedDocs = student.documents.filter(d => d.id !== docId);
+          const updatedStudent = { ...student, documents: updatedDocs };
+          
+          await api.updateStudent(updatedStudent);
           if (onUpdate) onUpdate();
       }
   };

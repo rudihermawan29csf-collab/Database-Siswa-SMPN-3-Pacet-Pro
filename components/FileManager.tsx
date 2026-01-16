@@ -234,10 +234,9 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
             })}
 
             {/* Render 'Others' - Dynamic */}
-            {/* Filter out Active Required Docs AND RAPOR (handled in separate view) */}
+            {/* Filter out Active Required Docs AND RAPOR (This ensures Rapor files are NEVER shown here) */}
             {documents.filter(d => !activeDocs.find(r => r.id === d.category) && d.category !== 'RAPOR').map((doc) => {
                 const isHighlighted = highlightDocumentId === doc.id;
-                // Allow deleting if NOT approved OR if explicitly allowed (e.g. for Admin)
                 const canDelete = doc.status !== 'APPROVED' || allowDeleteApproved;
 
                 return (
