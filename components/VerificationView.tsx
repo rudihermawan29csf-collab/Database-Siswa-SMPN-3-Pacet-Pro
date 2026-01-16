@@ -13,16 +13,17 @@ interface VerificationViewProps {
   currentUser?: { name: string; role: string }; 
 }
 
-const DOCUMENT_TYPES = [
-  { id: 'IJAZAH', label: 'Ijazah SD' },
-  { id: 'AKTA', label: 'Akta Kelahiran' },
-  { id: 'KK', label: 'Kartu Keluarga' },
-  { id: 'KTP_AYAH', label: 'KTP Ayah' },
-  { id: 'KTP_IBU', label: 'KTP Ibu' },
-  { id: 'KIP', label: 'KIP / PKH' },
-  { id: 'SKL', label: 'Surat Ket. Lulus' },
-  { id: 'RAPOR', label: 'Rapor' },
-  { id: 'FOTO', label: 'Pas Foto' },
+// Consistent with FileManager.tsx master list, excluding Rapor logic as requested
+const MASTER_DOC_LIST = [
+    { id: 'IJAZAH', label: 'Ijazah SD' },
+    { id: 'AKTA', label: 'Akta Kelahiran' },
+    { id: 'KK', label: 'Kartu Keluarga' },
+    { id: 'KTP_AYAH', label: 'KTP Ayah' },
+    { id: 'KTP_IBU', label: 'KTP Ibu' },
+    { id: 'FOTO', label: 'Pas Foto' },
+    { id: 'KARTU_PELAJAR', label: 'Kartu Pelajar' },
+    { id: 'KIP', label: 'KIP / PKH' },
+    { id: 'SKL', label: 'Surat Ket. Lulus' },
 ];
 
 // --- HELPER FUNCTIONS ---
@@ -84,13 +85,10 @@ const PDFPageCanvas: React.FC<{ pdf: any; pageNum: number; scale: number }> = ({
 const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStudentId, onUpdate, onSave, currentUser }) => {
   const [selectedClass, setSelectedClass] = useState<string>('');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
-  const [activeDocType, setActiveDocType] = useState<string>('IJAZAH');
+  const [activeDocType, setActiveDocType] = useState<string>('');
   const [zoomLevel, setZoomLevel] = useState<number>(1.0); 
   const [layoutMode, setLayoutMode] = useState<'split' | 'full-doc'>('split');
-  
-  // Rapor Navigation
-  const [raporSemester, setRaporSemester] = useState(1);
-  const [raporPage, setRaporPage] = useState(1);
+  const [availableDocTypes, setAvailableDocTypes] = useState<any[]>([]);
   
   // Actions
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
@@ -105,23 +103,36 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   const [numPages, setNumPages] = useState(0);
   const [useFallbackViewer, setUseFallbackViewer] = useState(false);
 
+  // Load Config
+  useEffect(() => {
+      try {
+          const savedConfig = localStorage.getItem('sys_doc_config');
+          // Default config matches initial FileManager state (usually Ijazah, Akta, KK, KTPs, Foto)
+          const configIds = savedConfig ? JSON.parse(savedConfig) : ['IJAZAH', 'AKTA', 'KK', 'KTP_AYAH', 'KTP_IBU', 'FOTO'];
+          
+          // Filter MASTER_LIST based on config
+          const filtered = MASTER_DOC_LIST.filter(d => configIds.includes(d.id));
+          setAvailableDocTypes(filtered);
+          
+          if (filtered.length > 0 && !activeDocType) {
+              setActiveDocType(filtered[0].id);
+          }
+      } catch (e) {
+          const defaults = MASTER_DOC_LIST.slice(0, 6);
+          setAvailableDocTypes(defaults);
+          setActiveDocType('IJAZAH');
+      }
+  }, []);
+
   // Memoized Data
   const uniqueClasses = useMemo(() => Array.from(new Set(students.map(s => s.className))).sort(), [students]);
   const studentsInClass = useMemo(() => students.filter(s => s.className === selectedClass), [students, selectedClass]);
   const currentStudent = useMemo(() => students.find(s => s.id === selectedStudentId), [students, selectedStudentId]);
   
   const currentDoc = useMemo(() => {
-      if (!currentStudent) return undefined;
-      if (activeDocType === 'RAPOR') {
-          return currentStudent.documents.find(d => 
-              d.category === 'RAPOR' && 
-              // Use loose equality (==) to match string '1' with number 1
-              d.subType?.semester == raporSemester && 
-              d.subType?.page == raporPage
-          );
-      }
+      if (!currentStudent || !activeDocType) return undefined;
       return currentStudent.documents.find(d => d.category === activeDocType);
-  }, [currentStudent, activeDocType, raporSemester, raporPage, forceUpdate]);
+  }, [currentStudent, activeDocType, forceUpdate]);
 
   // Init Selection
   useEffect(() => {
@@ -253,9 +264,9 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   };
 
   // --- COMPONENT UI HELPER FOR BUKU INDUK LAYOUT ---
-  const FormField = ({ label, value, labelCol = "w-1/3", valueCol = "flex-1", className = "" }: any) => (
+  const FormField = ({ label, value, labelCol = "w-1/3", valueCol = "flex-1", className = "", labelClassName="" }: any) => (
     <div className={`flex border-b border-gray-300 min-h-[20px] ${className}`}>
-        <div className={`${labelCol} px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center`}>
+        <div className={`${labelCol} px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center ${labelClassName}`}>
             {label}
         </div>
         <div className={`${valueCol} px-1.5 py-0.5 text-[9px] font-medium flex items-center uppercase leading-tight bg-white`}>
@@ -296,7 +307,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
             </div>
             
             <div className="flex gap-1 overflow-x-auto max-w-full pb-1 no-scrollbar">
-                {DOCUMENT_TYPES.map(type => {
+                {availableDocTypes.map(type => {
                     const doc = currentStudent?.documents.find(d => d.category === type.id);
                     let colorClass = 'bg-white text-gray-600 border-gray-200';
                     if (doc?.status === 'APPROVED') colorClass = 'bg-green-50 text-green-700 border-green-200';
@@ -324,17 +335,9 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                     {/* Header Viewer */}
                     <div className="h-14 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-4 text-gray-300">
                         <div className="flex items-center gap-2">
-                            <span className="font-bold text-white text-sm hidden md:block">{DOCUMENT_TYPES.find(t=>t.id===activeDocType)?.label}</span>
-                            {activeDocType === 'RAPOR' && (
-                                <div className="flex gap-1 ml-2">
-                                    <select className="bg-gray-700 text-xs rounded px-1 text-white border-none outline-none" value={raporSemester} onChange={(e)=>setRaporSemester(Number(e.target.value))}>
-                                        {[1,2,3,4,5,6].map(s=><option key={s} value={s}>Sem {s}</option>)}
-                                    </select>
-                                    <div className="flex bg-gray-700 rounded p-0.5">
-                                        {[1,2,3].map(p=><button key={p} onClick={()=>setRaporPage(p)} className={`px-2 text-xs rounded ${raporPage===p?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>Hal {p}</button>)}
-                                    </div>
-                                </div>
-                            )}
+                            <span className="font-bold text-white text-sm hidden md:block">
+                                {availableDocTypes.find(t=>t.id===activeDocType)?.label || activeDocType}
+                            </span>
                         </div>
                         <div className="flex items-center gap-2">
                             <button onClick={()=>setZoomLevel(z=>Math.max(0.5, z-0.2))} className="p-1 hover:bg-gray-700 rounded"><ZoomOut className="w-4 h-4" /></button>
@@ -437,6 +440,12 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                             {/* SECTION 1: IDENTITAS */}
                             <SubHeader>IDENTITAS PESERTA DIDIK</SubHeader>
                             <div className="border-x border-t border-gray-300 mt-1">
+                                <FormField 
+                                    label="KELAS SAAT INI" 
+                                    value={currentStudent.className} 
+                                    className="bg-yellow-50 border-b-2 border-yellow-200"
+                                    labelClassName="font-bold text-yellow-800 bg-yellow-100"
+                                />
                                 <FormField label="1. Nama Lengkap" value={currentStudent.fullName} />
                                 <FormField label="2. Jenis Kelamin" value={currentStudent.gender === 'L' ? 'Laki-Laki' : 'Perempuan'} />
                                 <div className="flex border-b border-gray-300 min-h-[20px]">
@@ -455,7 +464,86 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                                 <FormField label="9. Agama" value={currentStudent.religion} />
                                 <FormField label="10. Berkebutuhan Khusus" value={currentStudent.dapodik.specialNeeds} />
                                 <FormField label="11. Alamat Jalan" value={currentStudent.address} />
-                                {/* ... Rest of form omitted for brevity but logic is same as previous ... */}
+                                <div className="flex border-b border-gray-300 min-h-[20px]">
+                                    <div className="w-1/3 flex flex-col">
+                                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic bg-gray-50"> - Dusun</div>
+                                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic bg-gray-50"> - Kelurahan / Desa</div>
+                                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic bg-gray-50"> - Kecamatan</div>
+                                        <div className="flex-1 px-1.5 py-0.5 text-[8px] italic bg-gray-50"> - Kabupaten</div>
+                                    </div>
+                                    <div className="w-2/3 flex flex-col border-l border-gray-300 bg-white">
+                                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{currentStudent.dapodik.dusun}</div>
+                                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{currentStudent.dapodik.kelurahan}</div>
+                                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{currentStudent.subDistrict}</div>
+                                        <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase">{currentStudent.district}</div>
+                                    </div>
+                                </div>
+                                <div className="flex border-b border-gray-300 min-h-[20px]">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">RT / RW</div>
+                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase bg-white">{currentStudent.dapodik.rt} / {currentStudent.dapodik.rw}</div>
+                                    <div className="w-20 px-1.5 py-0.5 bg-gray-50 border-x border-gray-300 text-[9px]">Kode Pos</div>
+                                    <div className="w-16 px-1.5 py-0.5 text-[9px] bg-white">{currentStudent.postalCode}</div>
+                                </div>
+                                <FormField label="12. Transportasi" value={currentStudent.dapodik.transportation} />
+                                <FormField label="13. Jenis Tinggal" value={currentStudent.dapodik.livingStatus} />
+                                <FormField label="14. No HP" value={currentStudent.father.phone || currentStudent.mother.phone || '-'} />
+                                <FormField label="15. Email" value={currentStudent.dapodik.email} />
+                                <FormField label="16. No. KKS" value={currentStudent.dapodik.kksNumber} />
+                                <FormField label="17. Penerima KPS/KPH" value={currentStudent.dapodik.kpsReceiver} />
+                                <FormField label=" - No. KPS" value={currentStudent.dapodik.kpsNumber} />
+                                <FormField label=" - Penerima KIP" value={currentStudent.dapodik.kipReceiver} />
+                                <FormField label=" - No. KIP" value={currentStudent.dapodik.kipNumber} />
+                                <FormField label=" - Nama di KIP" value={currentStudent.dapodik.kipName} />
+                                <FormField label=" - No Reg Akta Lahir" value={currentStudent.dapodik.birthRegNumber} />
+                            </div>
+
+                            {/* SECTION 2: DATA AYAH */}
+                            <SubHeader>DATA AYAH KANDUNG</SubHeader>
+                            <div className="border-x border-t border-gray-300 mt-1">
+                                <FormField label="18. Nama Ayah" value={currentStudent.father.name} />
+                                <FormField label=" - NIK Ayah" value={currentStudent.father.nik} />
+                                <FormField label=" - Tahun Lahir" value={currentStudent.father.birthPlaceDate} />
+                                <FormField label=" - Pekerjaan" value={currentStudent.father.job} />
+                                <FormField label=" - Pendidikan" value={currentStudent.father.education} />
+                                <FormField label=" - Penghasilan" value={currentStudent.father.income} />
+                            </div>
+
+                            {/* SECTION 3: DATA IBU */}
+                            <SubHeader>DATA IBU KANDUNG</SubHeader>
+                            <div className="border-x border-t border-gray-300 mt-1">
+                                <FormField label="19. Nama Ibu" value={currentStudent.mother.name} />
+                                <FormField label=" - NIK Ibu" value={currentStudent.mother.nik} />
+                                <FormField label=" - Tahun Lahir" value={currentStudent.mother.birthPlaceDate} />
+                                <FormField label=" - Pekerjaan" value={currentStudent.mother.job} />
+                                <FormField label=" - Pendidikan" value={currentStudent.mother.education} />
+                                <FormField label=" - Penghasilan" value={currentStudent.mother.income} />
+                            </div>
+
+                            {/* SECTION 4: DATA WALI */}
+                            <SubHeader>DATA WALI</SubHeader>
+                            <div className="border-x border-t border-gray-300 mt-1">
+                                <FormField label="20. Nama Wali" value={currentStudent.guardian?.name} />
+                                <FormField label=" - Tahun Lahir" value={currentStudent.guardian?.birthPlaceDate} />
+                                <FormField label=" - Pekerjaan" value={currentStudent.guardian?.job} />
+                                <FormField label=" - Pendidikan" value={currentStudent.guardian?.education} />
+                                <FormField label=" - Penghasilan" value={currentStudent.guardian?.income} />
+                            </div>
+
+                            {/* SECTION 5: PERIODIK */}
+                            <SubHeader>DATA PERIODIK</SubHeader>
+                            <div className="border-x border-t border-gray-300 mt-1 mb-2">
+                                <div className="flex border-b border-gray-300 min-h-[20px]">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">Tinggi / Berat</div>
+                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">{currentStudent.height} cm / {currentStudent.weight} kg</div>
+                                </div>
+                                <div className="flex border-b border-gray-300 min-h-[20px]">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">Jarak / Waktu</div>
+                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">{currentStudent.dapodik.distanceToSchool} km / {currentStudent.dapodik.travelTimeMinutes} menit</div>
+                                </div>
+                                <div className="flex border-b border-gray-300 min-h-[20px]">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">Jml Saudara</div>
+                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">{currentStudent.siblingCount}</div>
+                                </div>
                             </div>
                         </div>
                     </div>

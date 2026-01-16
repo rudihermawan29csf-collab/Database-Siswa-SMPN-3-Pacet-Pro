@@ -82,6 +82,9 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   const [isEditing, setIsEditing] = useState(false);
   const [forceUpdate, setForceUpdate] = useState(0);
   
+  // Settings State
+  const [appSettings, setAppSettings] = useState<any>(null);
+
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionNote, setRejectionNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -93,6 +96,19 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [numPages, setNumPages] = useState(0);
   const [useFallbackViewer, setUseFallbackViewer] = useState(false);
+
+  // Fetch Settings on Mount
+  useEffect(() => {
+      const fetchSettings = async () => {
+          try {
+              const settings = await api.getAppSettings();
+              if (settings) setAppSettings(settings);
+          } catch (e) {
+              console.error("Failed to load settings for verification", e);
+          }
+      };
+      fetchSettings();
+  }, []);
 
   const uniqueClasses = useMemo(() => {
       return Array.from(new Set(students.map(s => s.className))).sort();
@@ -141,6 +157,24 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   };
 
   const isDriveUrl = currentDoc && (currentDoc.url.includes('drive.google.com') || currentDoc.url.includes('docs.google.com') || currentDoc.url.includes('googleusercontent.com'));
+
+  // Calculate Display Class based on Semester
+  const getDisplayClass = () => {
+      if (!currentStudent) return '';
+      let level = '';
+      if (activeSemester <= 2) level = 'VII';
+      else if (activeSemester <= 4) level = 'VIII';
+      else level = 'IX';
+      
+      const parts = currentStudent.className.split(' ');
+      const suffix = parts.length > 1 ? parts.slice(1).join(' ') : '';
+      return `${level} ${suffix}`.trim();
+  };
+
+  // Get Academic Year from settings or fallback
+  const getAcademicYear = () => {
+      return appSettings?.academicData?.semesterYears?.[activeSemester] || '2024/2025';
+  };
 
   // VIEWER LOGIC IMPLEMENTATION
   useEffect(() => {
@@ -391,11 +425,13 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                         <div className="mb-6 border-b-2 border-gray-800 pb-4">
                             <div className="flex justify-between text-sm font-bold text-gray-900 mb-2">
                                 <span>NAMA: {currentStudent.fullName.toUpperCase()}</span>
-                                <span>KELAS: {currentStudent.className}</span>
+                                {/* UPDATED: Display Class based on Semester logic */}
+                                <span>KELAS: {getDisplayClass()}</span>
                             </div>
                             <div className="flex justify-between text-xs text-gray-600">
                                 <span>NISN: {currentStudent.nisn}</span>
-                                <span>SEMESTER: {activeSemester} (2024/2025)</span>
+                                {/* UPDATED: Display Academic Year from Settings */}
+                                <span>SEMESTER: {activeSemester} ({getAcademicYear()})</span>
                             </div>
                         </div>
                         {currentRecord ? (

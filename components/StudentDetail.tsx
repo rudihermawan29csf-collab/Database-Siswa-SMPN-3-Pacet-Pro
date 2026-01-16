@@ -155,7 +155,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
   );
 
   // INTERACTIVE FIELD (Matches Buku Induk View Layout but Clickable)
-  const FormField = ({ label, value, fieldKey, labelCol = "w-1/3", valueCol = "flex-1", className = "" }: any) => {
+  const FormField = ({ label, value, fieldKey, labelCol = "w-1/3", valueCol = "flex-1", className = "", labelClassName = "" }: any) => {
       const displayValue = (value !== null && value !== undefined && value !== '') ? value : '-';
       const stringValue = String(displayValue);
       const pendingReq = fieldKey ? student.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING') : null;
@@ -164,13 +164,13 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
 
       return (
         <div id={fieldKey ? `field-${fieldKey}` : undefined} className={`flex border-b border-gray-300 min-h-[20px] ${className}`}>
-            <div className={`${labelCol} px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center`}>
+            <div className={`${labelCol} px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center ${labelClassName}`}>
                 {label}
             </div>
             <div 
                 className={`
                     ${valueCol} px-1.5 py-0.5 text-[9px] font-medium flex items-center uppercase leading-tight relative group transition-colors
-                    ${pendingReq ? 'bg-yellow-100 text-yellow-800' : 'bg-white'}
+                    ${pendingReq ? 'bg-yellow-100 text-yellow-800' : 'bg-transparent'}
                     ${isInteractive ? 'cursor-pointer hover:bg-blue-50' : ''}
                 `}
                 onClick={() => isInteractive && handleOpenCorrection(fieldKey, label, stringValue)}
@@ -282,6 +282,14 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                     {/* SECTION 1: IDENTITAS */}
                     <SubHeader>IDENTITAS PESERTA DIDIK</SubHeader>
                     <div className="border-x border-t border-gray-300 mt-1">
+                        {/* SPECIAL EDITABLE CLASS FIELD FOR ADMIN */}
+                        <FormField 
+                            label="KELAS SAAT INI" 
+                            value={student.className} 
+                            fieldKey="className"
+                            className="bg-yellow-50 border-b-2 border-yellow-200"
+                            labelClassName="font-bold text-yellow-800 bg-yellow-100"
+                        />
                         <FormField label="1. Nama Lengkap" value={student.fullName} fieldKey="fullName" />
                         <FormField label="2. Jenis Kelamin" value={student.gender === 'L' ? 'Laki-Laki' : 'Perempuan'} fieldKey="gender" />
                         <div className="flex border-b border-gray-300 min-h-[20px]">
