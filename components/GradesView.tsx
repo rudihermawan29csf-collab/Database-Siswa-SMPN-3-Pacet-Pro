@@ -37,9 +37,17 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
   const [editPromotion, setEditPromotion] = useState('');
 
   // --- CORRECTION MODAL STATE (STUDENT ONLY) ---
-  const [isClassModalOpen, setIsClassModalOpen] = useState(false);
+  const [isCorrectionModalOpen, setIsCorrectionModalOpen] = useState(false);
+  const [correctionType, setCorrectionType] = useState<'CLASS' | 'GRADE'>('CLASS');
+  
+  // States for Class Correction
   const [proposedClass, setProposedClass] = useState('');
-  const [classReason, setClassReason] = useState('');
+  
+  // States for Grade Correction
+  const [targetSubject, setTargetSubject] = useState('');
+  const [proposedScore, setProposedScore] = useState('');
+
+  const [correctionReason, setCorrectionReason] = useState('');
 
   const SUBJECT_MAP = [
       { key: 'PAI', label: 'PAI', full: 'Pendidikan Agama dan Budi Pekerti' },
@@ -54,6 +62,18 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       { key: 'Seni dan Prakarya', label: 'SENI', full: 'Seni dan Prakarya' },
       { key: 'Bahasa Jawa', label: 'B.JAWA', full: 'Bahasa Jawa' },
   ];
+
+  // Helper: Generate Competency Description Automatically
+  const getCompetencyDescription = (score: number, subjectName: string) => {
+      if (!score) return '-';
+      let predikat = '';
+      if (score >= 91) predikat = 'Sangat baik';
+      else if (score >= 81) predikat = 'Baik';
+      else if (score >= 75) predikat = 'Cukup';
+      else predikat = 'Perlu bimbingan';
+
+      return `${predikat} dalam memahami materi ${subjectName}.`;
+  };
 
   // Fetch Settings on Mount
   useEffect(() => {
@@ -141,41 +161,73 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       }
   };
 
-  // --- CORRECTION HANDLER ---
+  // --- CORRECTION HANDLERS ---
+  
   const handleOpenClassCorrection = () => {
       if (selectedStudent) {
           const record = selectedStudent.academicRecords?.[dbSemester];
+          setCorrectionType('CLASS');
           setProposedClass(record?.className || selectedStudent.className);
-          setClassReason('');
-          setIsClassModalOpen(true);
+          setCorrectionReason('');
+          setIsCorrectionModalOpen(true);
       }
   };
 
-  const submitClassCorrection = async () => {
-      if (!selectedStudent || !proposedClass || !classReason) {
-          alert("Mohon pilih kelas baru dan isi alasan.");
+  const handleOpenGradeCorrection = (subjectName: string, currentScore: number) => {
+      setCorrectionType('GRADE');
+      setTargetSubject(subjectName);
+      setProposedScore(String(currentScore));
+      setCorrectionReason('');
+      setIsCorrectionModalOpen(true);
+  };
+
+  const submitCorrection = async () => {
+      if (!selectedStudent || !correctionReason) {
+          alert("Mohon isi alasan perubahan.");
           return;
       }
 
-      // NOTE: Key uses dbSemester to allow per-semester class changes
-      const correctionKey = `class-${dbSemester}`;
+      let newRequest: CorrectionRequest;
 
-      const newRequest: CorrectionRequest = {
-          id: Math.random().toString(36).substr(2, 9),
-          fieldKey: correctionKey,
-          fieldName: `KELAS (Semester ${dbSemester})`,
-          originalValue: selectedStudent.academicRecords?.[dbSemester]?.className || selectedStudent.className,
-          proposedValue: proposedClass,
-          studentReason: classReason,
-          status: 'PENDING',
-          requestDate: new Date().toISOString(),
-      };
+      if (correctionType === 'CLASS') {
+          // KEY: class-[semester]
+          const correctionKey = `class-${dbSemester}`;
+          newRequest = {
+              id: Math.random().toString(36).substr(2, 9),
+              fieldKey: correctionKey,
+              fieldName: `KELAS (Semester ${dbSemester})`,
+              originalValue: selectedStudent.academicRecords?.[dbSemester]?.className || selectedStudent.className,
+              proposedValue: proposedClass,
+              studentReason: correctionReason,
+              status: 'PENDING',
+              requestDate: new Date().toISOString(),
+          };
+      } else {
+          // KEY: grade-[semester]-[subject]
+          const correctionKey = `grade-${dbSemester}-${targetSubject}`;
+          
+          // Find original score safely
+          const currentRecord = selectedStudent.academicRecords?.[dbSemester];
+          const currentSubject = currentRecord?.subjects.find(s => s.subject === targetSubject);
+          const currentScore = currentSubject ? String(currentSubject.score) : "0";
+
+          newRequest = {
+              id: Math.random().toString(36).substr(2, 9),
+              fieldKey: correctionKey,
+              fieldName: `Nilai ${targetSubject} (Sem ${dbSemester})`,
+              originalValue: currentScore,
+              proposedValue: proposedScore,
+              studentReason: correctionReason,
+              status: 'PENDING',
+              requestDate: new Date().toISOString(),
+          };
+      }
 
       if (!selectedStudent.correctionRequests) selectedStudent.correctionRequests = [];
       
-      // Remove any existing pending request for THIS semester class to avoid duplicates
+      // Remove any existing pending request for THIS key to avoid duplicates
       selectedStudent.correctionRequests = selectedStudent.correctionRequests.filter(
-          r => !(r.fieldKey === correctionKey && r.status === 'PENDING')
+          r => !(r.fieldKey === newRequest.fieldKey && r.status === 'PENDING')
       );
 
       const updatedStudent = {
@@ -186,44 +238,78 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       // Save locally & API
       await api.updateStudent(updatedStudent);
       setSelectedStudent(updatedStudent); // Update local view
-      setIsClassModalOpen(false);
-      alert("✅ Pengajuan revisi kelas berhasil dikirim ke Admin.");
+      setIsCorrectionModalOpen(false);
+      alert("✅ Pengajuan revisi berhasil dikirim ke Admin.");
       if (onUpdate) onUpdate();
   };
 
   // --- REPORT VIEW ---
   const ReportView = ({ student }: { student: Student }) => {
-      const record = student.academicRecords?.[dbSemester];
-      
-      // Dynamic Data from Settings
+      // 1. Get Base Data
       const schoolName = appSettings?.schoolData?.name || 'SMP Negeri 3 Pacet';
       const academicYear = appSettings?.academicData?.semesterYears?.[dbSemester] || '2024/2025';
       const reportDate = appSettings?.academicData?.semesterDates?.[dbSemester] || new Date().toLocaleDateString('id-ID');
+      
+      // 2. Headmaster Data (From Settings)
       const headmaster = appSettings?.schoolData?.headmaster || 'Didik Sulistyo, M.M.Pd';
       const headmasterNip = appSettings?.schoolData?.nip || '19660518 198901 1 002';
       
-      // Check if there is a pending correction for class THIS SEMESTER
-      const correctionKey = `class-${dbSemester}`;
-      const pendingClassReq = student.correctionRequests?.find(r => r.fieldKey === correctionKey && r.status === 'PENDING');
-
-      const getClassDisplay = () => {
-          // Priority: 1. Academic Record specific class, 2. Student Main Class
-          const rawClass = record?.className || student.className;
-          
-          return rawClass;
-      };
-
-      const displayClass = getClassDisplay();
-
+      // PREPARE DATA: If record doesn't exist, create a dummy one for display
+      let record = student.academicRecords?.[dbSemester];
+      
       if (!record) {
-          return (
-              <div className="flex flex-col items-center justify-center h-full p-10 bg-white rounded-xl shadow-sm border border-gray-200">
-                  <Activity className="w-16 h-16 text-gray-200 mb-4" />
-                  <h3 className="text-lg font-bold text-gray-700">Data Akademik Belum Tersedia</h3>
-                  {userRole === 'ADMIN' && <button onClick={() => setViewMode('DATABASE')} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">Input Nilai</button>}
-              </div>
-          );
+          // Create dummy record structure so table renders
+          const level = (dbSemester <= 2) ? 'VII' : (dbSemester <= 4) ? 'VIII' : 'IX';
+          record = {
+              semester: dbSemester,
+              classLevel: level,
+              className: student.className, // Fallback to current class
+              phase: 'D',
+              year: academicYear,
+              subjects: SUBJECT_MAP.map((s, i) => ({
+                  no: i + 1,
+                  subject: s.full,
+                  score: 0,
+                  competency: '-'
+              })),
+              p5Projects: [],
+              extracurriculars: [],
+              teacherNote: '-',
+              attendance: { sick: 0, permitted: 0, noReason: 0 }
+          };
+      } else {
+          // Even if record exists, ensure all subjects from SUBJECT_MAP are present for display
+          const filledSubjects = SUBJECT_MAP.map((mapItem, idx) => {
+              const existingSub = record!.subjects.find(s => 
+                  s.subject === mapItem.full || s.subject.startsWith(mapItem.key) || (mapItem.key === 'PAI' && s.subject.includes('Agama'))
+              );
+              
+              const score = existingSub ? existingSub.score : 0;
+              const competency = getCompetencyDescription(score, mapItem.full);
+
+              return {
+                  no: idx + 1,
+                  subject: mapItem.full,
+                  score: score,
+                  competency: competency
+              };
+          });
+          
+          record = { ...record, subjects: filledSubjects };
       }
+
+      // Check pending class correction
+      const classCorrectionKey = `class-${dbSemester}`;
+      const pendingClassReq = student.correctionRequests?.find(r => r.fieldKey === classCorrectionKey && r.status === 'PENDING');
+      const displayClass = pendingClassReq ? pendingClassReq.proposedValue : (record.className || student.className);
+
+      // 3. Homeroom Teacher (Wali Kelas) Data - Dynamic Lookup
+      // Key Format matches SettingsView: YEAR-SEMESTER-CLASSNAME (e.g., 2024/2025-1-VII A)
+      const waliKey = `${academicYear}-${dbSemester}-${displayClass}`;
+      const waliData = appSettings?.classConfig?.[waliKey];
+      
+      const waliName = waliData?.teacher || '..................................';
+      const waliNip = waliData?.nip || '..................................';
 
       return (
           <div id="report-content" className="bg-white shadow-xl min-h-[297mm] w-[210mm] mx-auto p-[10mm] text-black font-sans relative print:shadow-none print:w-full print:m-0 print:p-0 box-border">
@@ -238,7 +324,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                               <td 
                                 className={`
                                     py-0.5 px-1 transition-all rounded relative
-                                    ${userRole === 'STUDENT' ? 'bg-yellow-200 cursor-pointer hover:bg-yellow-300 text-blue-800 font-bold border border-yellow-400 border-dashed' : ''}
+                                    ${userRole === 'STUDENT' ? 'bg-yellow-100 cursor-pointer hover:bg-yellow-200 text-blue-800 font-bold border border-yellow-300 border-dashed' : ''}
                                 `}
                                 onClick={() => userRole === 'STUDENT' && !pendingClassReq && handleOpenClassCorrection()}
                                 title={userRole === 'STUDENT' ? "Klik untuk mengajukan Revisi Kelas Semester Ini" : ""}
@@ -273,16 +359,40 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                           </tr>
                       </thead>
                       <tbody>
-                          {record.subjects.length > 0 ? record.subjects.map((sub, idx) => (
-                              <tr key={idx} className={idx % 2 !== 0 ? 'bg-gray-100' : ''}>
-                                  <td className="border border-black p-1 text-center">{idx + 1}</td>
-                                  <td className="border border-black p-1">{sub.subject}</td>
-                                  <td className="border border-black p-1 text-center font-bold">{sub.score}</td>
-                                  <td className="border border-black p-1 text-[10px]">{sub.competency || '-'}</td>
-                              </tr>
-                          )) : <tr><td colSpan={4} className="border border-black p-2 text-center">-</td></tr>}
+                          {record.subjects.map((sub, idx) => {
+                              // Check pending grade correction
+                              const gradeKey = `grade-${dbSemester}-${sub.subject}`;
+                              const pendingGradeReq = student.correctionRequests?.find(r => r.fieldKey === gradeKey && r.status === 'PENDING');
+
+                              return (
+                                  <tr key={idx} className={idx % 2 !== 0 ? 'bg-gray-100' : ''}>
+                                      <td className="border border-black p-1 text-center">{idx + 1}</td>
+                                      <td className="border border-black p-1">{sub.subject}</td>
+                                      <td 
+                                        className={`border border-black p-1 text-center font-bold relative group
+                                            ${userRole === 'STUDENT' ? 'cursor-pointer hover:bg-yellow-100' : ''}
+                                            ${pendingGradeReq ? 'bg-yellow-100 text-yellow-800' : ''}
+                                        `}
+                                        onClick={() => userRole === 'STUDENT' && !pendingGradeReq && handleOpenGradeCorrection(sub.subject, sub.score)}
+                                        title={userRole === 'STUDENT' ? "Klik untuk mengajukan perbaikan nilai" : ""}
+                                      >
+                                          {pendingGradeReq ? pendingGradeReq.proposedValue : sub.score}
+                                          {pendingGradeReq && <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}
+                                          {userRole === 'STUDENT' && !pendingGradeReq && (
+                                              <Pencil className="w-2 h-2 text-gray-400 absolute top-1 right-1 opacity-0 group-hover:opacity-100" />
+                                          )}
+                                      </td>
+                                      <td className="border border-black p-1 text-[10px] italic text-gray-700">
+                                          {sub.competency || '-'}
+                                      </td>
+                                  </tr>
+                              );
+                          })}
                       </tbody>
                   </table>
+                  {userRole === 'STUDENT' && (
+                      <p className="text-[10px] text-gray-500 mt-1 italic">* Klik pada Kelas atau Nilai untuk mengajukan perbaikan data ke Admin.</p>
+                  )}
               </div>
 
               {/* B. P5 */}
@@ -387,8 +497,8 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                   </div>
                   <div className="text-center w-1/3">
                       <p className="mb-16">Wali Kelas</p>
-                      <p className="underline">..................................</p>
-                      <p>NIP. ..................................</p>
+                      <p className="underline uppercase">{waliName}</p>
+                      <p>NIP. {waliNip}</p>
                   </div>
               </div>
           </div>
@@ -408,45 +518,62 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
     <div className="flex flex-col h-full space-y-4 animate-fade-in relative">
       <input type="file" ref={fileInputRef} className="hidden" accept=".csv,.xlsx" onChange={handleImportExcel} />
 
-      {/* MODAL REVISI KELAS (SISWA ONLY) */}
-      {isClassModalOpen && (
+      {/* MODAL REVISI (Unified for Class & Grade) */}
+      {isCorrectionModalOpen && (
           <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform scale-100 transition-all">
                   <div className="flex flex-col items-center text-center mb-4">
                       <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mb-2">
                           <Pencil className="w-6 h-6 text-yellow-600" />
                       </div>
-                      <h3 className="text-lg font-bold text-gray-800">Ajukan Revisi Kelas</h3>
+                      <h3 className="text-lg font-bold text-gray-800">
+                          {correctionType === 'CLASS' ? 'Ajukan Revisi Kelas' : 'Ajukan Revisi Nilai'}
+                      </h3>
                       <p className="text-xs text-gray-500">Semester {dbSemester}</p>
-                      <p className="text-xs text-gray-500">Data saat ini: <span className="font-bold">{selectedStudent?.academicRecords?.[dbSemester]?.className || selectedStudent?.className}</span></p>
                   </div>
                   
                   <div className="space-y-4">
-                      <div>
-                          <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Pilih Kelas yang Benar</label>
-                          <select 
-                              className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none font-bold"
-                              value={proposedClass}
-                              onChange={(e) => setProposedClass(e.target.value)}
-                          >
-                              {CLASS_LIST.map(c => <option key={c} value={c}>{c}</option>)}
-                          </select>
-                      </div>
+                      {correctionType === 'CLASS' ? (
+                          <div>
+                              <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Pilih Kelas yang Benar</label>
+                              <select 
+                                  className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none font-bold"
+                                  value={proposedClass}
+                                  onChange={(e) => setProposedClass(e.target.value)}
+                              >
+                                  {CLASS_LIST.map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                          </div>
+                      ) : (
+                          <div>
+                              <label className="block text-xs font-bold text-gray-600 uppercase mb-1">
+                                  Nilai {targetSubject} (Yang Benar)
+                              </label>
+                              <input 
+                                  type="number"
+                                  className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none font-bold"
+                                  value={proposedScore}
+                                  onChange={(e) => setProposedScore(e.target.value)}
+                                  placeholder="0-100"
+                              />
+                          </div>
+                      )}
+
                       <div>
                           <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Alasan Perubahan</label>
                           <textarea 
                               className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none"
                               rows={2}
-                              placeholder="Contoh: Saya pindah kelas, Data salah input..."
-                              value={classReason}
-                              onChange={(e) => setClassReason(e.target.value)}
+                              placeholder={correctionType === 'CLASS' ? "Contoh: Saya pindah kelas..." : "Contoh: Nilai ulangan saya..."}
+                              value={correctionReason}
+                              onChange={(e) => setCorrectionReason(e.target.value)}
                           />
                       </div>
                   </div>
 
                   <div className="flex gap-2 mt-6">
-                      <button onClick={() => setIsClassModalOpen(false)} className="flex-1 py-2 bg-gray-100 text-gray-600 font-bold rounded-lg text-sm hover:bg-gray-200">Batal</button>
-                      <button onClick={submitClassCorrection} className="flex-1 py-2 bg-blue-600 text-white font-bold rounded-lg text-sm hover:bg-blue-700 flex items-center justify-center gap-2">
+                      <button onClick={() => setIsCorrectionModalOpen(false)} className="flex-1 py-2 bg-gray-100 text-gray-600 font-bold rounded-lg text-sm hover:bg-gray-200">Batal</button>
+                      <button onClick={submitCorrection} className="flex-1 py-2 bg-blue-600 text-white font-bold rounded-lg text-sm hover:bg-blue-700 flex items-center justify-center gap-2">
                           <Send className="w-3 h-3" /> Kirim Revisi
                       </button>
                   </div>
