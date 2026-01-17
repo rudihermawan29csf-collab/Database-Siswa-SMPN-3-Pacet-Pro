@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Student } from '../types';
 import { Search, FileSpreadsheet, FileText, Calculator } from 'lucide-react';
 import { api } from '../services/api';
@@ -8,8 +8,6 @@ interface RecapViewProps {
   userRole?: 'ADMIN' | 'STUDENT' | 'GURU';
   loggedInStudent?: Student;
 }
-
-const CLASS_LIST = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
 
 const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', loggedInStudent }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -60,6 +58,22 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
 
       initConfig();
   }, []);
+
+  const uniqueClasses = useMemo(() => {
+      const classes = Array.from(new Set(students.map(s => s.className))).filter(Boolean) as string[];
+      return ['ALL', ...classes.sort((a, b) => {
+          // Sort logic: VII < VIII < IX, then alphabetically
+          const levelA = a.split(' ')[0];
+          const levelB = b.split(' ')[0];
+          const romanMap: Record<string, number> = { 'VII': 7, 'VIII': 8, 'IX': 9 };
+          
+          const numA = romanMap[levelA] || 0;
+          const numB = romanMap[levelB] || 0;
+
+          if (numA !== numB) return numA - numB;
+          return a.localeCompare(b);
+      })];
+  }, [students]);
 
   const effectiveStudents = (userRole === 'STUDENT' && loggedInStudent) ? [loggedInStudent] : students;
 
@@ -150,8 +164,7 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
                 </div>
                 {userRole === 'ADMIN' && (
                     <select className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium" value={dbClassFilter} onChange={(e) => setDbClassFilter(e.target.value)}>
-                        <option value="ALL">Semua Kelas</option>
-                        {CLASS_LIST.map(c => <option key={c} value={c}>Kelas {c}</option>)}
+                        {uniqueClasses.map(c => <option key={c} value={c}>{c === 'ALL' ? 'Semua Kelas' : `Kelas ${c}`}</option>)}
                     </select>
                 )}
             </div>

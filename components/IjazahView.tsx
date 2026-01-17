@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Student, CorrectionRequest } from '../types';
 import { Search, FileSpreadsheet, Award, LayoutList, TableProperties, Save, Pencil, X, CheckCircle2, FileText, ScrollText, Eye, ArrowLeft, Printer, Loader2, Send } from 'lucide-react';
 import { api } from '../services/api';
@@ -8,8 +8,6 @@ interface IjazahViewProps {
   userRole?: 'ADMIN' | 'STUDENT' | 'GURU';
   loggedInStudent?: Student;
 }
-
-const CLASS_LIST = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
 
 const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', loggedInStudent }) => {
   const [activeTab, setActiveTab] = useState<'DATA' | 'NILAI'>('DATA');
@@ -49,6 +47,22 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
           setActiveTab('DATA');
       }
   }, [userRole, loggedInStudent]);
+
+  const uniqueClasses = useMemo(() => {
+      const classes = Array.from(new Set(students.map(s => s.className))).filter(Boolean) as string[];
+      return ['ALL', ...classes.sort((a, b) => {
+          // Sort logic: VII < VIII < IX, then alphabetically
+          const levelA = a.split(' ')[0];
+          const levelB = b.split(' ')[0];
+          const romanMap: Record<string, number> = { 'VII': 7, 'VIII': 8, 'IX': 9 };
+          
+          const numA = romanMap[levelA] || 0;
+          const numB = romanMap[levelB] || 0;
+
+          if (numA !== numB) return numA - numB;
+          return a.localeCompare(b);
+      })];
+  }, [students]);
 
   const SUBJECT_MAP = [
       { key: 'PAI', label: 'PAI', full: 'Pendidikan Agama Islam dan Budi Pekerti' },
@@ -363,9 +377,12 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                     )}
 
                     {userRole === 'ADMIN' && (
-                        <select className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-xs font-medium" value={dbClassFilter} onChange={(e) => setDbClassFilter(e.target.value)}>
-                            <option value="ALL">Semua Kelas</option>
-                            {CLASS_LIST.map(c => <option key={c} value={c}>Kelas {c}</option>)}
+                        <select 
+                            className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-xs font-medium" 
+                            value={dbClassFilter} 
+                            onChange={(e) => setDbClassFilter(e.target.value)}
+                        >
+                            {uniqueClasses.map(c => <option key={c} value={c}>{c === 'ALL' ? 'Semua Kelas' : `Kelas ${c}`}</option>)}
                         </select>
                     )}
 
@@ -467,7 +484,14 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                                         <p className="text-base mb-6 italic text-center">Dengan ini menyatakan bahwa:</p>
 
                                         {/* Student Name */}
-                                        <h2 className="text-3xl font-bold font-serif mb-8 capitalize text-center">{selectedStudent?.fullName}</h2>
+                                        <div className="text-center mb-8">
+                                            <InteractiveField 
+                                                label="Nama Siswa" 
+                                                value={selectedStudent?.fullName} 
+                                                fieldKey="fullName" 
+                                                className="text-3xl font-bold font-serif capitalize" 
+                                            />
+                                        </div>
                                         
                                         {/* BIO DATA */}
                                         <div className="w-full px-16 mb-8 font-serif text-sm">
@@ -538,7 +562,14 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                                                     <tr>
                                                         <td className="w-56 py-1">Nama Lengkap</td>
                                                         <td className="w-4">:</td>
-                                                        <td className="capitalize">{selectedStudent?.fullName}</td>
+                                                        <td>
+                                                            <InteractiveField 
+                                                                label="Nama Siswa" 
+                                                                value={selectedStudent?.fullName} 
+                                                                fieldKey="fullName" 
+                                                                className="capitalize" 
+                                                            />
+                                                        </td>
                                                     </tr>
                                                     <tr>
                                                         <td className="w-56 py-1">Tempat, Tanggal Lahir</td>

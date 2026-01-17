@@ -9,8 +9,6 @@ interface SKLViewProps {
   loggedInStudent?: Student;
 }
 
-const CLASS_LIST = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
-
 // Subject mapping specifically for SKL format
 const SKL_SUBJECTS = [
     { key: 'PAI', label: 'Pendidikan Agama dan Budi Pekerti' },
@@ -261,6 +259,22 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
       fetchData();
   }, []);
 
+  const uniqueClasses = useMemo(() => {
+      const classes = Array.from(new Set(students.map(s => s.className))).filter(Boolean) as string[];
+      return ['ALL', ...classes.sort((a, b) => {
+          // Sort logic: VII < VIII < IX, then alphabetically
+          const levelA = a.split(' ')[0];
+          const levelB = b.split(' ')[0];
+          const romanMap: Record<string, number> = { 'VII': 7, 'VIII': 8, 'IX': 9 };
+          
+          const numA = romanMap[levelA] || 0;
+          const numB = romanMap[levelB] || 0;
+
+          if (numA !== numB) return numA - numB;
+          return a.localeCompare(b);
+      })];
+  }, [students]);
+
   useEffect(() => {
       if (userRole === 'STUDENT' && loggedInStudent) {
           setSelectedStudent(loggedInStudent);
@@ -376,8 +390,7 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
                             value={selectedClass}
                             onChange={(e) => setSelectedClass(e.target.value)}
                         >
-                            <option value="ALL">Semua Kelas</option>
-                            {CLASS_LIST.map(c => <option key={c} value={c}>Kelas {c}</option>)}
+                            {uniqueClasses.map(c => <option key={c} value={c}>{c === 'ALL' ? 'Semua Kelas' : `Kelas ${c}`}</option>)}
                         </select>
                     </div>
                 )}

@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { FileText, Image as ImageIcon, Download, Eye, Plus, Trash2, FolderOpen, AlertCircle, CheckCircle2, UploadCloud, X, Save, RefreshCw, AlertTriangle } from 'lucide-react';
 import { DocumentFile } from '../types';
 
@@ -10,7 +10,7 @@ interface FileManagerProps {
   allowDeleteApproved?: boolean; // New prop to allow deleting approved docs (e.g. for Admin)
 }
 
-const MASTER_DOC_LIST = [
+const DEFAULT_DOCS = [
     { id: 'IJAZAH', label: 'Ijazah SD', desc: 'PDF/JPG' },
     { id: 'AKTA', label: 'Akta Kelahiran', desc: 'Scan Asli' },
     { id: 'KK', label: 'Kartu Keluarga', desc: 'Terbaru' },
@@ -26,20 +26,34 @@ const MASTER_DOC_LIST = [
 const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete, highlightDocumentId, allowDeleteApproved = false }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [targetCategory, setTargetCategory] = useState<string>('LAINNYA');
+  const [docList, setDocList] = useState(DEFAULT_DOCS);
   
   // Staging State for Confirmation Modal
   const [stagingFile, setStagingFile] = useState<File | null>(null);
 
-  // Dynamic Docs from Settings
+  // Load Custom Doc Definitions
+  useEffect(() => {
+      try {
+          const savedDefs = localStorage.getItem('sys_doc_definitions');
+          if (savedDefs) {
+              setDocList(JSON.parse(savedDefs));
+          }
+      } catch (e) {
+          // Fallback to default
+      }
+  }, []);
+
+  // Dynamic Docs from Settings (Which ones are "REQUIRED")
   const activeDocs = useMemo(() => {
       try {
           const savedConfig = localStorage.getItem('sys_doc_config');
           const configIds = savedConfig ? JSON.parse(savedConfig) : ['IJAZAH', 'AKTA', 'KK', 'KTP_AYAH', 'KTP_IBU', 'FOTO'];
-          return MASTER_DOC_LIST.filter(d => configIds.includes(d.id));
+          // Filter from the LOADED docList, not the default
+          return docList.filter(d => configIds.includes(d.id));
       } catch {
-          return MASTER_DOC_LIST.slice(0, 6);
+          return docList.slice(0, 6);
       }
-  }, []);
+  }, [docList]);
 
   const getIcon = (type: string) => {
     if (type === 'PDF') return <FileText className="w-10 h-10 text-red-500" />;
@@ -102,7 +116,7 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
                           <UploadCloud className="w-8 h-8 text-blue-600" />
                       </div>
                       <h3 className="text-lg font-bold text-gray-900 mb-1">Konfirmasi Upload</h3>
-                      <p className="text-sm text-gray-500 mb-6">Anda akan mengunggah dokumen untuk kategori <span className="font-bold text-blue-600">{MASTER_DOC_LIST.find(r => r.id === targetCategory)?.label || targetCategory}</span></p>
+                      <p className="text-sm text-gray-500 mb-6">Anda akan mengunggah dokumen untuk kategori <span className="font-bold text-blue-600">{docList.find(r => r.id === targetCategory)?.label || targetCategory}</span></p>
                       
                       <div className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 flex items-center gap-3 mb-6">
                           {stagingFile.type.includes('pdf') ? <FileText className="w-8 h-8 text-red-500" /> : <ImageIcon className="w-8 h-8 text-blue-500" />}

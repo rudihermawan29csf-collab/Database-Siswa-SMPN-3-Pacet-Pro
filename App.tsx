@@ -76,10 +76,22 @@ function App() {
         // 1. Pending Documents
         s.documents.forEach(d => {
           if (d.status === 'PENDING') {
+            // ROUTING LOGIC BASED ON DOCUMENT CATEGORY
+            let type: any = 'ADMIN_BIO_VERIFY'; // Default to Buku Induk (Upload Dokumen Saya)
+            let title = 'Verifikasi Dokumen';
+            
+            if (d.category === 'RAPOR') {
+                type = 'ADMIN_GRADE_VERIFY'; // Upload Rapor -> Verifikasi Nilai
+                title = 'Verifikasi Rapor';
+            } 
+            // Note: If you want specific Ijazah docs to go to Ijazah Verify, check category here.
+            // Example: if (['IJAZAH', 'SKL'].includes(d.category)) type = 'ADMIN_IJAZAH_VERIFY';
+            // Currently keeping "Dokumen Saya" general uploads to Bio Verify as requested.
+
             list.push({
               id: `doc-${d.id}`,
-              type: 'ADMIN_DOC_VERIFY',
-              title: 'Verifikasi Dokumen',
+              type: type,
+              title: title,
               description: `${s.fullName} mengupload ${d.category} (${d.name})`,
               date: d.uploadDate,
               priority: 'HIGH',
@@ -88,18 +100,25 @@ function App() {
           }
         });
 
-        // 2. Pending Requests (Bio, Grade, Class)
+        // 2. Pending Correction Requests
         s.correctionRequests?.forEach(r => {
           if (r.status === 'PENDING') {
             let type: any = 'ADMIN_BIO_VERIFY';
-            let title = 'Verifikasi Data Diri';
+            let title = 'Verifikasi Data Diri'; // Default: Edit Data Buku Induk -> Verifikasi Buku Induk
             
+            // ROUTING LOGIC BASED ON FIELD KEY
             if (r.fieldKey.startsWith('grade-')) {
+               // Edit Nilai Saya -> Verifikasi Nilai
                type = 'ADMIN_GRADE_VERIFY';
                title = 'Verifikasi Nilai';
-            } else if (r.fieldKey.startsWith('class-')) {
-               type = 'ADMIN_BIO_VERIFY'; // Class change counts as bio/academic data
-               title = 'Verifikasi Kelas';
+            } else if (r.fieldKey === 'diplomaNumber' || r.fieldKey.startsWith('ijazah-')) {
+               // Edit Data Ijazah (Specifics) -> Verifikasi Data Ijazah
+               type = 'ADMIN_IJAZAH_VERIFY';
+               title = 'Verifikasi Data Ijazah';
+            } else if (r.fieldKey === 'class-' || r.fieldKey === 'className') {
+                // Class change is ambiguous, usually academic/bio. Let's put in Bio/Buku Induk
+                type = 'ADMIN_BIO_VERIFY';
+                title = 'Verifikasi Kelas';
             }
 
             list.push({

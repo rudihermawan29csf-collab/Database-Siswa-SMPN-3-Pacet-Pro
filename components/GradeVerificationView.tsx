@@ -17,7 +17,7 @@ interface GradeVerificationViewProps {
 
 const CLASS_LIST = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
 
-// Helper to format Drive URLs
+// ... (Helper functions getDriveUrl, PDFPageCanvas remain) ...
 const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
     if (!url) return '';
     if (url.startsWith('blob:')) return url; // Local blobs
@@ -88,6 +88,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   
   // Settings State
   const [appSettings, setAppSettings] = useState<any>(null);
+  const [raporPageCount, setRaporPageCount] = useState<number>(3);
 
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionNote, setRejectionNote] = useState('');
@@ -123,7 +124,13 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       const fetchSettings = async () => {
           try {
               const settings = await api.getAppSettings();
-              if (settings) setAppSettings(settings);
+              if (settings) {
+                  setAppSettings(settings);
+                  if (settings.raporPageCount) setRaporPageCount(Number(settings.raporPageCount));
+              }
+              // Local fallback for page count
+              const localPageCount = localStorage.getItem('sys_rapor_config');
+              if (localPageCount) setRaporPageCount(parseInt(localPageCount));
           } catch (e) {
               console.error("Failed to load settings for verification", e);
           }
@@ -367,7 +374,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       }
   };
 
-  // --- CORRECTION HANDLERS (STUDENT) ---
+  // ... (Correction Handlers for Student & Admin Verify logic remain same) ...
   const handleOpenCorrection = (key: string, label: string, currentValue: string, type: 'CLASS' | 'GRADE') => {
       setTargetCorrection({ key, label, currentValue, type });
       if (type === 'CLASS') {
@@ -416,9 +423,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       setCorrectionModalOpen(false); alert("✅ Pengajuan revisi berhasil dikirim.");
   };
 
-  // --- ADMIN VERIFICATION HANDLERS (PER ITEM) ---
   const handleAdminVerifyClick = (request: CorrectionRequest) => {
-      // Allow viewing details even if processed, but only act if PENDING
       setSelectedRequest(request);
       setAdminResponseNote(request.adminNote || '');
       setAdminVerifyModalOpen(true);
@@ -434,8 +439,6 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
       setIsSaving(true);
 
-      // 1. Update Request Status specifically for this ID
-      // Clone student to avoid direct mutation
       const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
       
       updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((req: CorrectionRequest) => {
@@ -451,36 +454,25 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           return req;
       });
 
-      // 2. CRITICAL: If Approved, Apply Data Changes specifically for this request to ACADEMIC RECORDS
       if (action === 'APPROVED') {
           const { fieldKey, proposedValue } = selectedRequest;
           
           if (fieldKey === 'className') {
-              // Should not happen for grading view corrections anymore, but kept for legacy
               updatedStudent.className = proposedValue;
           } else if (fieldKey.startsWith('class-')) {
-              // Format: class-[semester]
               const sem = parseInt(fieldKey.split('-')[1]);
               if (!isNaN(sem)) {
-                  // Ensure semester record exists
                   if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
                   if (!updatedStudent.academicRecords[sem]) {
-                      // Initialize bare minimum record if missing
                       const level = (sem <= 2) ? 'VII' : (sem <= 4) ? 'VIII' : 'IX';
                       updatedStudent.academicRecords[sem] = { 
-                          semester: sem, 
-                          classLevel: level, 
-                          className: proposedValue,
-                          phase: 'D', 
-                          year: '2024', 
-                          subjects: [], p5Projects: [], extracurriculars: [], teacherNote: '', attendance: {sick:0, permitted:0, noReason:0}
+                          semester: sem, classLevel: level, className: proposedValue,
+                          phase: 'D', year: '2024', subjects: [], p5Projects: [], extracurriculars: [], teacherNote: '', attendance: {sick:0, permitted:0, noReason:0}
                       };
                   }
-                  
                   updatedStudent.academicRecords[sem].className = proposedValue;
               }
           } else if (fieldKey.startsWith('grade-')) {
-              // format: grade-[sem]-[subjectName]
               const parts = fieldKey.split('-');
               if (parts.length >= 3) {
                   const sem = parseInt(parts[1]);
@@ -496,7 +488,6 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           }
       }
 
-      // 3. Save to Database
       try {
           if (onSave) {
               await onSave(updatedStudent);
@@ -520,17 +511,12 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       return currentStudent?.correctionRequests?.find(r => r.fieldKey === key && r.status === 'PENDING');
   };
 
-  // List for Admin Side Panel - Include ALL requests but sorted
   const allRequests = useMemo(() => {
       if (!currentStudent?.correctionRequests) return [];
-      
-      // Filter only Grade/Class related requests
       const gradeRelatedRequests = currentStudent.correctionRequests.filter(r => 
           r.fieldKey.startsWith('grade-') || r.fieldKey.startsWith('class-')
       );
-
       return gradeRelatedRequests.sort((a, b) => {
-          // Sort: Pending first, then by date (newest first)
           if (a.status === 'PENDING' && b.status !== 'PENDING') return -1;
           if (a.status !== 'PENDING' && b.status === 'PENDING') return 1;
           return new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime();
@@ -727,7 +713,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                     <div className={`flex flex-col bg-gray-800 rounded-xl overflow-hidden shadow-lg transition-all duration-300 ${layoutMode === 'full-doc' ? 'w-full absolute inset-0 z-20' : 'w-full lg:w-1/2 h-full'}`}>
                         <div className="h-14 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-4 text-gray-300">
                             <div className="flex gap-2">
-                                {[1, 2, 3].map(p => (
+                                {Array.from({length: raporPageCount}, (_, i) => i + 1).map(p => (
                                     <button key={p} onClick={() => setActivePage(p)} className={`px-3 py-1 rounded text-xs font-bold ${activePage === p ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}>Hal {p}</button>
                                 ))}
                             </div>

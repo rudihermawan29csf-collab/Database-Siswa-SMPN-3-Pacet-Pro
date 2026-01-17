@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Student, AcademicRecord, CorrectionRequest } from '../types';
 import { Search, FileSpreadsheet, Download, UploadCloud, Trash2, Save, Pencil, X, CheckCircle2, Loader2, LayoutList, ArrowLeft, Printer, FileDown, AlertTriangle, Eye, Activity, School, Send, Files } from 'lucide-react';
@@ -80,6 +80,7 @@ interface ReportTemplateProps {
 const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appSettings, userRole, onCorrectionRequest, isBatch = false }) => {
     // 1. Get Base Data (School Info)
     const schoolName = appSettings?.schoolData?.name || 'SMP Negeri 3 Pacet';
+    const schoolAddress = appSettings?.schoolData?.address || 'Jalan Raya Pacet No. 12'; // Use School Address
     
     // Determine the student's CURRENT grade level to fetch specific year configuration
     const currentLevel = getGradeLevel(student.className);
@@ -207,7 +208,7 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
                         </tr>
                         <tr><td className="py-0.5">NISN / NIS</td><td>: {student.nisn} / {student.nis}</td><td>Fase</td><td>: D</td></tr>
                         <tr><td className="py-0.5">Sekolah</td><td>: {schoolName.toUpperCase()}</td><td>Semester</td><td>: {semester} ({academicYear})</td></tr>
-                        <tr><td className="py-0.5" valign="top">Alamat</td><td colSpan={3}>: {student.address}</td></tr>
+                        <tr><td className="py-0.5" valign="top">Alamat</td><td colSpan={3}>: {schoolAddress}</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -420,6 +421,23 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
           setSelectedStudent(loggedInStudent);
       }
   }, [userRole, loggedInStudent]); 
+
+  // DYNAMIC CLASS FILTER
+  const uniqueClasses = useMemo(() => {
+      const classes = Array.from(new Set(students.map(s => s.className))).filter(Boolean) as string[];
+      return ['ALL', ...classes.sort((a, b) => {
+          // Sort logic: VII < VIII < IX, then alphabetically
+          const levelA = a.split(' ')[0];
+          const levelB = b.split(' ')[0];
+          const romanMap: Record<string, number> = { 'VII': 7, 'VIII': 8, 'IX': 9 };
+          
+          const numA = romanMap[levelA] || 0;
+          const numB = romanMap[levelB] || 0;
+
+          if (numA !== numB) return numA - numB;
+          return a.localeCompare(b);
+      })];
+  }, [students]);
 
   const effectiveStudents = (userRole === 'STUDENT' && loggedInStudent) ? [loggedInStudent] : students;
 
@@ -944,9 +962,13 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                 {userRole === 'STUDENT' && <div className="flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-sm border bg-blue-50 text-blue-600 border-blue-100"><LayoutList className="w-4 h-4" /> Rapor Saya</div>}
                 
                 {(userRole === 'ADMIN' || userRole === 'GURU') && (
-                    <select className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium" value={dbClassFilter} onChange={(e) => setDbClassFilter(e.target.value)}>
+                    <select 
+                        className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium" 
+                        value={dbClassFilter} 
+                        onChange={(e) => setDbClassFilter(e.target.value)}
+                    >
                         <option value="ALL">Semua Kelas</option>
-                        {CLASS_LIST.map(c => <option key={c} value={c}>Kelas {c}</option>)}
+                        {uniqueClasses.map(c => <option key={c} value={c}>Kelas {c}</option>)}
                     </select>
                 )}
 
