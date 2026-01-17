@@ -262,9 +262,13 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           const updatedStudent = { ...currentStudent, documents: updatedDocs };
           
           try {
-              if (onSave) await onSave(updatedStudent);
-              else await api.updateStudent(updatedStudent);
-              if (onUpdate) onUpdate();
+              if (onSave) {
+                  await onSave(updatedStudent);
+                  // Do not call onUpdate() here if using onSave, to avoid race conditions with backend fetch
+              } else {
+                  await api.updateStudent(updatedStudent);
+                  if (onUpdate) onUpdate();
+              }
           } catch (e) {
               console.error("Save failed", e);
               alert("Gagal menyimpan status.");
@@ -337,15 +341,16 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
       // 4. Save Updated Student to API (Database)
       try {
-          // Use onSave wrapper if available to update global state immediately
-          if (onSave) await onSave(updatedStudent);
-          else await api.updateStudent(updatedStudent);
+          if (onSave) {
+              await onSave(updatedStudent);
+              // Optimistic update successful, skip refreshing from server to prevent stale data overwrite
+          } else {
+              await api.updateStudent(updatedStudent);
+              if (onUpdate) onUpdate(); 
+          }
           
           setAdminVerifyModalOpen(false);
           setForceUpdate(prev => prev + 1);
-          
-          // Trigger global update to refresh data in other components
-          if (onUpdate) onUpdate(); 
       } catch (e) {
           alert("Gagal menyimpan perubahan.");
           console.error(e);
@@ -371,12 +376,15 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       if (!editFormData) return;
       setIsSaving(true);
       try {
-          if (onSave) await onSave(editFormData);
-          else await api.updateStudent(editFormData);
+          if (onSave) {
+              await onSave(editFormData);
+          } else {
+              await api.updateStudent(editFormData);
+              if (onUpdate) onUpdate();
+          }
           
           setIsEditingData(false);
           setEditFormData(null);
-          if (onUpdate) onUpdate();
       } catch (e) {
           console.error(e);
           alert("Gagal menyimpan data.");

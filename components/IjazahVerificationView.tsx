@@ -234,9 +234,12 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
           const updatedStudent = { ...currentStudent, documents: updatedDocs };
           
           try {
-              if (onSave) await onSave(updatedStudent);
-              else await api.updateStudent(updatedStudent);
-              if (onUpdate) onUpdate();
+              if (onSave) {
+                  await onSave(updatedStudent);
+              } else {
+                  await api.updateStudent(updatedStudent);
+                  if (onUpdate) onUpdate();
+              }
           } catch (e) {
               console.error("Save failed", e);
               alert("Gagal menyimpan status.");
@@ -266,12 +269,15 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
       if (!editFormData) return;
       setIsSaving(true);
       try {
-          if (onSave) await onSave(editFormData);
-          else await api.updateStudent(editFormData);
+          if (onSave) {
+              await onSave(editFormData);
+          } else {
+              await api.updateStudent(editFormData);
+              if (onUpdate) onUpdate();
+          }
           
           setIsEditingData(false);
           setEditFormData(null);
-          if (onUpdate) onUpdate();
       } catch (e) {
           console.error(e);
           alert("Gagal menyimpan data.");
@@ -354,12 +360,15 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
 
       // 3. Save to Database
       try {
-          if (onSave) await onSave(updatedStudent);
-          else await api.updateStudent(updatedStudent);
+          if (onSave) {
+              await onSave(updatedStudent);
+          } else {
+              await api.updateStudent(updatedStudent);
+              if (onUpdate) onUpdate();
+          }
           
           setAdminVerifyModalOpen(false);
           setForceUpdate(prev => prev + 1);
-          if (onUpdate) onUpdate();
       } catch (e) {
           alert("Gagal menyimpan perubahan.");
       } finally {

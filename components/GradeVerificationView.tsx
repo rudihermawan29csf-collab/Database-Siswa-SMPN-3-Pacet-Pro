@@ -293,10 +293,14 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           const updatedDocs = currentStudent.documents.map(d => d.id === currentDoc.id ? { ...d, status: 'APPROVED' as const, adminNote: 'Valid.', verifierName: currentUser?.name || 'Admin', verifierRole: currentUser?.role || 'ADMIN', verificationDate: new Date().toISOString().split('T')[0] } : d);
           const updatedStudent = { ...currentStudent, documents: updatedDocs };
           
-          if (onSave) await onSave(updatedStudent);
-          else await api.updateStudent(updatedStudent);
+          if (onSave) {
+              await onSave(updatedStudent);
+          } else {
+              await api.updateStudent(updatedStudent);
+              if (onUpdate) onUpdate(); 
+          }
           
-          setIsSaving(false); setForceUpdate(prev => prev + 1); if (onUpdate) onUpdate(); 
+          setIsSaving(false); setForceUpdate(prev => prev + 1);
       } 
   };
   const confirmRejectDoc = async () => { 
@@ -306,10 +310,14 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           const updatedDocs = currentStudent.documents.map(d => d.id === currentDoc.id ? { ...d, status: 'REVISION' as const, adminNote: rejectionNote, verifierName: currentUser?.name || 'Admin', verifierRole: currentUser?.role || 'ADMIN', verificationDate: new Date().toISOString().split('T')[0] } : d);
           const updatedStudent = { ...currentStudent, documents: updatedDocs };
           
-          if (onSave) await onSave(updatedStudent);
-          else await api.updateStudent(updatedStudent);
+          if (onSave) {
+              await onSave(updatedStudent);
+          } else {
+              await api.updateStudent(updatedStudent);
+              if (onUpdate) onUpdate(); 
+          }
           
-          setIsSaving(false); setRejectModalOpen(false); setRejectionNote(''); setForceUpdate(prev => prev + 1); if (onUpdate) onUpdate(); 
+          setIsSaving(false); setRejectModalOpen(false); setRejectionNote(''); setForceUpdate(prev => prev + 1);
       } 
   };
   
@@ -342,11 +350,14 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       if (currentStudent) {
           setIsSaving(true);
           try {
-              if (onSave) await onSave(currentStudent);
-              else await api.updateStudent(currentStudent);
+              if (onSave) {
+                  await onSave(currentStudent);
+              } else {
+                  await api.updateStudent(currentStudent);
+                  if (onUpdate) onUpdate();
+              }
               
               setIsEditing(false);
-              if (onUpdate) onUpdate();
           } catch(e) {
               console.error(e);
               alert("Terjadi kesalahan.");
@@ -395,10 +406,14 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       updatedStudent.correctionRequests = updatedStudent.correctionRequests.filter(r => !(r.fieldKey === finalKey && r.status === 'PENDING'));
       updatedStudent.correctionRequests.push(newRequest);
 
-      if (onSave) await onSave(updatedStudent);
-      else await api.updateStudent(updatedStudent);
+      if (onSave) {
+          await onSave(updatedStudent);
+      } else {
+          await api.updateStudent(updatedStudent);
+          if (onUpdate) onUpdate();
+      }
       
-      setCorrectionModalOpen(false); alert("✅ Pengajuan revisi berhasil dikirim."); if (onUpdate) onUpdate();
+      setCorrectionModalOpen(false); alert("✅ Pengajuan revisi berhasil dikirim.");
   };
 
   // --- ADMIN VERIFICATION HANDLERS (PER ITEM) ---
@@ -483,13 +498,15 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
       // 3. Save to Database
       try {
-          if (onSave) await onSave(updatedStudent);
-          else await api.updateStudent(updatedStudent);
+          if (onSave) {
+              await onSave(updatedStudent);
+          } else {
+              await api.updateStudent(updatedStudent);
+              if (onUpdate) onUpdate();
+          }
           
           setAdminVerifyModalOpen(false);
           setForceUpdate(prev => prev + 1);
-          // Trigger global refresh
-          if (onUpdate) onUpdate();
       } catch (e) {
           alert("Gagal menyimpan perubahan.");
           console.error(e);
