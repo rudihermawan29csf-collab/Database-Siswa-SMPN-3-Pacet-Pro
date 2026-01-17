@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, Pencil, X, CheckCircle2, XCircle, Loader2, FileText, ListChecks } from 'lucide-react';
+import { ArrowLeft, Save, Pencil, AlertTriangle, X, CheckCircle2, XCircle, MessageSquare, Loader2, FileText, ListChecks, AlertCircle } from 'lucide-react';
 import { Student, CorrectionRequest } from '../types';
 import { api } from '../services/api';
 
@@ -9,22 +9,26 @@ interface StudentDetailProps {
   viewMode: 'student' | 'dapodik'; 
   readOnly?: boolean;
   highlightFieldKey?: string;
+  highlightDocumentId?: string;
   onUpdate?: () => void;
   onSave?: (student: Student) => void;
   currentUser?: { name: string; role: string };
 }
 
 const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode, readOnly = false, highlightFieldKey, onUpdate, onSave, currentUser }) => {
+  // Correction State
   const [correctionModalOpen, setCorrectionModalOpen] = useState(false);
   const [targetField, setTargetField] = useState<{key: string, label: string, currentValue: string} | null>(null);
   const [proposedValue, setProposedValue] = useState('');
   const [studentReason, setStudentReason] = useState('');
   
+  // Rejection Modal State
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionNote, setRejectionNote] = useState('');
   const [requestToReject, setRequestToReject] = useState<CorrectionRequest | null>(null);
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
 
+  // Auto-scroll logic
   useEffect(() => {
     if (highlightFieldKey) {
         setTimeout(() => {
@@ -126,6 +130,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
               await api.updateStudent(updatedStudent);
               if (onUpdate) setTimeout(() => onUpdate(), 1000); 
           }
+          if(status === 'APPROVED') alert("Perubahan disetujui dan data siswa diperbarui.");
       } catch (e) {
           alert("Gagal menyimpan verifikasi.");
       } finally {
@@ -181,12 +186,13 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
       );
   };
 
+  // --- FORM COMPONENT FOR BUKU INDUK LAYOUT ---
   const FormField = ({ label, value, fieldKey, labelCol = "w-1/3", valueCol = "flex-1", className = "", labelClassName = "" }: any) => {
       const displayValue = (value !== null && value !== undefined && value !== '') ? value : '-';
       const stringValue = String(displayValue);
       const pendingReq = fieldKey ? student.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING') : null;
       
-      const isInteractive = readOnly && fieldKey && !pendingReq;
+      const isInteractive = readOnly && fieldKey && !pendingReq; // readOnly prop here means "Student View" where they can click to edit
 
       return (
         <div id={fieldKey ? `field-${fieldKey}` : undefined} className={`flex border-b border-gray-300 min-h-[20px] ${className}`}>
