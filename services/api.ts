@@ -84,6 +84,7 @@ export const api = {
         };
         const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
             method: 'POST',
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
             body: JSON.stringify(payload)
         });
         const result = await response.json();
@@ -123,6 +124,7 @@ export const api = {
           };
           const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
               method: 'POST',
+              headers: { "Content-Type": "text/plain;charset=utf-8" },
               body: JSON.stringify(payload)
           });
           const result = await response.json();
@@ -158,6 +160,7 @@ export const api = {
 
           const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
             method: 'POST',
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
             body: JSON.stringify(payload),
             timeout: 90000 // 90s timeout for upload to allow Drive processing
           } as any);
@@ -190,6 +193,7 @@ export const api = {
           // Increased timeout significantly to ensure large objects save correctly
           const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
             method: 'POST',
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
             body: JSON.stringify(payload),
             timeout: 60000 
           } as any);
@@ -226,6 +230,7 @@ export const api = {
         
         const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
             method: 'POST',
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
             body: JSON.stringify(payload),
             timeout: 120000 // 120s
         } as any);
@@ -254,6 +259,7 @@ export const api = {
       console.log("Mulai sinkronisasi data...");
       const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
         method: 'POST',
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify(payload),
         timeout: 180000 // 180s timeout for full sync (very slow)
       } as any);

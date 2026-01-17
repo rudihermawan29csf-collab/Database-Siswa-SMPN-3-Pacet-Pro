@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Search, Plus, Pencil, Trash2, Save, X, Loader2, Download, UploadCloud, RotateCcw, User, MapPin, Users, Heart, Wallet, FileDown, FileSpreadsheet, AlertTriangle } from 'lucide-react';
+import { Search, Plus, Pencil, Trash2, Save, X, Loader2, Download, UploadCloud, RotateCcw, User, MapPin, Users, Heart, Wallet, FileDown, FileSpreadsheet, AlertTriangle, Ruler, Home } from 'lucide-react';
 import { Student } from '../types';
 import { api } from '../services/api';
 
@@ -15,7 +15,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('PROFILE');
+  const [activeTab, setActiveTab] = useState<'PROFILE' | 'FAMILY' | 'ADDRESS' | 'PERIODIC' | 'WELFARE'>('PROFILE');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Initial Empty Student for Form
@@ -45,11 +45,12 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
       entryYear: new Date().getFullYear(),
       status: 'AKTIF',
       previousSchool: '',
+      diplomaNumber: '',
       dapodik: {
           nik: '', noKK: '', rt: '', rw: '', dusun: '', kelurahan: '', kecamatan: '', kodePos: '',
-          livingStatus: '', transportation: '', email: '', skhun: '', kpsReceiver: '', kpsNumber: '',
-          kipReceiver: '', kipNumber: '', kipName: '', kksNumber: '', birthRegNumber: '', bank: '',
-          bankAccount: '', bankAccountName: '', pipEligible: '', pipReason: '', specialNeeds: '',
+          livingStatus: '', transportation: '', email: '', skhun: '', kpsReceiver: 'Tidak', kpsNumber: '',
+          kipReceiver: 'Tidak', kipNumber: '', kipName: '', kksNumber: '', birthRegNumber: '', bank: '',
+          bankAccount: '', bankAccountName: '', pipEligible: 'Tidak', pipReason: '', specialNeeds: 'Tidak ada',
           latitude: '', longitude: '', headCircumference: 0, distanceToSchool: '', unExamNumber: '',
           travelTimeMinutes: 0
       },
@@ -68,7 +69,14 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
   }, [students, searchTerm]);
 
   const handleEdit = (student: Student) => {
-      setFormData(JSON.parse(JSON.stringify(student))); // Deep copy
+      // Ensure nested objects exist to prevent crashes (Deep Copy & Defaults)
+      const safeStudent = JSON.parse(JSON.stringify(student));
+      if (!safeStudent.father) safeStudent.father = { ...initialFormState.father };
+      if (!safeStudent.mother) safeStudent.mother = { ...initialFormState.mother };
+      if (!safeStudent.guardian) safeStudent.guardian = { ...initialFormState.guardian };
+      if (!safeStudent.dapodik) safeStudent.dapodik = { ...initialFormState.dapodik };
+
+      setFormData(safeStudent); 
       setIsEditing(true);
       setActiveTab('PROFILE');
       setIsModalOpen(true);
@@ -82,14 +90,14 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
       }
   };
 
-  // --- FEATURE: DOWNLOAD EXCEL TEMPLATE / DATA ---
+  // --- FEATURE: DOWNLOAD EXCEL TEMPLATE / DATA (ALL FIELDS) ---
   const handleDownloadData = () => {
       try {
           // @ts-ignore
           const xlsx = window.XLSX;
           if (!xlsx || !xlsx.utils) { alert("Library Excel belum siap. Silakan refresh."); return; }
 
-          // Flatten Data for Excel
+          // Flatten Data for Excel - COMPLETE DAPODIK FIELDS
           const dataToExport = students.map((s, idx) => ({
               'No': idx + 1,
               'Nama Lengkap': s.fullName,
@@ -101,22 +109,59 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
               'Tanggal Lahir': s.birthDate,
               'Agama': s.religion,
               'Kewarganegaraan': s.nationality,
-              'Alamat': s.address,
+              'Status Siswa': s.status,
+              
+              // Alamat
+              'Alamat Jalan': s.address,
               'RT': s.dapodik.rt, 'RW': s.dapodik.rw,
               'Dusun': s.dapodik.dusun, 'Kelurahan': s.dapodik.kelurahan,
               'Kecamatan': s.subDistrict, 'Kabupaten': s.district,
               'Kode Pos': s.postalCode,
+              'Lintang': s.dapodik.latitude, 'Bujur': s.dapodik.longitude,
+              'Jenis Tinggal': s.dapodik.livingStatus,
+              'Transportasi': s.dapodik.transportation,
+              'Jarak Sekolah (km)': s.dapodik.distanceToSchool,
+              'Waktu Tempuh (menit)': s.dapodik.travelTimeMinutes,
+
+              // Data Pribadi Lain
               'NIK': s.dapodik.nik, 'No KK': s.dapodik.noKK,
+              'No Reg Akta Lahir': s.dapodik.birthRegNumber,
+              'Berkebutuhan Khusus': s.dapodik.specialNeeds,
+              'Email': s.dapodik.email,
               'Sekolah Asal': s.previousSchool,
+              'Tahun Masuk': s.entryYear,
+
+              // Periodik
               'Anak Ke': s.childOrder, 'Jml Saudara': s.siblingCount,
-              'Tinggi Badan': s.height, 'Berat Badan': s.weight,
-              'Nama Ayah': s.father.name, 'NIK Ayah': s.father.nik, 'Pekerjaan Ayah': s.father.job, 'No HP': s.father.phone,
-              'Nama Ibu': s.mother.name, 'NIK Ibu': s.mother.nik, 'Pekerjaan Ibu': s.mother.job,
-              'Nama Wali': s.guardian?.name || '', 'Pekerjaan Wali': s.guardian?.job || '',
-              'No SKHUN': s.dapodik.skhun, 'No Ijazah': s.diplomaNumber, 'No UN': s.dapodik.unExamNumber,
-              'Penerima KIP': s.dapodik.kipReceiver, 'No KIP': s.dapodik.kipNumber,
+              'Tinggi Badan (cm)': s.height, 'Berat Badan (kg)': s.weight, 
+              'Lingkar Kepala (cm)': s.dapodik.headCircumference,
+              'Golongan Darah': s.bloodType,
+
+              // Data Ayah
+              'Nama Ayah': s.father.name, 'NIK Ayah': s.father.nik, 'Tahun Lahir Ayah': s.father.birthPlaceDate,
+              'Pendidikan Ayah': s.father.education, 'Pekerjaan Ayah': s.father.job, 
+              'Penghasilan Ayah': s.father.income, 'No HP Ayah': s.father.phone,
+
+              // Data Ibu
+              'Nama Ibu': s.mother.name, 'NIK Ibu': s.mother.nik, 'Tahun Lahir Ibu': s.mother.birthPlaceDate,
+              'Pendidikan Ibu': s.mother.education, 'Pekerjaan Ibu': s.mother.job, 
+              'Penghasilan Ibu': s.mother.income, 'No HP Ibu': s.mother.phone,
+
+              // Data Wali
+              'Nama Wali': s.guardian?.name || '', 'NIK Wali': s.guardian?.nik || '', 
+              'Tahun Lahir Wali': s.guardian?.birthPlaceDate || '',
+              'Pendidikan Wali': s.guardian?.education || '', 'Pekerjaan Wali': s.guardian?.job || '', 
+              'Penghasilan Wali': s.guardian?.income || '', 'No HP Wali': s.guardian?.phone || '',
+
+              // Kesejahteraan & UN
+              'No SKHUN': s.dapodik.skhun, 'No Ijazah (SD)': s.diplomaNumber, 'No Peserta UN': s.dapodik.unExamNumber,
+              'Penerima KPS': s.dapodik.kpsReceiver, 'No KPS': s.dapodik.kpsNumber,
+              'Penerima KIP': s.dapodik.kipReceiver, 'No KIP': s.dapodik.kipNumber, 'Nama di KIP': s.dapodik.kipName,
               'Layak PIP': s.dapodik.pipEligible, 'Alasan PIP': s.dapodik.pipReason,
-              'Transportasi': s.dapodik.transportation, 'Jarak Sekolah (km)': s.dapodik.distanceToSchool
+              'No KKS': s.dapodik.kksNumber,
+              
+              // Bank
+              'Bank': s.dapodik.bank, 'No Rekening': s.dapodik.bankAccount, 'Atas Nama Rekening': s.dapodik.bankAccountName
           }));
 
           // If empty, create a dummy template row
@@ -124,23 +169,31 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
               dataToExport.push({
                   'No': 1, 'Nama Lengkap': 'Contoh Siswa', 'NIS': '1001', 'NISN': '0012345678', 'Kelas': 'VII A',
                   'L/P': 'L', 'Tempat Lahir': 'Mojokerto', 'Tanggal Lahir': '2010-01-01', 'Agama': 'Islam',
-                  'Kewarganegaraan': 'WNI', 'Alamat': 'Jl. Contoh No. 1', 'RT': '01', 'RW': '02',
+                  'Kewarganegaraan': 'WNI', 'Status Siswa': 'AKTIF',
+                  'Alamat Jalan': 'Jl. Contoh No. 1', 'RT': '01', 'RW': '02',
                   'Dusun': 'Dusun A', 'Kelurahan': 'Desa B', 'Kecamatan': 'Pacet', 'Kabupaten': 'Mojokerto',
-                  'Kode Pos': '61374', 'NIK': '3516000000000001', 'No KK': '3516000000000002',
-                  'Sekolah Asal': 'SDN Pacet 1', 'Anak Ke': 1, 'Jml Saudara': 2, 'Tinggi Badan': 150, 'Berat Badan': 45,
-                  'Nama Ayah': 'Ayah Budi', 'NIK Ayah': '351600...', 'Pekerjaan Ayah': 'Wiraswasta', 'No HP': '08123...',
-                  'Nama Ibu': 'Ibu Budi', 'NIK Ibu': '351600...', 'Pekerjaan Ibu': 'Ibu Rumah Tangga',
-                  'Nama Wali': '', 'Pekerjaan Wali': '',
-                  'No SKHUN': '', 'No Ijazah': '', 'No UN': '',
-                  'Penerima KIP': 'Tidak', 'No KIP': '', 'Layak PIP': 'Ya', 'Alasan PIP': 'Kurang Mampu',
-                  'Transportasi': 'Jalan Kaki', 'Jarak Sekolah (km)': '1'
+                  'Kode Pos': '61374', 'Lintang': '-7.123', 'Bujur': '112.123',
+                  'Jenis Tinggal': 'Bersama Orang Tua', 'Transportasi': 'Jalan Kaki',
+                  'Jarak Sekolah (km)': '1', 'Waktu Tempuh (menit)': 10,
+                  'NIK': '3516000000000001', 'No KK': '3516000000000002', 'No Reg Akta Lahir': '',
+                  'Berkebutuhan Khusus': 'Tidak', 'Email': 'siswa@contoh.com',
+                  'Sekolah Asal': 'SDN Pacet 1', 'Tahun Masuk': 2024,
+                  'Anak Ke': 1, 'Jml Saudara': 2, 'Tinggi Badan (cm)': 150, 'Berat Badan (kg)': 45, 'Lingkar Kepala (cm)': 50, 'Golongan Darah': 'O',
+                  'Nama Ayah': 'Ayah Budi', 'NIK Ayah': '351600...', 'Tahun Lahir Ayah': '1980', 'Pendidikan Ayah': 'SMA', 'Pekerjaan Ayah': 'Wiraswasta', 'Penghasilan Ayah': '2000000', 'No HP Ayah': '08123...',
+                  'Nama Ibu': 'Ibu Budi', 'NIK Ibu': '351600...', 'Tahun Lahir Ibu': '1985', 'Pendidikan Ibu': 'SMA', 'Pekerjaan Ibu': 'Ibu Rumah Tangga', 'Penghasilan Ibu': '0', 'No HP Ibu': '08123...',
+                  'Nama Wali': '', 'NIK Wali': '', 'Tahun Lahir Wali': '', 'Pendidikan Wali': '', 'Pekerjaan Wali': '', 'Penghasilan Wali': '', 'No HP Wali': '',
+                  'No SKHUN': '', 'No Ijazah (SD)': '', 'No Peserta UN': '',
+                  'Penerima KPS': 'Tidak', 'No KPS': '',
+                  'Penerima KIP': 'Tidak', 'No KIP': '', 'Nama di KIP': '',
+                  'Layak PIP': 'Ya', 'Alasan PIP': 'Kurang Mampu', 'No KKS': '',
+                  'Bank': '', 'No Rekening': '', 'Atas Nama Rekening': ''
               });
           }
 
           const ws = xlsx.utils.json_to_sheet(dataToExport);
           const wb = xlsx.utils.book_new();
-          xlsx.utils.book_append_sheet(wb, ws, "Database Siswa");
-          xlsx.writeFile(wb, `Database_Siswa_Export.xlsx`);
+          xlsx.utils.book_append_sheet(wb, ws, "Database Siswa Lengkap");
+          xlsx.writeFile(wb, `Database_Dapodik_Full_${new Date().toISOString().split('T')[0]}.xlsx`);
 
       } catch (e) {
           console.error(e);
@@ -148,7 +201,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
       }
   };
 
-  // --- FEATURE: IMPORT EXCEL ---
+  // --- FEATURE: IMPORT EXCEL (ALL FIELDS) ---
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -172,11 +225,8 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                   return;
               }
 
-              // Map Excel rows back to Student Object
+              // Map Excel rows back to Student Object (COMPREHENSIVE MAPPING)
               const newStudents: Student[] = data.map((row: any) => {
-                  // Skip template row if present (usually row with No 1 and name "Contoh Siswa")
-                  // But mapping logic handles it as a valid entry
-                  
                   return {
                       id: Math.random().toString(36).substr(2, 9),
                       fullName: row['Nama Lengkap'] || '',
@@ -187,51 +237,51 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                       birthDate: row['Tanggal Lahir'] || '', 
                       religion: row['Agama'] || 'Islam',
                       nationality: row['Kewarganegaraan'] || 'WNI',
-                      address: row['Alamat'] || '',
+                      className: row['Kelas'] || 'VII A',
+                      status: row['Status Siswa'] || 'AKTIF',
+                      
+                      address: row['Alamat Jalan'] || '',
                       subDistrict: row['Kecamatan'] || '',
                       district: row['Kabupaten'] || 'Mojokerto',
                       postalCode: String(row['Kode Pos'] || ''),
-                      className: row['Kelas'] || 'VII A',
                       
-                      height: Number(row['Tinggi Badan']) || 0,
-                      weight: Number(row['Berat Badan']) || 0,
-                      bloodType: '-',
+                      height: Number(row['Tinggi Badan (cm)']) || 0,
+                      weight: Number(row['Berat Badan (kg)']) || 0,
+                      bloodType: row['Golongan Darah'] || '-',
                       siblingCount: Number(row['Jml Saudara']) || 0,
                       childOrder: Number(row['Anak Ke']) || 1,
+                      entryYear: Number(row['Tahun Masuk']) || new Date().getFullYear(),
+                      previousSchool: row['Sekolah Asal'] || '',
+                      diplomaNumber: String(row['No Ijazah (SD)'] || ''),
                       
                       father: { 
                           name: row['Nama Ayah'] || '', 
                           nik: String(row['NIK Ayah'] || ''), 
-                          birthPlaceDate: '', 
-                          education: '', 
+                          birthPlaceDate: String(row['Tahun Lahir Ayah'] || ''), 
+                          education: row['Pendidikan Ayah'] || '', 
                           job: row['Pekerjaan Ayah'] || '', 
-                          income: '', 
-                          phone: String(row['No HP'] || '') 
+                          income: String(row['Penghasilan Ayah'] || ''), 
+                          phone: String(row['No HP Ayah'] || '') 
                       },
                       mother: { 
                           name: row['Nama Ibu'] || '', 
                           nik: String(row['NIK Ibu'] || ''), 
-                          birthPlaceDate: '', 
-                          education: '', 
+                          birthPlaceDate: String(row['Tahun Lahir Ibu'] || ''), 
+                          education: row['Pendidikan Ibu'] || '', 
                           job: row['Pekerjaan Ibu'] || '', 
-                          income: '', 
-                          phone: '' 
+                          income: String(row['Penghasilan Ibu'] || ''), 
+                          phone: String(row['No HP Ibu'] || '') 
                       },
                       guardian: { 
                           name: row['Nama Wali'] || '', 
-                          nik: '', 
-                          birthPlaceDate: '', 
-                          education: '', 
+                          nik: String(row['NIK Wali'] || ''), 
+                          birthPlaceDate: String(row['Tahun Lahir Wali'] || ''), 
+                          education: row['Pendidikan Wali'] || '', 
                           job: row['Pekerjaan Wali'] || '', 
-                          income: '', 
-                          phone: '' 
+                          income: String(row['Penghasilan Wali'] || ''), 
+                          phone: String(row['No HP Wali'] || '') 
                       },
 
-                      entryYear: new Date().getFullYear(),
-                      status: 'AKTIF',
-                      previousSchool: row['Sekolah Asal'] || '',
-                      diplomaNumber: String(row['No Ijazah'] || ''),
-                      
                       dapodik: {
                           nik: String(row['NIK'] || ''),
                           noKK: String(row['No KK'] || ''),
@@ -241,24 +291,29 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                           kelurahan: row['Kelurahan'] || '',
                           kecamatan: row['Kecamatan'] || '',
                           kodePos: String(row['Kode Pos'] || ''),
-                          livingStatus: 'Bersama Orang Tua',
+                          livingStatus: row['Jenis Tinggal'] || 'Bersama Orang Tua',
                           transportation: row['Transportasi'] || '',
-                          email: '',
+                          email: row['Email'] || '',
                           skhun: String(row['No SKHUN'] || ''),
-                          kpsReceiver: 'Tidak', kpsNumber: '',
+                          kpsReceiver: row['Penerima KPS'] || 'Tidak', 
+                          kpsNumber: String(row['No KPS'] || ''),
                           kipReceiver: row['Penerima KIP'] || 'Tidak', 
                           kipNumber: String(row['No KIP'] || ''), 
-                          kipName: row['Nama Lengkap'] || '',
-                          kksNumber: '', birthRegNumber: '',
-                          bank: '', bankAccount: '', bankAccountName: '',
+                          kipName: row['Nama di KIP'] || '',
+                          kksNumber: String(row['No KKS'] || ''), 
+                          birthRegNumber: String(row['No Reg Akta Lahir'] || ''),
+                          bank: row['Bank'] || '', 
+                          bankAccount: String(row['No Rekening'] || ''), 
+                          bankAccountName: row['Atas Nama Rekening'] || '',
                           pipEligible: row['Layak PIP'] || 'Tidak', 
                           pipReason: row['Alasan PIP'] || '', 
-                          specialNeeds: 'Tidak ada',
-                          latitude: '', longitude: '',
-                          headCircumference: 0,
+                          specialNeeds: row['Berkebutuhan Khusus'] || 'Tidak ada',
+                          latitude: String(row['Lintang'] || ''), 
+                          longitude: String(row['Bujur'] || ''),
+                          headCircumference: Number(row['Lingkar Kepala (cm)']) || 0,
                           distanceToSchool: String(row['Jarak Sekolah (km)'] || ''),
-                          unExamNumber: String(row['No UN'] || ''),
-                          travelTimeMinutes: 0
+                          unExamNumber: String(row['No Peserta UN'] || ''),
+                          travelTimeMinutes: Number(row['Waktu Tempuh (menit)']) || 0
                       },
                       documents: [],
                       academicRecords: {},
@@ -268,11 +323,32 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
               });
 
               // Merge Logic
-              const merged = [...students, ...newStudents];
-              onUpdateStudents(merged);
-              await api.syncInitialData(merged);
+              const updatedStudents = [...students];
+              let addedCount = 0;
+              let updatedCount = 0;
+
+              newStudents.forEach(newS => {
+                  const existingIdx = updatedStudents.findIndex(s => s.nisn === newS.nisn && newS.nisn !== '');
+                  if (existingIdx >= 0) {
+                      updatedStudents[existingIdx] = { 
+                          ...newS, 
+                          id: updatedStudents[existingIdx].id,
+                          documents: updatedStudents[existingIdx].documents,
+                          academicRecords: updatedStudents[existingIdx].academicRecords,
+                          correctionRequests: updatedStudents[existingIdx].correctionRequests,
+                          adminMessages: updatedStudents[existingIdx].adminMessages
+                      };
+                      updatedCount++;
+                  } else {
+                      updatedStudents.push(newS);
+                      addedCount++;
+                  }
+              });
+
+              onUpdateStudents(updatedStudents);
+              await api.syncInitialData(updatedStudents);
               
-              alert(`Berhasil mengimport ${newStudents.length} data siswa!`);
+              alert(`Import Selesai! ${addedCount} Siswa Baru, ${updatedCount} Siswa Diupdate.`);
 
           } catch (e) {
               console.error(e);
@@ -289,11 +365,10 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
   // --- FEATURE: RESET ALL DATA ---
   const handleResetData = async () => {
       if (window.confirm("anda yakin hapus semua data?")) {
-          // Double confirmation for safety (optional but recommended in real apps, sticking to prompt req)
           setIsLoading(true);
           try {
-              onUpdateStudents([]); // Clear local
-              await api.syncInitialData([]); // Clear Cloud
+              onUpdateStudents([]); 
+              await api.syncInitialData([]); 
               alert("Database berhasil dikosongkan.");
           } catch (e) {
               console.error(e);
@@ -337,6 +412,37 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
       }
   };
 
+  // Helper UI Components
+  const TabButton = ({ id, label, icon: Icon }: any) => (
+      <button 
+        type="button"
+        onClick={() => setActiveTab(id)} 
+        className={`flex-1 py-3 text-xs font-bold flex items-center justify-center gap-2 border-b-2 transition-colors ${activeTab === id ? 'text-blue-600 border-blue-600 bg-blue-50' : 'text-gray-500 border-transparent hover:bg-gray-50'}`}
+      >
+          <Icon className="w-4 h-4" /> {label}
+      </button>
+  );
+
+  const InputGroup = ({ label, value, onChange, type = "text", placeholder = "", required = false, options = [] }: any) => (
+      <div className="flex flex-col">
+          <label className="text-[10px] font-bold text-gray-500 uppercase mb-1">{label}</label>
+          {options.length > 0 ? (
+              <select className="w-full p-2 border border-gray-300 rounded text-sm bg-white focus:ring-1 focus:ring-blue-500 outline-none" value={value} onChange={onChange}>
+                  {options.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+          ) : (
+              <input 
+                type={type} 
+                className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none" 
+                value={value} 
+                onChange={onChange} 
+                placeholder={placeholder} 
+                required={required} 
+              />
+          )}
+      </div>
+  );
+
   return (
     <div className="flex flex-col h-full space-y-4 animate-fade-in relative">
         <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleImportExcel} />
@@ -344,172 +450,263 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
         {/* MODAL FORM */}
         {isModalOpen && (
             <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden">
                     <div className="flex justify-between items-center p-4 border-b bg-gray-50">
                         <h3 className="font-bold text-gray-800">{isEditing ? 'Edit Data Siswa' : 'Tambah Siswa Baru'}</h3>
                         <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-gray-200 rounded-full"><X className="w-5 h-5 text-gray-500" /></button>
                     </div>
                     
-                    <div className="flex border-b">
-                        <button onClick={() => setActiveTab('PROFILE')} className={`flex-1 py-3 text-sm font-bold ${activeTab === 'PROFILE' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50' : 'text-gray-500'}`}>Data Pribadi</button>
-                        <button onClick={() => setActiveTab('FAMILY')} className={`flex-1 py-3 text-sm font-bold ${activeTab === 'FAMILY' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50' : 'text-gray-500'}`}>Data Keluarga</button>
-                        <button onClick={() => setActiveTab('ADDRESS')} className={`flex-1 py-3 text-sm font-bold ${activeTab === 'ADDRESS' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50' : 'text-gray-500'}`}>Alamat & KIP</button>
+                    <div className="flex border-b overflow-x-auto">
+                        <TabButton id="PROFILE" label="Pribadi" icon={User} />
+                        <TabButton id="FAMILY" label="Keluarga" icon={Users} />
+                        <TabButton id="ADDRESS" label="Alamat" icon={Home} />
+                        <TabButton id="PERIODIC" label="Periodik" icon={Ruler} />
+                        <TabButton id="WELFARE" label="Kesejahteraan" icon={Wallet} />
                     </div>
 
                     <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 bg-gray-50">
+                        
                         {activeTab === 'PROFILE' && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div><label className="block text-xs font-bold text-gray-500 mb-1">Nama Lengkap</label><input required type="text" className="w-full p-2 border rounded" value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} /></div>
-                                <div><label className="block text-xs font-bold text-gray-500 mb-1">NISN</label><input required type="text" className="w-full p-2 border rounded" value={formData.nisn} onChange={e => setFormData({...formData, nisn: e.target.value})} /></div>
-                                <div><label className="block text-xs font-bold text-gray-500 mb-1">NIS</label><input type="text" className="w-full p-2 border rounded" value={formData.nis} onChange={e => setFormData({...formData, nis: e.target.value})} /></div>
-                                <div><label className="block text-xs font-bold text-gray-500 mb-1">NIK</label><input type="text" className="w-full p-2 border rounded" value={formData.dapodik.nik} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, nik: e.target.value}})} /></div>
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 mb-1">Kelas</label>
-                                    <select className="w-full p-2 border rounded bg-white" value={formData.className} onChange={e => setFormData({...formData, className: e.target.value})}>
-                                        {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 mb-1">Jenis Kelamin</label>
-                                    <select className="w-full p-2 border rounded bg-white" value={formData.gender} onChange={e => setFormData({...formData, gender: e.target.value as 'L' | 'P'})}>
-                                        <option value="L">Laki-laki</option>
-                                        <option value="P">Perempuan</option>
-                                    </select>
-                                </div>
-                                <div><label className="block text-xs font-bold text-gray-500 mb-1">Tempat Lahir</label><input type="text" className="w-full p-2 border rounded" value={formData.birthPlace} onChange={e => setFormData({...formData, birthPlace: e.target.value})} /></div>
-                                <div><label className="block text-xs font-bold text-gray-500 mb-1">Tanggal Lahir</label><input type="date" className="w-full p-2 border rounded" value={formData.birthDate} onChange={e => setFormData({...formData, birthDate: e.target.value})} /></div>
-                            </div>
-                        )}
-                        {/* Other tabs simplified for brevity, assume full form fields exist */}
-                        {activeTab === 'FAMILY' && (
                             <div className="space-y-4">
-                                <div className="p-4 bg-white rounded border">
-                                    <h4 className="font-bold text-sm mb-2 text-blue-600">Data Ayah</h4>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <input placeholder="Nama Ayah" className="border p-2 rounded text-sm" value={formData.father.name} onChange={e => setFormData({...formData, father: {...formData.father, name: e.target.value}})} />
-                                        <input placeholder="NIK Ayah" className="border p-2 rounded text-sm" value={formData.father.nik} onChange={e => setFormData({...formData, father: {...formData.father, nik: e.target.value}})} />
-                                        <input placeholder="Pekerjaan" className="border p-2 rounded text-sm" value={formData.father.job} onChange={e => setFormData({...formData, father: {...formData.father, job: e.target.value}})} />
-                                        <input placeholder="No HP" className="border p-2 rounded text-sm" value={formData.father.phone} onChange={e => setFormData({...formData, father: {...formData.father, phone: e.target.value}})} />
+                                <h4 className="text-sm font-bold text-blue-600 border-b pb-1 mb-3">Identitas Utama</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <InputGroup label="Nama Lengkap" required value={formData.fullName} onChange={(e: any) => setFormData({...formData, fullName: e.target.value})} />
+                                    <InputGroup label="NISN" required value={formData.nisn} onChange={(e: any) => setFormData({...formData, nisn: e.target.value})} />
+                                    <InputGroup label="NIS" value={formData.nis} onChange={(e: any) => setFormData({...formData, nis: e.target.value})} />
+                                    <InputGroup label="NIK Siswa" value={formData.dapodik.nik} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, nik: e.target.value}})} />
+                                    <InputGroup label="No. KK" value={formData.dapodik.noKK} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, noKK: e.target.value}})} />
+                                    <InputGroup label="Kelas" value={formData.className} onChange={(e: any) => setFormData({...formData, className: e.target.value})} options={CLASS_OPTIONS} />
+                                    <InputGroup label="Jenis Kelamin" value={formData.gender} onChange={(e: any) => setFormData({...formData, gender: e.target.value})} options={['L', 'P']} />
+                                    <InputGroup label="Agama" value={formData.religion} onChange={(e: any) => setFormData({...formData, religion: e.target.value})} options={['Islam', 'Kristen', 'Katolik', 'Hindu', 'Buddha', 'Khonghucu']} />
+                                    <InputGroup label="Kewarganegaraan" value={formData.nationality} onChange={(e: any) => setFormData({...formData, nationality: e.target.value})} options={['WNI', 'WNA']} />
+                                </div>
+                                
+                                <h4 className="text-sm font-bold text-blue-600 border-b pb-1 mb-3 mt-4">Data Kelahiran</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <InputGroup label="Tempat Lahir" value={formData.birthPlace} onChange={(e: any) => setFormData({...formData, birthPlace: e.target.value})} />
+                                    <InputGroup label="Tanggal Lahir" type="date" value={formData.birthDate} onChange={(e: any) => setFormData({...formData, birthDate: e.target.value})} />
+                                    <InputGroup label="No Reg Akta Lahir" value={formData.dapodik.birthRegNumber} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, birthRegNumber: e.target.value}})} />
+                                    <InputGroup label="Berkebutuhan Khusus" value={formData.dapodik.specialNeeds} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, specialNeeds: e.target.value}})} />
+                                </div>
+
+                                <h4 className="text-sm font-bold text-blue-600 border-b pb-1 mb-3 mt-4">Data Sekolah Asal & UN</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <InputGroup label="Sekolah Asal" value={formData.previousSchool} onChange={(e: any) => setFormData({...formData, previousSchool: e.target.value})} />
+                                    <InputGroup label="No. Seri Ijazah (SD)" value={formData.diplomaNumber} onChange={(e: any) => setFormData({...formData, diplomaNumber: e.target.value})} />
+                                    <InputGroup label="No. Seri SKHUN" value={formData.dapodik.skhun} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, skhun: e.target.value}})} />
+                                    <InputGroup label="No. Peserta UN" value={formData.dapodik.unExamNumber} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, unExamNumber: e.target.value}})} />
+                                    <InputGroup label="Tahun Masuk" type="number" value={formData.entryYear} onChange={(e: any) => setFormData({...formData, entryYear: Number(e.target.value)})} />
+                                    <InputGroup label="Status Siswa" value={formData.status} onChange={(e: any) => setFormData({...formData, status: e.target.value})} options={['AKTIF', 'LULUS', 'PINDAH', 'KELUAR']} />
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'FAMILY' && (
+                            <div className="space-y-6">
+                                <div className="p-4 bg-blue-50/50 rounded border border-blue-100">
+                                    <h4 className="font-bold text-sm mb-3 text-blue-700">Data Ayah Kandung</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <InputGroup label="Nama Ayah" value={formData.father.name} onChange={(e: any) => setFormData({...formData, father: {...formData.father, name: e.target.value}})} />
+                                        <InputGroup label="NIK Ayah" value={formData.father.nik} onChange={(e: any) => setFormData({...formData, father: {...formData.father, nik: e.target.value}})} />
+                                        <InputGroup label="Tahun Lahir" value={formData.father.birthPlaceDate} onChange={(e: any) => setFormData({...formData, father: {...formData.father, birthPlaceDate: e.target.value}})} />
+                                        <InputGroup label="Pendidikan" value={formData.father.education} onChange={(e: any) => setFormData({...formData, father: {...formData.father, education: e.target.value}})} options={['SD', 'SMP', 'SMA', 'D3', 'S1', 'S2', 'S3', 'Tidak Sekolah']} />
+                                        <InputGroup label="Pekerjaan" value={formData.father.job} onChange={(e: any) => setFormData({...formData, father: {...formData.father, job: e.target.value}})} />
+                                        <InputGroup label="Penghasilan" value={formData.father.income} onChange={(e: any) => setFormData({...formData, father: {...formData.father, income: e.target.value}})} options={['< 500rb', '500rb-1jt', '1jt-2jt', '2jt-5jt', '> 5jt']} />
+                                        <InputGroup label="No HP Ayah" value={formData.father.phone} onChange={(e: any) => setFormData({...formData, father: {...formData.father, phone: e.target.value}})} />
                                     </div>
                                 </div>
-                                <div className="p-4 bg-white rounded border">
-                                    <h4 className="font-bold text-sm mb-2 text-pink-600">Data Ibu</h4>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <input placeholder="Nama Ibu" className="border p-2 rounded text-sm" value={formData.mother.name} onChange={e => setFormData({...formData, mother: {...formData.mother, name: e.target.value}})} />
-                                        <input placeholder="NIK Ibu" className="border p-2 rounded text-sm" value={formData.mother.nik} onChange={e => setFormData({...formData, mother: {...formData.mother, nik: e.target.value}})} />
-                                        <input placeholder="Pekerjaan" className="border p-2 rounded text-sm" value={formData.mother.job} onChange={e => setFormData({...formData, mother: {...formData.mother, job: e.target.value}})} />
+
+                                <div className="p-4 bg-pink-50/50 rounded border border-pink-100">
+                                    <h4 className="font-bold text-sm mb-3 text-pink-700">Data Ibu Kandung</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <InputGroup label="Nama Ibu" value={formData.mother.name} onChange={(e: any) => setFormData({...formData, mother: {...formData.mother, name: e.target.value}})} />
+                                        <InputGroup label="NIK Ibu" value={formData.mother.nik} onChange={(e: any) => setFormData({...formData, mother: {...formData.mother, nik: e.target.value}})} />
+                                        <InputGroup label="Tahun Lahir" value={formData.mother.birthPlaceDate} onChange={(e: any) => setFormData({...formData, mother: {...formData.mother, birthPlaceDate: e.target.value}})} />
+                                        <InputGroup label="Pendidikan" value={formData.mother.education} onChange={(e: any) => setFormData({...formData, mother: {...formData.mother, education: e.target.value}})} options={['SD', 'SMP', 'SMA', 'D3', 'S1', 'S2', 'S3', 'Tidak Sekolah']} />
+                                        <InputGroup label="Pekerjaan" value={formData.mother.job} onChange={(e: any) => setFormData({...formData, mother: {...formData.mother, job: e.target.value}})} />
+                                        <InputGroup label="Penghasilan" value={formData.mother.income} onChange={(e: any) => setFormData({...formData, mother: {...formData.mother, income: e.target.value}})} options={['Tidak Berpenghasilan', '< 500rb', '500rb-1jt', '1jt-2jt', '2jt-5jt', '> 5jt']} />
+                                        <InputGroup label="No HP Ibu" value={formData.mother.phone} onChange={(e: any) => setFormData({...formData, mother: {...formData.mother, phone: e.target.value}})} />
+                                    </div>
+                                </div>
+
+                                <div className="p-4 bg-gray-50/50 rounded border border-gray-200">
+                                    <h4 className="font-bold text-sm mb-3 text-gray-700">Data Wali (Jika Ada)</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <InputGroup label="Nama Wali" value={formData.guardian?.name} onChange={(e: any) => setFormData({...formData, guardian: {...formData.guardian!, name: e.target.value}})} />
+                                        <InputGroup label="NIK Wali" value={formData.guardian?.nik} onChange={(e: any) => setFormData({...formData, guardian: {...formData.guardian!, nik: e.target.value}})} />
+                                        <InputGroup label="Tahun Lahir" value={formData.guardian?.birthPlaceDate} onChange={(e: any) => setFormData({...formData, guardian: {...formData.guardian!, birthPlaceDate: e.target.value}})} />
+                                        <InputGroup label="Pendidikan" value={formData.guardian?.education} onChange={(e: any) => setFormData({...formData, guardian: {...formData.guardian!, education: e.target.value}})} options={['-', 'SD', 'SMP', 'SMA', 'D3', 'S1', 'S2', 'S3']} />
+                                        <InputGroup label="Pekerjaan" value={formData.guardian?.job} onChange={(e: any) => setFormData({...formData, guardian: {...formData.guardian!, job: e.target.value}})} />
+                                        <InputGroup label="Penghasilan" value={formData.guardian?.income} onChange={(e: any) => setFormData({...formData, guardian: {...formData.guardian!, income: e.target.value}})} options={['-', '< 500rb', '500rb-1jt', '1jt-2jt', '2jt-5jt', '> 5jt']} />
+                                        <InputGroup label="No HP Wali" value={formData.guardian?.phone} onChange={(e: any) => setFormData({...formData, guardian: {...formData.guardian!, phone: e.target.value}})} />
                                     </div>
                                 </div>
                             </div>
                         )}
+
                         {activeTab === 'ADDRESS' && (
-                            <div className="space-y-3">
-                                <textarea placeholder="Alamat Jalan / RT / RW" className="w-full border p-2 rounded text-sm" rows={2} value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})}></textarea>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <input placeholder="Dusun" className="border p-2 rounded text-sm" value={formData.dapodik.dusun} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, dusun: e.target.value}})} />
-                                    <input placeholder="Kelurahan" className="border p-2 rounded text-sm" value={formData.dapodik.kelurahan} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, kelurahan: e.target.value}})} />
-                                    <input placeholder="Kecamatan" className="border p-2 rounded text-sm" value={formData.subDistrict} onChange={e => setFormData({...formData, subDistrict: e.target.value})} />
-                                    <input placeholder="Kode Pos" className="border p-2 rounded text-sm" value={formData.postalCode} onChange={e => setFormData({...formData, postalCode: e.target.value})} />
+                            <div className="space-y-4">
+                                <InputGroup label="Alamat Jalan" value={formData.address} onChange={(e: any) => setFormData({...formData, address: e.target.value})} placeholder="Jl. Raya Pacet No..." />
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    <InputGroup label="RT" value={formData.dapodik.rt} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, rt: e.target.value}})} />
+                                    <InputGroup label="RW" value={formData.dapodik.rw} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, rw: e.target.value}})} />
+                                    <InputGroup label="Dusun" value={formData.dapodik.dusun} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, dusun: e.target.value}})} />
+                                    <InputGroup label="Kelurahan / Desa" value={formData.dapodik.kelurahan} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, kelurahan: e.target.value}})} />
+                                    <InputGroup label="Kecamatan" value={formData.subDistrict} onChange={(e: any) => setFormData({...formData, subDistrict: e.target.value})} />
+                                    <InputGroup label="Kabupaten / Kota" value={formData.district} onChange={(e: any) => setFormData({...formData, district: e.target.value})} />
+                                    <InputGroup label="Kode Pos" value={formData.postalCode} onChange={(e: any) => setFormData({...formData, postalCode: e.target.value})} />
                                 </div>
-                                <hr />
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div><label className="text-xs font-bold">Penerima KIP?</label><select className="w-full border p-2 rounded text-sm mt-1" value={formData.dapodik.kipReceiver} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, kipReceiver: e.target.value}})}><option>Tidak</option><option>Ya</option></select></div>
-                                    <div><label className="text-xs font-bold">Nomor KIP</label><input className="w-full border p-2 rounded text-sm mt-1" value={formData.dapodik.kipNumber} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, kipNumber: e.target.value}})} /></div>
+                                
+                                <h4 className="text-sm font-bold text-blue-600 border-b pb-1 mb-3 mt-4">Koordinat & Jarak</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    <InputGroup label="Lintang (Latitude)" value={formData.dapodik.latitude} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, latitude: e.target.value}})} />
+                                    <InputGroup label="Bujur (Longitude)" value={formData.dapodik.longitude} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, longitude: e.target.value}})} />
+                                    <InputGroup label="Jarak ke Sekolah (km)" value={formData.dapodik.distanceToSchool} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, distanceToSchool: e.target.value}})} />
+                                    <InputGroup label="Waktu Tempuh (menit)" type="number" value={formData.dapodik.travelTimeMinutes} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, travelTimeMinutes: Number(e.target.value)}})} />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                                    <InputGroup label="Jenis Tinggal" value={formData.dapodik.livingStatus} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, livingStatus: e.target.value}})} options={['Bersama Orang Tua', 'Wali', 'Kos', 'Asrama', 'Panti Asuhan']} />
+                                    <InputGroup label="Transportasi" value={formData.dapodik.transportation} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, transportation: e.target.value}})} options={['Jalan Kaki', 'Kendaraan Pribadi', 'Angkutan Umum', 'Jemputan Sekolah', 'Ojek']} />
                                 </div>
                             </div>
                         )}
+
+                        {activeTab === 'PERIODIC' && (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <InputGroup label="Tinggi Badan (cm)" type="number" value={formData.height} onChange={(e: any) => setFormData({...formData, height: Number(e.target.value)})} />
+                                <InputGroup label="Berat Badan (kg)" type="number" value={formData.weight} onChange={(e: any) => setFormData({...formData, weight: Number(e.target.value)})} />
+                                <InputGroup label="Lingkar Kepala (cm)" type="number" value={formData.dapodik.headCircumference} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, headCircumference: Number(e.target.value)}})} />
+                                <InputGroup label="Golongan Darah" value={formData.bloodType} onChange={(e: any) => setFormData({...formData, bloodType: e.target.value})} options={['-','A','B','AB','O']} />
+                                <InputGroup label="Jumlah Saudara Kandung" type="number" value={formData.siblingCount} onChange={(e: any) => setFormData({...formData, siblingCount: Number(e.target.value)})} />
+                                <InputGroup label="Anak Ke-" type="number" value={formData.childOrder} onChange={(e: any) => setFormData({...formData, childOrder: Number(e.target.value)})} />
+                                <div className="md:col-span-3">
+                                    <InputGroup label="Email Pribadi" type="email" value={formData.dapodik.email} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, email: e.target.value}})} />
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'WELFARE' && (
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="p-4 border rounded bg-yellow-50/50">
+                                        <h4 className="font-bold text-sm text-yellow-700 mb-3">KIP (Kartu Indonesia Pintar)</h4>
+                                        <div className="space-y-3">
+                                            <InputGroup label="Penerima KIP?" value={formData.dapodik.kipReceiver} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, kipReceiver: e.target.value}})} options={['Ya', 'Tidak']} />
+                                            <InputGroup label="Nomor KIP" value={formData.dapodik.kipNumber} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, kipNumber: e.target.value}})} />
+                                            <InputGroup label="Nama Tertera di KIP" value={formData.dapodik.kipName} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, kipName: e.target.value}})} />
+                                        </div>
+                                    </div>
+                                    <div className="p-4 border rounded bg-green-50/50">
+                                        <h4 className="font-bold text-sm text-green-700 mb-3">PIP (Program Indonesia Pintar)</h4>
+                                        <div className="space-y-3">
+                                            <InputGroup label="Layak PIP?" value={formData.dapodik.pipEligible} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, pipEligible: e.target.value}})} options={['Ya', 'Tidak']} />
+                                            <InputGroup label="Alasan Layak PIP" value={formData.dapodik.pipReason} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, pipReason: e.target.value}})} />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="p-4 border rounded bg-blue-50/50">
+                                        <h4 className="font-bold text-sm text-blue-700 mb-3">KPS / PKH / KKS</h4>
+                                        <div className="space-y-3">
+                                            <InputGroup label="Penerima KPS?" value={formData.dapodik.kpsReceiver} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, kpsReceiver: e.target.value}})} options={['Ya', 'Tidak']} />
+                                            <InputGroup label="Nomor KPS" value={formData.dapodik.kpsNumber} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, kpsNumber: e.target.value}})} />
+                                            <InputGroup label="Nomor KKS" value={formData.dapodik.kksNumber} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, kksNumber: e.target.value}})} />
+                                        </div>
+                                    </div>
+                                    <div className="p-4 border rounded bg-purple-50/50">
+                                        <h4 className="font-bold text-sm text-purple-700 mb-3">Data Rekening Bank</h4>
+                                        <div className="space-y-3">
+                                            <InputGroup label="Nama Bank" value={formData.dapodik.bank} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, bank: e.target.value}})} />
+                                            <InputGroup label="Nomor Rekening" value={formData.dapodik.bankAccount} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, bankAccount: e.target.value}})} />
+                                            <InputGroup label="Atas Nama Rekening" value={formData.dapodik.bankAccountName} onChange={(e: any) => setFormData({...formData, dapodik: {...formData.dapodik, bankAccountName: e.target.value}})} />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                     </form>
 
-                    <div className="p-4 border-t bg-white flex justify-end gap-2">
-                        <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-bold text-sm">Batal</button>
-                        <button onClick={handleSubmit} disabled={isLoading} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-blue-700">
-                            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Simpan Data
+                    <div className="flex justify-end gap-3 p-4 bg-white border-t">
+                        <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 bg-gray-100 text-gray-700 font-bold rounded-lg text-sm hover:bg-gray-200">
+                            Batal
+                        </button>
+                        <button onClick={handleSubmit} disabled={isLoading} className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg text-sm hover:bg-blue-700 shadow-lg flex items-center gap-2">
+                            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                            Simpan Data
                         </button>
                     </div>
                 </div>
             </div>
         )}
 
-        {/* Toolbar */}
-        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col lg:flex-row justify-between items-center gap-4">
-            <div className="flex items-center gap-3 w-full lg:w-auto">
-                <div className="bg-purple-100 text-purple-700 px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2">
-                    <Users className="w-4 h-4" /> Database Dapodik
+        {/* TOOLBAR */}
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <Users className="w-5 h-5 text-purple-600" /> Database Dapodik
+            </h2>
+            <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                <div className="relative flex-1 md:w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input 
+                        type="text" 
+                        placeholder="Cari Nama / NISN..." 
+                        className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
+                        value={searchTerm} 
+                        onChange={(e) => setSearchTerm(e.target.value)} 
+                    />
                 </div>
-                <button onClick={() => { setFormData(initialFormState); setIsEditing(false); setIsModalOpen(true); }} className="bg-blue-600 text-white px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-blue-700 shadow-sm">
-                    <Plus className="w-4 h-4" /> Tambah
+                <button onClick={() => { setFormData(initialFormState); setIsEditing(false); setIsModalOpen(true); setActiveTab('PROFILE'); }} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-bold shadow-sm">
+                    <Plus className="w-4 h-4 mr-2" /> Tambah
                 </button>
-            </div>
-
-            {/* ACTION BUTTONS (NEW FEATURES) */}
-            <div className="flex flex-wrap gap-2 w-full lg:w-auto justify-end">
-                <button 
-                    onClick={handleDownloadData}
-                    className="flex items-center px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg text-sm font-bold hover:bg-green-100 transition-colors"
-                >
-                    <Download className="w-4 h-4 mr-2" /> Download Excel
+                <button onClick={handleDownloadData} className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold shadow-sm">
+                    <Download className="w-4 h-4 mr-2" /> Export
                 </button>
-                
-                <button 
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-sm font-bold hover:bg-blue-100 transition-colors"
-                >
-                    {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <UploadCloud className="w-4 h-4 mr-2" />} Import Excel
+                <button onClick={() => fileInputRef.current?.click()} className="flex items-center px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-bold shadow-sm">
+                    {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4 mr-2" />} Import
                 </button>
-
-                <button 
-                    onClick={handleResetData}
-                    className="flex items-center px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm font-bold hover:bg-red-100 transition-colors"
-                >
-                    <RotateCcw className="w-4 h-4 mr-2" /> Reset Data
+                <button onClick={handleResetData} className="flex items-center px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 text-sm font-bold shadow-sm border border-red-200">
+                    <RotateCcw className="w-4 h-4" /> Reset
                 </button>
-            </div>
-
-            <div className="relative w-full lg:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input type="text" placeholder="Cari Siswa..." className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-lg text-sm focus:bg-white border-transparent focus:border-blue-300 transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
             </div>
         </div>
 
-        {/* Table */}
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex-1 overflow-hidden flex flex-col">
-            <div className="overflow-auto flex-1 w-full pb-32">
+        {/* TABLE */}
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex-1 overflow-hidden">
+            <div className="overflow-auto h-full pb-32">
                 <table className="w-full text-left border-collapse">
-                    <thead className="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase sticky top-0 z-10 shadow-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase">
                         <tr>
-                            <th className="px-6 py-4">Nama Siswa</th>
-                            <th className="px-6 py-4">NISN / NIS</th>
-                            <th className="px-6 py-4">Kelas</th>
-                            <th className="px-6 py-4">L/P</th>
-                            <th className="px-6 py-4">Orang Tua</th>
-                            <th className="px-6 py-4 text-center">Aksi</th>
+                            <th className="px-6 py-3 w-16 text-center">No</th>
+                            <th className="px-6 py-3">Nama Lengkap</th>
+                            <th className="px-6 py-3">NISN</th>
+                            <th className="px-6 py-3">Kelas</th>
+                            <th className="px-6 py-3">L/P</th>
+                            <th className="px-6 py-3 text-right">Aksi</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
-                        {filteredStudents.length > 0 ? filteredStudents.map((s) => (
-                            <tr key={s.id} className="hover:bg-blue-50/50 transition-colors group">
-                                <td className="px-6 py-3 font-bold text-gray-800">{s.fullName}</td>
-                                <td className="px-6 py-3 text-sm text-gray-600 font-mono">{s.nisn} <span className="text-gray-300">/</span> {s.nis}</td>
-                                <td className="px-6 py-3"><span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold">{s.className}</span></td>
-                                <td className="px-6 py-3 text-sm">{s.gender}</td>
-                                <td className="px-6 py-3 text-xs text-gray-500">
-                                    <div>A: {s.father.name}</div>
-                                    <div>I: {s.mother.name}</div>
-                                </td>
-                                <td className="px-6 py-3 text-center flex justify-center gap-2">
-                                    <button onClick={() => handleEdit(s)} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"><Pencil className="w-4 h-4" /></button>
-                                    <button onClick={() => handleDelete(s.id)} className="p-2 text-red-600 hover:bg-red-100 rounded-lg"><Trash2 className="w-4 h-4" /></button>
-                                </td>
-                            </tr>
-                        )) : (
-                            <tr><td colSpan={6} className="text-center py-10 text-gray-400">Tidak ada data siswa.</td></tr>
+                    <tbody className="divide-y divide-gray-100 text-sm">
+                        {filteredStudents.length > 0 ? (
+                            filteredStudents.map((s, idx) => (
+                                <tr key={s.id} className="hover:bg-blue-50/50 transition-colors">
+                                    <td className="px-6 py-3 text-center text-gray-500">{idx + 1}</td>
+                                    <td className="px-6 py-3 font-bold text-gray-800">{s.fullName}</td>
+                                    <td className="px-6 py-3 text-gray-600 font-mono">{s.nisn}</td>
+                                    <td className="px-6 py-3"><span className="bg-gray-100 px-2 py-1 rounded text-xs font-bold text-gray-600">{s.className}</span></td>
+                                    <td className="px-6 py-3">{s.gender}</td>
+                                    <td className="px-6 py-3 text-right flex justify-end gap-2">
+                                        <button onClick={() => handleEdit(s)} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg"><Pencil className="w-4 h-4" /></button>
+                                        <button onClick={() => handleDelete(s.id)} className="p-1.5 text-red-600 hover:bg-red-100 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                                    </td>
+                                </tr>
+                            ))
+                        ) : (
+                            <tr><td colSpan={6} className="text-center py-10 text-gray-400">Tidak ada data siswa ditemukan.</td></tr>
                         )}
                     </tbody>
                 </table>
-            </div>
-            <div className="p-3 border-t bg-gray-50 text-xs text-gray-500 flex justify-between">
-                <span>Total: {filteredStudents.length} Siswa</span>
-                <span>Database Dapodik Local</span>
             </div>
         </div>
     </div>
