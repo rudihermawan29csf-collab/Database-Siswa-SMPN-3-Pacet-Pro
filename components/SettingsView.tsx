@@ -40,22 +40,36 @@ const DEFAULT_DOCS = [
     { id: 'FOTO', label: 'Pas Foto Siswa', desc: '3x4 Warna' },
 ];
 
-// Helper to convert Drive URLs
+interface SettingsViewProps {
+    onProfileUpdate?: () => void;
+}
+
+// Helper to convert Drive URLs (Duplicated to ensure independence)
 const getPhotoUrl = (url: string | undefined | null) => {
     if (!url) return '';
     if (url.startsWith('data:') || url.startsWith('blob:')) return url;
-    if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
+    
+    try {
         let id = '';
-        const matchId = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-        const matchIdParam = new URLSearchParams(new URL(url).search).get('id');
-        if (matchId && matchId[1]) id = matchId[1];
-        else if (matchIdParam) id = matchIdParam;
-        if (id) return `https://drive.google.com/uc?export=view&id=${id}`;
-    }
+        const matchD = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        if (matchD) id = matchD[1];
+        
+        if (!id && url.includes('id=')) {
+            const params = new URLSearchParams(new URL(url).search);
+            id = params.get('id') || '';
+        }
+
+        if (id) {
+            let tParam = '';
+            try { const urlObj = new URL(url); tParam = urlObj.searchParams.get('t') || ''; } catch(e) {}
+            return `https://drive.google.com/uc?export=view&id=${id}${tParam ? `&t=${tParam}` : ''}`;
+        }
+    } catch(e) {}
+    
     return url;
 };
 
-const SettingsView = () => {
+const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
   const [activeTab, setActiveTab] = useState<'GENERAL' | 'ACADEMIC' | 'USERS' | 'DOCS'>('GENERAL');
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -182,6 +196,10 @@ const SettingsView = () => {
               // Also update localStorage for immediate fallback
               localStorage.setItem('admin_name', adminName);
               if (newPhotoUrl || adminPhoto) localStorage.setItem('admin_photo', newPhotoUrl || adminPhoto);
+              
+              // CALLBACK: Update parent App state
+              if (onProfileUpdate) onProfileUpdate();
+
           } else {
               if (!silent) alert("Gagal menyimpan pengaturan.");
           }
@@ -290,7 +308,7 @@ const SettingsView = () => {
                                 <div className="relative w-32 h-32 mb-4 group">
                                     <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-lg bg-gray-200">
                                         {adminPhoto ? (
-                                            <img src={getPhotoUrl(adminPhoto)} alt="Admin" className="w-full h-full object-cover" />
+                                            <img src={getPhotoUrl(adminPhoto)} alt="Admin" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                         ) : (
                                             <div className="w-full h-full flex items-center justify-center text-gray-400">
                                                 <UserCircle className="w-16 h-16" />

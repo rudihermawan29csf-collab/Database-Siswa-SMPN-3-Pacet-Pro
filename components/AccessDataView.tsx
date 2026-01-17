@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Student } from '../types';
-import { KeyRound, Search, Filter, Download, CreditCard, FileSpreadsheet, Loader2, GraduationCap, X, Eye, QrCode } from 'lucide-react';
+import { KeyRound, Search, Filter, Download, CreditCard, FileSpreadsheet, Loader2, GraduationCap, Eye } from 'lucide-react';
 // @ts-ignore
 import QRCode from 'qrcode';
 
@@ -17,85 +17,76 @@ const chunkArray = (array: any[], size: number) => {
     return result;
 };
 
-// --- REDESIGNED CARD COMPONENT (APPLE STYLE) ---
+// --- APPLE STYLE CARD COMPONENT ---
 const LoginCard: React.FC<{ student: Student, index: number }> = ({ student, index }) => {
     const [qrSrc, setQrSrc] = useState('');
-    // Point to the live app url
     const APP_URL = "https://database-siswa-smpn-3-pacet-pro.vercel.app";
     const qrPayload = `${APP_URL}?nisn=${student.nisn}&pass=${student.nis}`;
 
     useEffect(() => {
         QRCode.toDataURL(qrPayload, { 
-            width: 200, 
+            width: 250, // Higher res
             margin: 0,
-            color: { dark: '#1f2937', light: '#ffffff' } // Dark gray instead of pure black
+            color: { dark: '#1d1d1f', light: '#ffffff' } // Apple dark gray
         })
         .then((url: string) => setQrSrc(url))
         .catch((err: any) => console.error(err));
     }, [qrPayload]);
 
     return (
-        <div className="w-[90mm] h-[55mm] relative overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm flex flex-col box-border font-sans">
-            {/* Decorative Top Gradient Line */}
-            <div className="h-1.5 w-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500"></div>
+        <div className="w-[90mm] h-[55mm] relative bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col shadow-sm font-sans box-border">
+            {/* Background Accent - Subtle */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50/50 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
 
-            {/* Header */}
-            <div className="px-4 py-2 flex justify-between items-center border-b border-gray-100">
-                <div className="flex items-center gap-2">
-                    <div className="bg-gray-100 p-1 rounded-md text-gray-700">
-                        <GraduationCap className="w-3 h-3" />
-                    </div>
-                    <div>
-                        <h1 className="text-[9px] font-bold text-gray-800 leading-none">SMPN 3 PACET</h1>
-                        <p className="text-[6px] text-gray-500 font-medium tracking-wide">STUDENT ID CARD</p>
-                    </div>
+            {/* Header: Minimalist */}
+            <div className="px-4 py-3 flex items-center gap-3 border-b border-gray-100 z-10 bg-white/80 backdrop-blur-sm">
+                <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center text-white shadow-md">
+                    <GraduationCap className="w-5 h-5" />
                 </div>
-                <div className="text-[7px] font-bold text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded border border-gray-200">
-                    AKSES SISWA
+                <div>
+                    <h1 className="text-[10px] font-bold text-gray-900 tracking-tight leading-none">SMP NEGERI 3 PACET</h1>
+                    <p className="text-[7px] text-gray-500 font-medium tracking-wide mt-0.5">KARTU AKSES SISWA</p>
                 </div>
             </div>
 
-            <div className="flex flex-1 p-3 gap-3 items-center">
+            <div className="flex flex-1 p-4 relative z-10">
                 {/* Kiri: Data Siswa */}
-                <div className="flex-1 flex flex-col justify-center space-y-2">
-                    <div>
-                        <p className="text-[6px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Nama Lengkap</p>
-                        <p className="text-[10px] font-black text-gray-900 leading-tight line-clamp-2">{student.fullName}</p>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                        <div>
-                            <p className="text-[6px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Kelas</p>
-                            <span className="text-[9px] font-bold text-gray-800 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
-                                {student.className}
-                            </span>
-                        </div>
+                <div className="flex-1 flex flex-col justify-center pr-2">
+                    <div className="mb-3">
+                        <p className="text-[7px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Nama Peserta Didik</p>
+                        <p className="text-[11px] font-black text-gray-800 leading-tight line-clamp-2">{student.fullName}</p>
+                        <span className="inline-block mt-1 px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[8px] font-bold border border-gray-200">
+                            Kelas {student.className}
+                        </span>
                     </div>
 
-                    <div className="space-y-1 pt-1">
-                        <div className="flex justify-between items-center border-b border-gray-100 pb-0.5 border-dashed">
-                            <span className="text-[7px] text-gray-500 font-medium">Username</span>
-                            <span className="text-[9px] font-mono font-bold text-gray-800">{student.nisn}</span>
+                    <div className="grid grid-cols-1 gap-1.5">
+                        <div className="flex flex-col">
+                            <span className="text-[6px] font-bold text-gray-400 uppercase">Username (NISN)</span>
+                            <span className="text-[10px] font-mono font-bold text-gray-800">{student.nisn}</span>
                         </div>
-                        <div className="flex justify-between items-center border-b border-gray-100 pb-0.5 border-dashed">
-                            <span className="text-[7px] text-gray-500 font-medium">Password</span>
-                            <span className="text-[9px] font-mono font-bold text-gray-800">{student.nis}</span>
+                        <div className="flex flex-col">
+                            <span className="text-[6px] font-bold text-gray-400 uppercase">Password (NIS)</span>
+                            <span className="text-[10px] font-mono font-bold text-gray-800">{student.nis}</span>
                         </div>
                     </div>
                 </div>
 
-                {/* Kanan: QR Code Besar */}
-                <div className="w-[28mm] flex flex-col items-center justify-center">
-                    <div className="bg-white p-1 rounded-lg border border-gray-200 shadow-[0_2px_8px_rgba(0,0,0,0.05)]">
+                {/* Kanan: QR Code (Positioned Top Right area visually) */}
+                <div className="w-[30mm] flex flex-col items-center justify-start pt-1">
+                    <div className="bg-white p-1 rounded-lg border border-gray-100 shadow-sm">
                         {qrSrc ? (
-                            <img src={qrSrc} alt="QR" className="w-[24mm] h-[24mm] object-contain block rounded-sm" />
+                            <img src={qrSrc} alt="QR" className="w-[26mm] h-[26mm] object-contain rounded-md" />
                         ) : (
-                            <div className="w-[24mm] h-[24mm] bg-gray-50 animate-pulse rounded-sm"></div>
+                            <div className="w-[26mm] h-[26mm] bg-gray-100 animate-pulse rounded-md"></div>
                         )}
                     </div>
-                    <p className="text-[5px] font-bold text-gray-400 mt-1 text-center tracking-widest uppercase">Scan Me</p>
+                    <p className="text-[6px] font-bold text-gray-400 mt-1 uppercase tracking-widest text-center">Scan Masuk</p>
                 </div>
             </div>
+            
+            {/* Footer Stripe */}
+            <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
         </div>
     );
 };
@@ -160,7 +151,7 @@ const AccessDataView: React.FC<AccessDataViewProps> = ({ students }) => {
           const filename = `Kartu_Login_Siswa_${selectedClass}.pdf`;
           
           const opt = {
-              margin: 0, // Margin is handled by CSS in container
+              margin: 0, // Margin handled by container padding
               filename: filename,
               image: { type: 'jpeg', quality: 0.98 },
               html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
@@ -237,7 +228,7 @@ const AccessDataView: React.FC<AccessDataViewProps> = ({ students }) => {
                     <div className="bg-white p-8 shadow-2xl min-h-[1000px] w-[215mm] flex flex-col gap-6">
                         <div className="text-center border-b pb-4 mb-4">
                             <h3 className="font-bold text-xl text-gray-800">PREVIEW HALAMAN 1 (10 KARTU)</h3>
-                            <p className="text-sm text-gray-500">Layout sesuai F4 (215mm x 330mm) - Modern Style</p>
+                            <p className="text-sm text-gray-500">Layout sesuai F4 (215mm x 330mm) - Modern White Style</p>
                         </div>
                         <div className="grid grid-cols-2 gap-x-4 gap-y-6 justify-center">
                             {filteredStudents.slice(0, 10).map((s, idx) => ( 
