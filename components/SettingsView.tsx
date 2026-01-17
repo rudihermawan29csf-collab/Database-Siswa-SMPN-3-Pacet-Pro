@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Save, School, Calendar, Users, Lock, Check, UploadCloud, Loader2, BookOpen, Plus, Trash2, LayoutList, Calculator, Pencil, X, Eye, EyeOff, RefreshCw, Cloud, FileText, FolderOpen, FileBadge } from 'lucide-react';
+import { Save, School, Calendar, Users, Lock, Check, UploadCloud, Loader2, BookOpen, Plus, Trash2, LayoutList, Calculator, Pencil, X, Eye, EyeOff, RefreshCw, Cloud, FileText, FolderOpen, FileBadge, Database } from 'lucide-react';
 import { api } from '../services/api';
 import { MOCK_STUDENTS } from '../services/mockData';
 
-const CLASS_LIST = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
+// Default constants used as fallback
+const DEFAULT_CLASS_LIST = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
+const LEVEL_LIST = ['VII', 'VIII', 'IX']; 
 const THEMES_LIST = [
     'Gaya Hidup Berkelanjutan',
     'Kearifan Lokal',
@@ -65,8 +67,8 @@ const SettingsView: React.FC = () => {
       year: string;
       semester: string;
       reportDate: string;
-      semesterYears: Record<number, string>;
-      semesterDates: Record<number, string>; 
+      semesterYears: Record<string, Record<number, string>>; 
+      semesterDates: Record<string, Record<number, string>>; 
   }
 
   const [academicData, setAcademicData] = useState<AcademicData>({
@@ -74,15 +76,14 @@ const SettingsView: React.FC = () => {
       semester: '1',
       reportDate: '2024-12-20',
       semesterYears: {
-          1: '2024/2025',
-          2: '2024/2025',
-          3: '2025/2026',
-          4: '2025/2026',
-          5: '2026/2027',
-          6: '2026/2027'
+          'VII': { 1: '2024/2025', 2: '2024/2025', 3: '2025/2026', 4: '2025/2026', 5: '2026/2027', 6: '2026/2027' },
+          'VIII': { 1: '2023/2024', 2: '2023/2024', 3: '2024/2025', 4: '2024/2025', 5: '2025/2026', 6: '2025/2026' },
+          'IX': { 1: '2022/2023', 2: '2022/2023', 3: '2023/2024', 4: '2023/2024', 5: '2024/2025', 6: '2024/2025' },
       },
       semesterDates: {
-          1: '', 2: '', 3: '', 4: '', 5: '', 6: ''
+          'VII': { 1: '', 2: '', 3: '', 4: '', 5: '', 6: '' },
+          'VIII': { 1: '', 2: '', 3: '', 4: '', 5: '', 6: '' },
+          'IX': { 1: '', 2: '', 3: '', 4: '', 5: '', 6: '' },
       }
   });
 
@@ -96,6 +97,11 @@ const SettingsView: React.FC = () => {
   const [selectedYearClass, setSelectedYearClass] = useState('2024/2025');
   const [selectedSemesterClass, setSelectedSemesterClass] = useState(1);
   const [classConfig, setClassConfig] = useState<Record<string, { teacher: string, nip: string }>>({});
+  
+  // DYNAMIC CLASS LIST STATE
+  const [availableClasses, setAvailableClasses] = useState<string[]>(DEFAULT_CLASS_LIST);
+  const [newClassName, setNewClassName] = useState('');
+  const [isSyncingClasses, setIsSyncingClasses] = useState(false);
 
   // --- P5 SETTINGS ---
   const [p5Filter, setP5Filter] = useState({ year: '2024/2025', level: 'VII', semester: 1 });
@@ -116,7 +122,6 @@ const SettingsView: React.FC = () => {
       tanggalSurat: '2 Juni 2025',
       titimangsa: 'Mojokerto',
       logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/e/eb/Lambang_Kabupaten_Mojokerto.png',
-      // New fields for Address/Header
       headerLine1: 'Jl. Tirtawening Ds. Kembangbelor Kec. Pacet Kab. Mojokerto Kode Pos 61374',
       headerLine2: 'NSS: 201050314970 NIS: 200970 NPSN: 20555784',
       headerLine3: 'Email : smpn3pacet2007@gmail.com, HP: 0815 5386 0273'
@@ -134,8 +139,24 @@ const SettingsView: React.FC = () => {
                   
                   if (cloudSettings.academicData) {
                       const ad = cloudSettings.academicData;
-                      if (!ad.semesterYears) ad.semesterYears = { 1: ad.year, 2: ad.year, 3: ad.year, 4: ad.year, 5: ad.year, 6: ad.year };
-                      if (!ad.semesterDates) ad.semesterDates = { 1: '', 2: '', 3: '', 4: '', 5: '', 6: '' };
+                      
+                      // Migration Logic
+                      if (!ad.semesterYears || !ad.semesterYears['VII']) {
+                          const flatYears = ad.semesterYears || {};
+                          const flatDates = ad.semesterDates || {};
+                          
+                          ad.semesterYears = {
+                              'VII': { ...flatYears },
+                              'VIII': { ...flatYears },
+                              'IX': { ...flatYears }
+                          };
+                          ad.semesterDates = {
+                              'VII': { ...flatDates },
+                              'VIII': { ...flatDates },
+                              'IX': { ...flatDates }
+                          };
+                      }
+                      
                       setAcademicData(ad);
                   }
                   
@@ -152,11 +173,15 @@ const SettingsView: React.FC = () => {
                       setSklConfig(prev => ({
                           ...prev,
                           ...cloudSettings.sklConfig,
-                          // Ensure we don't lose defaults if key is missing in cloud
                           headerLine1: cloudSettings.sklConfig.headerLine1 || prev.headerLine1,
                           headerLine2: cloudSettings.sklConfig.headerLine2 || prev.headerLine2,
                           headerLine3: cloudSettings.sklConfig.headerLine3 || prev.headerLine3
                       }));
+                  }
+
+                  // Load Class List
+                  if (cloudSettings.classList && Array.isArray(cloudSettings.classList)) {
+                      setAvailableClasses(cloudSettings.classList.sort());
                   }
               }
 
@@ -190,10 +215,10 @@ const SettingsView: React.FC = () => {
           recapSubjects,
           docConfig,
           raporPageCount,
-          sklConfig // Add SKL config to payload
+          sklConfig,
+          classList: availableClasses // Save dynamic class list
       };
 
-      // Also save to LocalStorage for immediate access in other components without refetching
       localStorage.setItem('sys_recap_config', JSON.stringify(recapSubjects));
       localStorage.setItem('sys_doc_config', JSON.stringify(docConfig));
       localStorage.setItem('sys_rapor_config', String(raporPageCount));
@@ -220,6 +245,20 @@ const SettingsView: React.FC = () => {
       else alert("Sinkronisasi Gagal. Cek Console.");
   };
 
+  // Helper function to update nested academic data
+  const handleAcademicChange = (type: 'year' | 'date', level: string, semester: number, value: string) => {
+      setAcademicData(prev => ({
+          ...prev,
+          [type === 'year' ? 'semesterYears' : 'semesterDates']: {
+              ...prev[type === 'year' ? 'semesterYears' : 'semesterDates'],
+              [level]: {
+                  ...prev[type === 'year' ? 'semesterYears' : 'semesterDates'][level],
+                  [semester]: value
+              }
+          }
+      }));
+  };
+
   // Class Config Handlers
   const handleWaliChange = (className: string, field: 'teacher' | 'nip', value: string) => {
       const key = `${selectedYearClass}-${selectedSemesterClass}-${className}`;
@@ -230,6 +269,46 @@ const SettingsView: React.FC = () => {
               [field]: value
           }
       }));
+  };
+
+  // DYNAMIC CLASS MANAGEMENT
+  const handleAddClass = () => {
+      if (!newClassName.trim()) return;
+      if (!availableClasses.includes(newClassName.trim())) {
+          setAvailableClasses(prev => [...prev, newClassName.trim()].sort());
+          setNewClassName('');
+      } else {
+          alert("Kelas sudah ada!");
+      }
+  };
+
+  const handleDeleteClass = (className: string) => {
+      if (window.confirm(`Hapus kelas ${className} dari daftar? Konfigurasi wali kelas terkait mungkin hilang.`)) {
+          setAvailableClasses(prev => prev.filter(c => c !== className));
+      }
+  };
+
+  const handleSyncClassesFromDB = async () => {
+      setIsSyncingClasses(true);
+      try {
+          const students = await api.getStudents();
+          const dbClasses = new Set(students.map(s => s.className).filter(Boolean));
+          
+          if (dbClasses.size > 0) {
+              setAvailableClasses(prev => {
+                  const combined = new Set([...prev, ...Array.from(dbClasses)]);
+                  return Array.from(combined).sort();
+              });
+              alert(`Berhasil sinkronisasi. Total ${dbClasses.size} kelas ditemukan di database.`);
+          } else {
+              alert("Tidak ada data siswa atau kelas ditemukan di database.");
+          }
+      } catch (e) {
+          console.error(e);
+          alert("Gagal mengambil data dari database.");
+      } finally {
+          setIsSyncingClasses(false);
+      }
   };
 
   // P5 Config Handlers
@@ -390,6 +469,7 @@ const SettingsView: React.FC = () => {
 
             <div className="p-6 flex-1 overflow-auto bg-gray-50/50 pb-32">
                 
+                {/* ... (Identity Tab omitted - same as before) ... */}
                 {activeTab === 'IDENTITY' && (
                     <div className="max-w-2xl space-y-4 bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
                         <div className="grid grid-cols-2 gap-4">
@@ -422,6 +502,85 @@ const SettingsView: React.FC = () => {
                     </div>
                 )}
 
+                {/* --- ACADEMIC TAB (UPDATED FOR GRADE-LEVEL SPECIFICITY) --- */}
+                {activeTab === 'ACADEMIC' && (
+                    <div className="max-w-6xl space-y-6">
+                         <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4">
+                             <p className="text-sm text-blue-800 font-medium">
+                                 Pengaturan ini menentukan <strong>Tahun Pelajaran</strong> dan <strong>Tanggal Rapor</strong> yang akan tercetak pada rapor siswa.
+                                 <br/>Anda dapat mengatur tahun ajaran yang berbeda untuk setiap jenjang (VII, VIII, IX) dan setiap semester (1-6).
+                             </p>
+                         </div>
+                         
+                         <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm mb-6">
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Semester Aktif (Sistem Global)</label>
+                            <div className="flex gap-4">
+                                <label className="flex items-center gap-2 cursor-pointer bg-gray-50 px-4 py-2 rounded-lg border hover:bg-gray-100">
+                                    <input type="radio" name="sem" checked={academicData.semester === '1'} onChange={() => setAcademicData({...academicData, semester: '1'})} />
+                                    <span className="text-sm font-bold text-gray-700">Semester Ganjil (1)</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer bg-gray-50 px-4 py-2 rounded-lg border hover:bg-gray-100">
+                                    <input type="radio" name="sem" checked={academicData.semester === '2'} onChange={() => setAcademicData({...academicData, semester: '2'})} />
+                                    <span className="text-sm font-bold text-gray-700">Semester Genap (2)</span>
+                                </label>
+                            </div>
+                         </div>
+
+                         {/* LOOP THROUGH LEVELS VII, VIII, IX */}
+                         {LEVEL_LIST.map(level => (
+                             <div key={level} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                 <div className="bg-gray-100 px-6 py-4 border-b border-gray-200">
+                                     <h3 className="font-bold text-gray-800 text-lg flex items-center gap-2">
+                                         <School className="w-5 h-5 text-blue-600" />
+                                         Pengaturan Jenjang Kelas {level}
+                                     </h3>
+                                 </div>
+                                 <div className="p-6">
+                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                         {/* YEAR CONFIG */}
+                                         <div>
+                                             <h4 className="text-xs font-bold text-gray-500 uppercase mb-3 border-b pb-1">Tahun Pelajaran (Per Semester)</h4>
+                                             <div className="grid grid-cols-2 gap-3">
+                                                 {[1, 2, 3, 4, 5, 6].map(sem => (
+                                                     <div key={sem} className="flex flex-col gap-1">
+                                                         <label className="text-[10px] font-semibold text-gray-600">Semester {sem}</label>
+                                                         <input 
+                                                             type="text" 
+                                                             className="w-full p-2 border rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                                                             placeholder="Contoh: 2024/2025"
+                                                             value={academicData.semesterYears?.[level]?.[sem] || ''}
+                                                             onChange={e => handleAcademicChange('year', level, sem, e.target.value)}
+                                                         />
+                                                     </div>
+                                                 ))}
+                                             </div>
+                                         </div>
+
+                                         {/* DATE CONFIG */}
+                                         <div>
+                                             <h4 className="text-xs font-bold text-gray-500 uppercase mb-3 border-b pb-1">Tanggal Rapor (Per Semester)</h4>
+                                             <div className="grid grid-cols-2 gap-3">
+                                                 {[1, 2, 3, 4, 5, 6].map(sem => (
+                                                     <div key={sem} className="flex flex-col gap-1">
+                                                         <label className="text-[10px] font-semibold text-gray-600">Tanggal Sem {sem}</label>
+                                                         <input 
+                                                             type="date" 
+                                                             className="w-full p-2 border rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                                                             value={academicData.semesterDates?.[level]?.[sem] || ''}
+                                                             onChange={e => handleAcademicChange('date', level, sem, e.target.value)}
+                                                         />
+                                                     </div>
+                                                 ))}
+                                             </div>
+                                         </div>
+                                     </div>
+                                 </div>
+                             </div>
+                         ))}
+                    </div>
+                )}
+
+                {/* ... (SKL tab omitted - same as before) ... */}
                 {activeTab === 'SKL' && (
                     <div className="max-w-2xl space-y-4 bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
                         <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
@@ -429,6 +588,7 @@ const SettingsView: React.FC = () => {
                             Konfigurasi Surat Keterangan Lulus
                         </h3>
                         <div className="space-y-4">
+                            {/* ... Content same as provided ... */}
                             <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4">
                                 <h4 className="text-sm font-bold text-blue-800 mb-2">Header / Kop Surat (Alamat & Kontak)</h4>
                                 <div className="space-y-2">
@@ -533,91 +693,48 @@ const SettingsView: React.FC = () => {
                     </div>
                 )}
 
-                {/* ... (Other Tabs omitted for brevity, they are unchanged) ... */}
-                {activeTab === 'ACADEMIC' && (
-                    <div className="max-w-2xl space-y-4 bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-                         <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4">
-                             <p className="text-sm text-blue-800">Pengaturan ini akan ditampilkan pada kop/header Rapor Nilai siswa sesuai dengan semester yang dipilih.</p>
-                         </div>
-                         
-                         <div className="mb-4 bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-                            <label className="block text-xs font-bold text-yellow-800 uppercase mb-2">Tahun Pelajaran Aktif (Sistem)</label>
-                            <input 
-                                type="text" 
-                                className="w-full p-2 border border-yellow-300 rounded-lg text-sm font-bold"
-                                placeholder="Contoh: 2024/2025"
-                                value={academicData.year}
-                                onChange={e => setAcademicData({...academicData, year: e.target.value})}
-                            />
-                            <p className="text-[10px] text-yellow-600 mt-1">Tahun pelajaran ini digunakan sebagai default saat membuka aplikasi.</p>
-                         </div>
-
-                         <div className="border-b pb-4 mb-4">
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Setting Tahun Pelajaran per Semester</label>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {[1, 2, 3, 4, 5, 6].map(sem => (
-                                    <div key={sem} className="flex flex-col gap-1">
-                                        <label className="text-xs font-semibold text-gray-600">Semester {sem}</label>
-                                        <input 
-                                            type="text" 
-                                            className="w-full p-2 border rounded-lg text-sm font-medium"
-                                            placeholder="Contoh: 2024/2025"
-                                            value={academicData.semesterYears?.[sem] || ''}
-                                            onChange={e => setAcademicData(prev => ({
-                                                ...prev,
-                                                semesterYears: {
-                                                    ...prev.semesterYears,
-                                                    [sem]: e.target.value
-                                                }
-                                            }))}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                         </div>
-
-                         <div className="border-b pb-4 mb-4">
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Setting Tanggal Rapor per Semester</label>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {[1, 2, 3, 4, 5, 6].map(sem => (
-                                    <div key={sem} className="flex flex-col gap-1">
-                                        <label className="text-xs font-semibold text-gray-600">Tanggal Rapor Semester {sem}</label>
-                                        <input 
-                                            type="date" 
-                                            className="w-full p-2 border rounded-lg text-sm font-medium"
-                                            value={academicData.semesterDates?.[sem] || ''}
-                                            onChange={e => setAcademicData(prev => ({
-                                                ...prev,
-                                                semesterDates: {
-                                                    ...prev.semesterDates,
-                                                    [sem]: e.target.value
-                                                }
-                                            }))}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                         </div>
-
-                         <div>
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Semester Aktif (Sistem)</label>
-                            <div className="flex gap-4 mb-3">
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input type="radio" name="sem" checked={academicData.semester === '1'} onChange={() => setAcademicData({...academicData, semester: '1'})} />
-                                    <span className="text-sm">Ganjil (1)</span>
-                                </label>
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input type="radio" name="sem" checked={academicData.semester === '2'} onChange={() => setAcademicData({...academicData, semester: '2'})} />
-                                    <span className="text-sm">Genap (2)</span>
-                                </label>
-                            </div>
-                         </div>
-                    </div>
-                )}
-
                 {activeTab === 'KELAS' && (
                     <div className="space-y-4">
-                        <div className="flex flex-col md:flex-row items-center gap-3 bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                        {/* CLASS MANAGEMENT SECTION (NEW) */}
+                        <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                            <h3 className="font-bold text-gray-800 mb-4 border-b pb-2">Kelola Daftar Kelas</h3>
+                            <div className="flex flex-col md:flex-row gap-4 mb-4">
+                                <div className="flex-1 flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        className="p-2 border rounded-lg text-sm flex-1 outline-none focus:ring-2 focus:ring-blue-500" 
+                                        placeholder="Tambah Kelas Baru (Contoh: VII D)" 
+                                        value={newClassName}
+                                        onChange={(e) => setNewClassName(e.target.value)}
+                                    />
+                                    <button onClick={handleAddClass} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 flex items-center gap-2">
+                                        <Plus className="w-4 h-4" /> Tambah
+                                    </button>
+                                </div>
+                                <button 
+                                    onClick={handleSyncClassesFromDB} 
+                                    disabled={isSyncingClasses}
+                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 flex items-center gap-2 whitespace-nowrap disabled:opacity-50"
+                                >
+                                    {isSyncingClasses ? <Loader2 className="w-4 h-4 animate-spin"/> : <Database className="w-4 h-4" />} 
+                                    Ambil dari Database
+                                </button>
+                            </div>
+                            
+                            <div className="flex flex-wrap gap-2 p-2 bg-gray-50 rounded-lg border border-gray-100 max-h-32 overflow-y-auto">
+                                {availableClasses.length > 0 ? availableClasses.map(cls => (
+                                    <div key={cls} className="flex items-center gap-2 bg-white px-3 py-1 rounded-full text-xs font-bold text-gray-700 border shadow-sm group">
+                                        {cls}
+                                        <button onClick={() => handleDeleteClass(cls)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                )) : <span className="text-xs text-gray-400 italic p-2">Belum ada kelas terdaftar.</span>}
+                            </div>
+                        </div>
+
+                        {/* WALI KELAS ASSIGNMENT */}
+                        <div className="flex flex-col md:flex-row items-center gap-3 bg-white p-4 rounded-lg border border-gray-200 shadow-sm mt-2">
                             <div className="flex flex-col gap-1 w-full md:w-auto">
                                 <span className="text-xs font-bold text-gray-500 uppercase">Tahun Pelajaran (Manual)</span>
                                 <input 
@@ -652,7 +769,7 @@ const SettingsView: React.FC = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
-                                    {CLASS_LIST.map(cls => {
+                                    {availableClasses.map(cls => {
                                         const key = `${selectedYearClass}-${selectedSemesterClass}-${cls}`;
                                         const data = classConfig[key] || { teacher: '', nip: '' };
                                         return (
@@ -679,12 +796,16 @@ const SettingsView: React.FC = () => {
                                             </tr>
                                         );
                                     })}
+                                    {availableClasses.length === 0 && (
+                                        <tr><td colSpan={3} className="p-8 text-center text-gray-400">Belum ada kelas. Tambahkan kelas di atas.</td></tr>
+                                    )}
                                 </tbody>
                             </table>
                         </div>
                     </div>
                 )}
 
+                {/* ... (DOCS, P5, REKAP, USERS tabs omitted - same as before) ... */}
                 {activeTab === 'DOCS' && (
                     <div className="max-w-4xl space-y-6">
                         <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
@@ -738,6 +859,7 @@ const SettingsView: React.FC = () => {
 
                 {activeTab === 'P5' && (
                     <div className="space-y-4">
+                        {/* ... P5 Content ... */}
                         <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm flex flex-col md:flex-row gap-4 items-center">
                             <div className="flex flex-col gap-1 w-full md:w-auto">
                                 <span className="text-xs font-bold text-gray-500 uppercase">Tahun Pelajaran (Manual)</span>

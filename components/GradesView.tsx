@@ -58,6 +58,15 @@ const getScore = (s: Student, subjKey: string, semesterOverride: number) => {
     return subj ? subj.score : 0;
 };
 
+// Helper to determine Grade Level from Class Name (e.g. "IX A" -> "IX")
+const getGradeLevel = (className: string) => {
+    if (!className) return 'VII'; // Default
+    const parts = className.trim().split(' ');
+    const level = parts[0].toUpperCase();
+    if (['VII', 'VIII', 'IX'].includes(level)) return level;
+    return 'VII';
+};
+
 // --- REPORT TEMPLATE COMPONENT ---
 interface ReportTemplateProps {
     student: Student;
@@ -69,10 +78,44 @@ interface ReportTemplateProps {
 }
 
 const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appSettings, userRole, onCorrectionRequest, isBatch = false }) => {
-    // 1. Get Base Data
+    // 1. Get Base Data (School Info)
     const schoolName = appSettings?.schoolData?.name || 'SMP Negeri 3 Pacet';
-    const academicYear = appSettings?.academicData?.semesterYears?.[semester] || '2024/2025';
-    const reportDate = appSettings?.academicData?.semesterDates?.[semester] || new Date().toLocaleDateString('id-ID');
+    
+    // Determine the student's CURRENT grade level to fetch specific year configuration
+    const currentLevel = getGradeLevel(student.className);
+    
+    // FETCH YEAR & DATE BASED ON GRADE LEVEL AND SEMESTER
+    let academicYear = '2024/2025';
+    let reportDate = new Date().toLocaleDateString('id-ID');
+
+    if (appSettings?.academicData) {
+        // Try to access nested structure first: semesterYears[level][semester]
+        if (appSettings.academicData.semesterYears?.[currentLevel]?.[semester]) {
+            academicYear = appSettings.academicData.semesterYears[currentLevel][semester];
+        } 
+        // Fallback to old flat structure if nested missing
+        else if (appSettings.academicData.semesterYears?.[semester]) {
+            academicYear = appSettings.academicData.semesterYears[semester];
+        }
+
+        // Try to access nested dates: semesterDates[level][semester]
+        if (appSettings.academicData.semesterDates?.[currentLevel]?.[semester]) {
+            const dateStr = appSettings.academicData.semesterDates[currentLevel][semester];
+            if (dateStr) {
+                const dateObj = new Date(dateStr);
+                if (!isNaN(dateObj.getTime())) {
+                    reportDate = dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+                } else {
+                    reportDate = dateStr;
+                }
+            }
+        } 
+        // Fallback to old flat structure
+        else if (appSettings.academicData.semesterDates?.[semester]) {
+             const dateStr = appSettings.academicData.semesterDates[semester];
+             if(dateStr) reportDate = dateStr; // Already formatted or string
+        }
+    }
     
     // 2. Headmaster Data
     const headmaster = appSettings?.schoolData?.headmaster || 'Didik Sulistyo, M.M.Pd';
@@ -127,7 +170,7 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
     const pendingClassReq = student.correctionRequests?.find(r => r.fieldKey === classCorrectionKey && r.status === 'PENDING');
     const displayClass = pendingClassReq ? pendingClassReq.proposedValue : (record.className || student.className);
 
-    // 3. Homeroom Teacher (Wali Kelas) Data
+    // 3. Homeroom Teacher (Wali Kelas) Data - Must use the configured academic year for THIS report
     const waliKey = `${academicYear}-${semester}-${displayClass}`;
     const waliData = appSettings?.classConfig?.[waliKey];
     
