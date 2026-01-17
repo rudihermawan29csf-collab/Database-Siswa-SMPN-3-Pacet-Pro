@@ -38,31 +38,29 @@ const getPhotoUrl = (url: string | undefined | null) => {
     if (!url) return '';
     if (url.startsWith('data:') || url.startsWith('blob:')) return url;
     
-    // Pattern Matching for Google Drive URLs
-    try {
+    // Robust Google Drive URL parser
+    if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
         let id = '';
-        // Pattern 1: /file/d/ID/view
-        const matchD = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-        if (matchD) id = matchD[1];
         
-        // Pattern 2: id=ID query param
-        if (!id && url.includes('id=')) {
-            const params = new URLSearchParams(new URL(url).search);
-            id = params.get('id') || '';
+        // Match /d/ID pattern
+        const parts = url.split(/\/d\//);
+        if (parts.length > 1) {
+            id = parts[1].split('/')[0];
+        }
+        
+        // Match id=ID pattern (fallback)
+        if (!id) {
+            const match = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+            if (match) id = match[1];
         }
 
         if (id) {
-            // Check for existing cache buster in original URL
-            let tParam = '';
-            try {
-                const urlObj = new URL(url);
-                tParam = urlObj.searchParams.get('t') || '';
-            } catch(e) {}
-
-            return `https://drive.google.com/uc?export=view&id=${id}${tParam ? `&t=${tParam}` : ''}`;
+            // Preserve cache buster if exists
+            const tMatch = url.match(/[?&]t=([0-9]+)/);
+            const tParam = tMatch ? `&t=${tMatch[1]}` : '';
+            // Use Google Drive uc (User Content) export view
+            return `https://drive.google.com/uc?export=view&id=${id}${tParam}`;
         }
-    } catch (e) {
-        // console.error("URL Parse Error", e);
     }
     
     return url;
@@ -84,6 +82,9 @@ function App() {
   const [adminProfile, setAdminProfile] = useState({ name: 'Administrator', photo: '' });
   const [guruPhoto, setGuruPhoto] = useState('');
   const profileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Image Load Error State
+  const [profileImgError, setProfileImgError] = useState(false);
 
   // TRIGGER RE-FETCH PROFILE (Callback from SettingsView)
   const refreshProfile = async () => {
@@ -347,6 +348,11 @@ function App() {
 
   const profile = getProfileInfo();
 
+  // Reset error when photo URL changes
+  useEffect(() => {
+      setProfileImgError(false);
+  }, [profile.photo]);
+
   // --- RENDER CONTENT SWITCHER ---
   const renderContent = () => {
     const studentContext = userRole === 'STUDENT' && selectedStudent 
@@ -468,9 +474,18 @@ function App() {
                 <span className="font-bold text-gray-800">SiData SMPN 3 Pacet</span>
             </div>
             {/* Mobile Profile Icon */}
-            <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-300">
-                {profile.photo ? (
-                    <img src={profile.photo} className="w-full h-full object-cover" alt="Profile" referrerPolicy="no-referrer" />
+            <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-300 relative">
+                {profile.photo && !profileImgError ? (
+                    <img 
+                        src={profile.photo} 
+                        className="w-full h-full object-cover" 
+                        alt="Profile" 
+                        referrerPolicy="no-referrer" 
+                        onError={(e) => {
+                            console.warn("Mobile profile image load failed", e);
+                            setProfileImgError(true);
+                        }}
+                    />
                 ) : (
                     <div className="w-full h-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs">
                         {profile.name.charAt(0)}
@@ -517,8 +532,17 @@ function App() {
                             <div className="w-full h-full flex items-center justify-center bg-gray-200">
                                 <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
                             </div>
-                        ) : profile.photo ? (
-                            <img src={profile.photo} className="w-full h-full object-cover" alt="Profile" referrerPolicy="no-referrer" />
+                        ) : profile.photo && !profileImgError ? (
+                            <img 
+                                src={profile.photo} 
+                                className="w-full h-full object-cover" 
+                                alt="Profile" 
+                                referrerPolicy="no-referrer"
+                                onError={(e) => {
+                                    console.warn("Desktop profile image load failed", e);
+                                    setProfileImgError(true);
+                                }}
+                            />
                         ) : (
                             <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-50">
                                 <User className="w-5 h-5" />

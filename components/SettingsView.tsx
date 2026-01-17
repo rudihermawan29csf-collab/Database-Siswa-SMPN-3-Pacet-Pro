@@ -44,28 +44,28 @@ interface SettingsViewProps {
     onProfileUpdate?: () => void;
 }
 
-// Helper to convert Drive URLs (Duplicated to ensure independence)
+// Helper to convert Drive URLs (Improved logic)
 const getPhotoUrl = (url: string | undefined | null) => {
     if (!url) return '';
     if (url.startsWith('data:') || url.startsWith('blob:')) return url;
     
-    try {
+    if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
         let id = '';
-        const matchD = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-        if (matchD) id = matchD[1];
-        
-        if (!id && url.includes('id=')) {
-            const params = new URLSearchParams(new URL(url).search);
-            id = params.get('id') || '';
+        const parts = url.split(/\/d\//);
+        if (parts.length > 1) {
+            id = parts[1].split('/')[0];
+        }
+        if (!id) {
+            const match = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+            if (match) id = match[1];
         }
 
         if (id) {
-            let tParam = '';
-            try { const urlObj = new URL(url); tParam = urlObj.searchParams.get('t') || ''; } catch(e) {}
-            return `https://drive.google.com/uc?export=view&id=${id}${tParam ? `&t=${tParam}` : ''}`;
+            const tMatch = url.match(/[?&]t=([0-9]+)/);
+            const tParam = tMatch ? `&t=${tMatch[1]}` : '';
+            return `https://drive.google.com/uc?export=view&id=${id}${tParam}`;
         }
-    } catch(e) {}
-    
+    }
     return url;
 };
 
@@ -86,6 +86,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
   const [adminPhoto, setAdminPhoto] = useState(''); // Stores URL (Local/Cloud)
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  
+  // Image Error state
+  const [imgError, setImgError] = useState(false);
 
   // --- ACADEMIC SETTINGS STATE ---
   const [academicYear, setAcademicYear] = useState('2024/2025');
@@ -141,6 +144,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
       };
       loadSettings();
   }, []);
+
+  // Reset img error when photo changes
+  useEffect(() => {
+      setImgError(false);
+  }, [adminPhoto]);
 
   // --- HANDLERS: GENERAL ---
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -307,8 +315,17 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
                             <div className="w-full md:w-1/3 flex flex-col items-center p-6 border rounded-xl bg-gray-50">
                                 <div className="relative w-32 h-32 mb-4 group">
                                     <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-lg bg-gray-200">
-                                        {adminPhoto ? (
-                                            <img src={getPhotoUrl(adminPhoto)} alt="Admin" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                        {adminPhoto && !imgError ? (
+                                            <img 
+                                                src={getPhotoUrl(adminPhoto)} 
+                                                alt="Admin" 
+                                                className="w-full h-full object-cover" 
+                                                referrerPolicy="no-referrer"
+                                                onError={(e) => {
+                                                    console.warn("Settings image load failed", e);
+                                                    setImgError(true);
+                                                }}
+                                            />
                                         ) : (
                                             <div className="w-full h-full flex items-center justify-center text-gray-400">
                                                 <UserCircle className="w-16 h-16" />

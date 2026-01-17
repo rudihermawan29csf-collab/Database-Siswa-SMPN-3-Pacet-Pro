@@ -416,7 +416,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   // --- COMPONENT UI HELPER FOR BUKU INDUK LAYOUT ---
   const FormField = ({ label, value, fieldKey, labelCol = "w-1/3", valueCol = "flex-1", className = "", labelClassName="" }: any) => {
-      const displayValue = isEditingData && editFormData ? getNestedValue(editFormData, fieldKey) : value;
+      const displayValue = isEditingData && editFormData && fieldKey ? getNestedValue(editFormData, fieldKey) : value;
       
       // Check for pending correction request
       const pendingReq = fieldKey ? currentStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING') : null;
@@ -774,23 +774,119 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                                 />
                                 <FormField label="1. Nama Lengkap" value={currentStudent.fullName} fieldKey="fullName" />
                                 <FormField label="2. Jenis Kelamin" value={currentStudent.gender === 'L' ? 'Laki-Laki' : 'Perempuan'} fieldKey="gender" />
+                                
+                                {/* NISN / NIS Row */}
                                 <div className="flex border-b border-gray-300 min-h-[20px]">
                                     <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">3. NISN</div>
-                                    <div className="w-1/3 px-1.5 py-0.5 text-[9px] font-medium uppercase bg-white">
-                                        {isEditingData ? <input type="text" className="w-full bg-blue-50 px-1" value={getNestedValue(editFormData, 'nisn')} onChange={(e) => handleInputChange('nisn', e.target.value)} /> : currentStudent.nisn}
+                                    <div className="w-1/3 px-1.5 py-0.5 text-[9px] font-medium uppercase bg-white relative">
+                                         {isEditingData ? <input type="text" className="w-full bg-blue-50 px-1" value={getNestedValue(editFormData, 'nisn')} onChange={(e) => handleInputChange('nisn', e.target.value)} /> : currentStudent.nisn}
                                     </div>
                                     <div className="w-12 px-1.5 py-0.5 bg-gray-100 border-x border-gray-300 text-[9px] font-bold">NIS :</div>
-                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-gray-200">
-                                        {isEditingData ? <input type="text" className="w-full bg-blue-50 px-1" value={getNestedValue(editFormData, 'nis')} onChange={(e) => handleInputChange('nis', e.target.value)} /> : currentStudent.nis}
+                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-gray-200 relative">
+                                         {isEditingData ? <input type="text" className="w-full bg-blue-50 px-1" value={getNestedValue(editFormData, 'nis')} onChange={(e) => handleInputChange('nis', e.target.value)} /> : currentStudent.nis}
                                     </div>
                                 </div>
+
                                 <FormField label="4. No Seri Ijazah" value={currentStudent.diplomaNumber} fieldKey="diplomaNumber" />
                                 <FormField label="5. No Seri SKHUN" value={currentStudent.dapodik.skhun} fieldKey="dapodik.skhun" />
                                 <FormField label="6. No. Ujian Nasional" value={currentStudent.dapodik.unExamNumber} fieldKey="dapodik.unExamNumber" />
                                 <FormField label="7. NIK" value={currentStudent.dapodik.nik} fieldKey="dapodik.nik" />
+                                <FormField label="NPSN Sekolah Asal" value={currentStudent.previousSchool ? "20502873" : "-"} />
+                                <FormField label="Nama Sekolah Asal" value={currentStudent.previousSchool} fieldKey="previousSchool" />
                                 <FormField label="8. Tempat, Tgl Lahir" value={`${currentStudent.birthPlace}, ${formatDateIndo(currentStudent.birthDate)}`} fieldKey="birthPlace" />
+                                <FormField label="9. Agama" value={currentStudent.religion} fieldKey="religion" />
+                                <FormField label="10. Berkebutuhan Khusus" value={currentStudent.dapodik.specialNeeds} fieldKey="dapodik.specialNeeds" />
                                 <FormField label="11. Alamat Tempat Tinggal" value={currentStudent.address} fieldKey="address" />
-                                {/* ... Additional Fields ... */}
+                                
+                                {/* Complex Address Block - Broken down into rows for verification ease */}
+                                <FormField label=" - Dusun" value={currentStudent.dapodik.dusun} fieldKey="dapodik.dusun" />
+                                <FormField label=" - Kelurahan/Desa" value={currentStudent.dapodik.kelurahan} fieldKey="dapodik.kelurahan" />
+                                <FormField label=" - Kecamatan" value={currentStudent.subDistrict} fieldKey="subDistrict" />
+                                <FormField label=" - Kabupaten/Kota" value={currentStudent.district} fieldKey="district" />
+                                <div className="flex border-b border-gray-300 min-h-[20px]">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]"> - RT / RW</div>
+                                    <div className="flex-1 flex">
+                                        <div className="w-1/2 border-r border-gray-300 px-1.5 py-0.5 text-[9px]">
+                                            RT: {isEditingData ? <input className="w-8 bg-blue-50" value={getNestedValue(editFormData, 'dapodik.rt')} onChange={e=>handleInputChange('dapodik.rt', e.target.value)}/> : currentStudent.dapodik.rt}
+                                        </div>
+                                        <div className="w-1/2 px-1.5 py-0.5 text-[9px]">
+                                            RW: {isEditingData ? <input className="w-8 bg-blue-50" value={getNestedValue(editFormData, 'dapodik.rw')} onChange={e=>handleInputChange('dapodik.rw', e.target.value)}/> : currentStudent.dapodik.rw}
+                                        </div>
+                                    </div>
+                                </div>
+                                <FormField label=" - Kode Pos" value={currentStudent.postalCode} fieldKey="postalCode" />
+                                
+                                <FormField label="12. Transportasi" value={currentStudent.dapodik.transportation} fieldKey="dapodik.transportation" />
+                                <FormField label="13. Jenis Tinggal" value={currentStudent.dapodik.livingStatus} fieldKey="dapodik.livingStatus" />
+                                
+                                <div className="flex border-b border-gray-300 min-h-[20px]">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">14. No Telp / HP</div>
+                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] bg-white">
+                                        {isEditingData ? <input className="w-full bg-blue-50" value={getNestedValue(editFormData, 'father.phone')} onChange={e=>handleInputChange('father.phone', e.target.value)}/> : (currentStudent.father.phone || currentStudent.mother.phone || '-')}
+                                    </div>
+                                </div>
+
+                                <FormField label="15. Email" value={currentStudent.dapodik.email} fieldKey="dapodik.email" />
+                                <FormField label="16. No. KKS" value={currentStudent.dapodik.kksNumber} fieldKey="dapodik.kksNumber" />
+                                
+                                {/* KPS / PIP Section */}
+                                <FormField label="17. Penerima KPS/KPH" value={currentStudent.dapodik.kpsReceiver} fieldKey="dapodik.kpsReceiver" />
+                                <FormField label=" - No. KPS" value={currentStudent.dapodik.kpsNumber} fieldKey="dapodik.kpsNumber" />
+                                <FormField label=" - Usulan PIP" value={currentStudent.dapodik.pipEligible} fieldKey="dapodik.pipEligible" />
+                                <FormField label=" - Alasan PIP" value={currentStudent.dapodik.pipReason} fieldKey="dapodik.pipReason" />
+                                <FormField label=" - Penerima PIP" value={currentStudent.dapodik.kipReceiver} fieldKey="dapodik.kipReceiver" />
+                                <FormField label=" - No. KIP" value={currentStudent.dapodik.kipNumber} fieldKey="dapodik.kipNumber" />
+                                <FormField label=" - Nama di KIP" value={currentStudent.dapodik.kipName} fieldKey="dapodik.kipName" />
+                                
+                                <FormField label=" - No Reg Akta Lahir" value={currentStudent.dapodik.birthRegNumber} fieldKey="dapodik.birthRegNumber" />
+                                <FormField label=" - Lintang / Bujur" value={`${currentStudent.dapodik.latitude} / ${currentStudent.dapodik.longitude}`} />
+                            </div>
+
+                            {/* SECTION 2: DATA AYAH */}
+                            <SubHeader>DATA AYAH KANDUNG</SubHeader>
+                            <div className="border-x border-t border-gray-300">
+                                <FormField label="18. Nama Ayah" value={currentStudent.father.name} fieldKey="father.name" labelClassName="font-bold" />
+                                <FormField label=" - Tahun Lahir" value={currentStudent.father.birthPlaceDate} fieldKey="father.birthPlaceDate" />
+                                <FormField label=" - NIK Ayah" value={currentStudent.father.nik} fieldKey="father.nik" />
+                                <FormField label=" - Pekerjaan" value={currentStudent.father.job} fieldKey="father.job" />
+                                <FormField label=" - Pendidikan" value={currentStudent.father.education} fieldKey="father.education" />
+                                <FormField label=" - Penghasilan" value={currentStudent.father.income} fieldKey="father.income" />
+                            </div>
+
+                            {/* SECTION 3: DATA IBU */}
+                            <SubHeader>DATA IBU KANDUNG</SubHeader>
+                            <div className="border-x border-t border-gray-300">
+                                <FormField label="19. Nama Ibu" value={currentStudent.mother.name} fieldKey="mother.name" labelClassName="font-bold" />
+                                <FormField label=" - Tahun Lahir" value={currentStudent.mother.birthPlaceDate} fieldKey="mother.birthPlaceDate" />
+                                <FormField label=" - NIK Ibu" value={currentStudent.mother.nik} fieldKey="mother.nik" />
+                                <FormField label=" - Pekerjaan" value={currentStudent.mother.job} fieldKey="mother.job" />
+                                <FormField label=" - Pendidikan" value={currentStudent.mother.education} fieldKey="mother.education" />
+                                <FormField label=" - Penghasilan" value={currentStudent.mother.income} fieldKey="mother.income" />
+                            </div>
+
+                            {/* SECTION 4: DATA WALI */}
+                            <SubHeader>DATA WALI</SubHeader>
+                            <div className="border-x border-t border-gray-300">
+                                <FormField label="20. Nama Wali" value={currentStudent.guardian?.name || '-'} fieldKey="guardian.name" />
+                                <FormField label=" - Tahun Lahir" value={currentStudent.guardian?.birthPlaceDate || '-'} fieldKey="guardian.birthPlaceDate" />
+                                <FormField label=" - Pekerjaan" value={currentStudent.guardian?.job || '-'} fieldKey="guardian.job" />
+                                <FormField label=" - Pendidikan" value={currentStudent.guardian?.education || '-'} fieldKey="guardian.education" />
+                                <FormField label=" - Penghasilan" value={currentStudent.guardian?.income || '-'} fieldKey="guardian.income" />
+                            </div>
+
+                            {/* SECTION 5: PERIODIK */}
+                            <SubHeader>DATA PERIODIK</SubHeader>
+                            <div className="border border-gray-300 mt-1">
+                                <div className="flex border-b border-gray-300 min-h-[20px]">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">21. Tinggi / Berat</div>
+                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] flex gap-4">
+                                        <span>TB: {isEditingData ? <input className="w-8 bg-blue-50" value={getNestedValue(editFormData, 'height')} onChange={e=>handleInputChange('height', e.target.value)}/> : currentStudent.height} cm</span>
+                                        <span>BB: {isEditingData ? <input className="w-8 bg-blue-50" value={getNestedValue(editFormData, 'weight')} onChange={e=>handleInputChange('weight', e.target.value)}/> : currentStudent.weight} kg</span>
+                                    </div>
+                                </div>
+                                <FormField label="22. Jarak Ke Sekolah" value={`${currentStudent.dapodik.distanceToSchool} Km`} fieldKey="dapodik.distanceToSchool" />
+                                <FormField label="23. Waktu Tempuh" value={`${currentStudent.dapodik.travelTimeMinutes} Menit`} fieldKey="dapodik.travelTimeMinutes" />
+                                <FormField label="24. Jml Saudara Kandung" value={currentStudent.siblingCount} fieldKey="siblingCount" />
                             </div>
                         </div>
                     </div>
