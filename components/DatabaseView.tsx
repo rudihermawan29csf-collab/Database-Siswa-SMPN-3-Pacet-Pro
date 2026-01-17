@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Search, Plus, Pencil, Trash2, Save, X, Loader2, Download, UploadCloud, RotateCcw, User, MapPin, Users, Heart, Wallet, FileDown, FileSpreadsheet, AlertTriangle, Ruler, Home, RefreshCw } from 'lucide-react';
+import { Search, Plus, Pencil, Trash2, Save, X, Loader2, Download, UploadCloud, RotateCcw, User, MapPin, Users, Heart, Wallet, FileDown, FileSpreadsheet, AlertTriangle, Ruler, Home, RefreshCw, DownloadCloud } from 'lucide-react';
 import { Student } from '../types';
 import { api } from '../services/api';
 
@@ -90,24 +90,50 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
       }
   };
 
-  // --- FEATURE: SYNC CLOUD (Manual Force) ---
-  const handleSyncCloud = async () => {
-      if(!window.confirm("Tindakan ini akan memaksa aplikasi mengambil data terbaru dari Google Cloud dan menimpa tampilan saat ini. Lanjutkan?")) return;
+  // --- FEATURE: PULL CLOUD (Manual Force) ---
+  const handleResetCloud = async () => {
+      if(!window.confirm("PERINGATAN: Ini akan mengambil data dari Google Spreadsheet dan MENIMPA data lokal saat ini. Data lokal yang belum tersimpan akan hilang. Lanjutkan?")) return;
       setIsLoading(true);
       try {
           const onlineStudents = await api.getStudents();
-          // Ensure we format the data correctly
           const sanitizedOnline = onlineStudents.map(s => ({
               ...s,
               className: s.className ? s.className.replace(/kelas/gi, '').trim() : '-'
           }));
           
           onUpdateStudents(sanitizedOnline);
-          localStorage.setItem('sidata_students_cache', JSON.stringify(sanitizedOnline));
+          localStorage.setItem('sidata_students_cache_v3', JSON.stringify(sanitizedOnline));
           alert(`Berhasil sinkronisasi. Total: ${sanitizedOnline.length} Siswa dari Cloud.`);
       } catch (e) {
           console.error(e);
-          alert("Gagal sinkronisasi dengan cloud. Periksa koneksi internet.");
+          alert("Gagal mengambil data dari cloud. Periksa koneksi internet.");
+      } finally {
+          setIsLoading(false);
+      }
+  };
+
+  // --- FEATURE: PUSH CLOUD (Force Upload Local to Cloud) ---
+  const handlePushCloud = async () => {
+      if (students.length === 0) {
+          alert("Tidak ada data untuk diupload.");
+          return;
+      }
+      
+      const confirmMsg = `Anda akan mengirim ${students.length} data siswa dari Aplikasi ke Google Spreadsheet (Cloud).\n\nData di Spreadsheet akan DITIMPA dengan data ini.\n\nPastikan data aplikasi sudah benar. Lanjutkan?`;
+      
+      if (!window.confirm(confirmMsg)) return;
+
+      setIsLoading(true);
+      try {
+          const success = await api.syncInitialData(students);
+          if (success) {
+              alert("✅ Berhasil upload data ke Cloud!");
+          } else {
+              throw new Error("Gagal sync data.");
+          }
+      } catch (e) {
+          console.error(e);
+          alert("❌ Gagal upload ke cloud. Terjadi kesalahan koneksi atau server sibuk.");
       } finally {
           setIsLoading(false);
       }
@@ -345,7 +371,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                   };
               });
 
-              // Merge Logic
+              // Merge Logic (Client Side First)
               const updatedStudents = [...students];
               let addedCount = 0;
               let updatedCount = 0;
@@ -368,10 +394,23 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                   }
               });
 
+              // 1. Update State & Cache Immediately (Success in App)
               onUpdateStudents(updatedStudents);
-              await api.syncInitialData(updatedStudents);
+              localStorage.setItem('sidata_students_cache_v3', JSON.stringify(updatedStudents));
               
-              alert(`Import Selesai! ${addedCount} Siswa Baru, ${updatedCount} Siswa Diupdate.`);
+              // 2. Try Sync to Cloud (May Fail for 271 items)
+              try {
+                  const success = await api.syncInitialData(updatedStudents);
+                  if (success) {
+                      alert(`Import Selesai! ${addedCount} Siswa Baru, ${updatedCount} Siswa Diupdate.\nData berhasil disinkronkan ke Cloud.`);
+                  } else {
+                      // Specific error message for the scenario user encountered
+                      alert(`Import berhasil di APLIKASI (${addedCount} baru, ${updatedCount} update).\n\nTAPI Gagal lapor ke Cloud otomatis.\n\n👉 Silakan klik tombol 'Upload Cloud' (Oranye) untuk mencoba kirim data ke server.`);
+                  }
+              } catch (apiErr) {
+                  console.error("Auto-sync failed:", apiErr);
+                  alert(`Import Berhasil di Local App.\n\n⚠️ Gagal Sync Cloud: Koneksi terputus atau data terlalu banyak.\n\nSOLUSI: Klik tombol 'Upload Cloud' berwarna oranye untuk mengirim data secara manual.`);
+              }
 
           } catch (e) {
               console.error(e);
@@ -387,7 +426,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
 
   // --- FEATURE: RESET ALL DATA ---
   const handleResetData = async () => {
-      if (window.confirm("anda yakin hapus semua data?")) {
+      if (window.confirm("ANDA YAKIN HAPUS SEMUA DATA? Data lokal dan Cloud akan dikosongkan.")) {
           setIsLoading(true);
           try {
               onUpdateStudents([]); 
@@ -417,14 +456,15 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
               updatedStudents.push(studentToSave);
           }
 
+          // Optimistic update
+          onUpdateStudents(updatedStudents);
+          
           const success = await api.updateStudent(studentToSave);
           if (success) {
-              onUpdateStudents(updatedStudents);
               setIsModalOpen(false);
               setFormData(initialFormState);
           } else {
               alert("Gagal menyimpan ke database cloud. Data tersimpan lokal.");
-              onUpdateStudents(updatedStudents);
               setIsModalOpen(false);
           }
       } catch (e) {
@@ -684,8 +724,11 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                 <button onClick={() => { setFormData(initialFormState); setIsEditing(false); setIsModalOpen(true); setActiveTab('PROFILE'); }} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-bold shadow-sm">
                     <Plus className="w-4 h-4 mr-2" /> Tambah
                 </button>
-                <button onClick={handleSyncCloud} disabled={isLoading} className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-bold shadow-sm disabled:opacity-50">
-                    {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />} Sync Cloud
+                <button onClick={handleResetCloud} disabled={isLoading} className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-bold shadow-sm disabled:opacity-50">
+                    {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <DownloadCloud className="w-4 h-4 mr-2" />} Reset Cloud
+                </button>
+                <button onClick={handlePushCloud} disabled={isLoading} className="flex items-center px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-bold shadow-sm disabled:opacity-50">
+                    {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <UploadCloud className="w-4 h-4 mr-2" />} Upload Cloud
                 </button>
                 <button onClick={handleDownloadData} className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold shadow-sm">
                     <Download className="w-4 h-4 mr-2" /> Export
