@@ -87,23 +87,35 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
       setIsLoading(true);
       
       try {
+          // Prepare the student object to save
+          let studentToSave: Student;
           let updatedStudents = [...students];
-          
+
           if (isEditing) {
+              studentToSave = formData;
               updatedStudents = updatedStudents.map(s => s.id === formData.id ? formData : s);
-              await api.updateStudent(formData);
           } else {
-              const newStudent = { ...formData, id: Math.random().toString(36).substr(2, 9) };
-              updatedStudents.push(newStudent);
-              await api.updateStudent(newStudent); 
+              studentToSave = { ...formData, id: Math.random().toString(36).substr(2, 9) };
+              updatedStudents.push(studentToSave);
           }
           
+          // 1. OPTIMISTIC UPDATE: Update Local State & Storage IMMEDIATELY
+          // This ensures data is saved locally even if the network request fails below.
           onUpdateStudents(updatedStudents);
+          
           setIsModalOpen(false);
           setFormData(initialFormState);
+
+          // 2. BACKGROUND SYNC: Try to save to Cloud
+          try {
+              await api.updateStudent(studentToSave);
+          } catch (cloudError) {
+              console.warn("Cloud sync failed (Data saved locally):", cloudError);
+              // Optional: You could show a toast here saying "Saved offline"
+          }
       } catch (error) {
-          console.error("Error saving student:", error);
-          alert("Gagal menyimpan data.");
+          console.error("Error processing student:", error);
+          alert("Gagal memproses data.");
       } finally {
           setIsLoading(false);
       }
@@ -153,7 +165,14 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
         <div className="overflow-auto flex-1 pb-32">
             <table className="w-full text-left border-collapse">
                 <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-700 uppercase">
-                    <tr><th className="px-6 py-4">Nama Siswa</th><th className="px-6 py-4">NIS / NISN</th><th className="px-6 py-4">Kelas</th><th className="px-6 py-4">L/P</th><th className="px-6 py-4 text-center">Aksi</th></tr>
+                    <tr>
+                        <th className="px-6 py-4">Nama Siswa</th>
+                        <th className="px-6 py-4">NIS / NISN</th>
+                        <th className="px-6 py-4">Kelas</th>
+                        <th className="px-6 py-4">L/P</th>
+                        <th className="px-6 py-4">Sekolah Asal</th>
+                        <th className="px-6 py-4 text-center">Aksi</th>
+                    </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                     {filteredStudents.length > 0 ? filteredStudents.map(student => (
@@ -162,12 +181,13 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                             <td className="px-6 py-3 text-sm text-gray-500">{student.nis} / {student.nisn}</td>
                             <td className="px-6 py-3"><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">{student.className}</span></td>
                             <td className="px-6 py-3 text-sm">{student.gender}</td>
+                            <td className="px-6 py-3 text-sm text-gray-600">{student.previousSchool || '-'}</td>
                             <td className="px-6 py-3 text-center flex justify-center gap-2">
                                 <button onClick={() => handleEdit(student)} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"><Pencil className="w-4 h-4" /></button>
                                 <button onClick={() => handleDelete(student.id)} className="p-2 text-red-600 hover:bg-red-100 rounded-lg"><Trash2 className="w-4 h-4" /></button>
                             </td>
                         </tr>
-                    )) : <tr><td colSpan={5} className="px-6 py-10 text-center text-gray-500">Tidak ada data.</td></tr>}
+                    )) : <tr><td colSpan={6} className="px-6 py-10 text-center text-gray-500">Tidak ada data.</td></tr>}
                 </tbody>
             </table>
         </div>
@@ -207,7 +227,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                               <div><label className="text-xs font-bold text-gray-500 uppercase">Kewarganegaraan</label><select className="w-full p-2 border rounded bg-white" value={formData.nationality} onChange={e => setFormData({...formData, nationality: e.target.value as any})}><option value="WNI">WNI</option><option value="WNA">WNA</option></select></div>
                               
                               {/* ADDED MISSING FIELDS */}
-                              <div><label className="text-xs font-bold text-gray-500 uppercase">Sekolah Asal</label><input type="text" className="w-full p-2 border rounded" value={formData.previousSchool} onChange={e => setFormData({...formData, previousSchool: e.target.value})} /></div>
+                              <div><label className="text-xs font-bold text-gray-500 uppercase">Sekolah Asal</label><input type="text" className="w-full p-2 border rounded bg-white font-bold text-blue-900" value={formData.previousSchool} onChange={e => setFormData({...formData, previousSchool: e.target.value})} placeholder="Nama SD Asal" /></div>
                               <div><label className="text-xs font-bold text-gray-500 uppercase">Status Siswa</label><select className="w-full p-2 border rounded bg-white" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value as any})}><option value="AKTIF">AKTIF</option><option value="PINDAH">PINDAH</option><option value="LULUS">LULUS</option></select></div>
                               <div><label className="text-xs font-bold text-gray-500 uppercase">Anak Ke-</label><input type="number" className="w-full p-2 border rounded" value={formData.childOrder} onChange={e => setFormData({...formData, childOrder: Number(e.target.value)})} /></div>
                               

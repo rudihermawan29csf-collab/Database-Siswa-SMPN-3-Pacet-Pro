@@ -60,21 +60,69 @@ const App: React.FC = () => {
       }));
   };
 
-  // FETCH DATA ON MOUNT & UPDATE
+  // INITIAL DATA LOAD
   useEffect(() => {
     const initData = async () => {
-        // Show loading only on first load
         if (studentsData.length === 0) setIsLoading(true);
 
+        // 1. FIRST: Try loading from Local Storage (Cache) for immediate data display
+        const cached = localStorage.getItem('sidata_students_cache');
+        let localData: Student[] = [];
+        
+        if (cached) {
+            try {
+                localData = JSON.parse(cached);
+                if (localData.length > 0) {
+                    setStudentsData(localData);
+                    setIsLoading(false); // Immediate display from cache
+                }
+            } catch (e) {
+                console.error("Cache corrupted, clearing", e);
+                localStorage.removeItem('sidata_students_cache');
+            }
+        }
+
         try {
-            // Fetch Students & Settings in Parallel
+            // 2. SECOND: Try syncing with Cloud
             const [onlineData, settings] = await Promise.all([
                 api.getStudents(),
                 api.getAppSettings()
             ]);
             
-            // Set Students (Sanitized)
-            setStudentsData(sanitizeStudents(onlineData));
+            // SMART MERGE LOGIC:
+            const sanitizedOnline = sanitizeStudents(onlineData);
+            
+            let mergedData = sanitizedOnline.map(onlineStudent => {
+                const cachedStudent = localData.find(c => c.id === onlineStudent.id);
+                if (cachedStudent) {
+                    // Critical: Restore 'previousSchool' if missing in cloud (Spreadsheet column issue)
+                    if (!onlineStudent.previousSchool && cachedStudent.previousSchool) {
+                        onlineStudent = { ...onlineStudent, previousSchool: cachedStudent.previousSchool };
+                    }
+                    // Restore complex objects if cloud returns partial (optional safety check)
+                    if (!onlineStudent.documents || onlineStudent.documents.length === 0) {
+                        if (cachedStudent.documents && cachedStudent.documents.length > 0) {
+                             onlineStudent = { ...onlineStudent, documents: cachedStudent.documents };
+                        }
+                    }
+                }
+                return onlineStudent;
+            });
+
+            // Handle OFFLINE CREATED students:
+            // Find students in Local Cache that are NOT in Cloud Data
+            const onlineIds = new Set(mergedData.map(s => s.id));
+            const offlineCreatedStudents = localData.filter(l => !onlineIds.has(l.id));
+            
+            if (offlineCreatedStudents.length > 0) {
+                console.log(`Found ${offlineCreatedStudents.length} students created offline. Merging...`);
+                mergedData = [...mergedData, ...offlineCreatedStudents];
+            }
+
+            setStudentsData(mergedData);
+            
+            // Update Cache with merged data
+            localStorage.setItem('sidata_students_cache', JSON.stringify(mergedData));
             
             // Set Active Year from Settings
             if (settings && settings.academicData && settings.academicData.year) {
@@ -83,13 +131,14 @@ const App: React.FC = () => {
 
             setIsCloudConnected(true);
         } catch (error) {
-            console.error("Failed to connect to Cloud, using Mock Data", error);
+            console.error("Failed to connect to Cloud", error);
             setIsCloudConnected(false);
-            // Only fallback to Mock if Local Data is empty
-            if (studentsData.length === 0) {
+            
+            // Fallback to Mock if cache is also empty
+            if (localData.length === 0) {
+                console.warn("Using MOCK data as fallback");
                 setStudentsData(sanitizeStudents(MOCK_STUDENTS));
             }
-            // Try to set year from cache/mock if available, otherwise keep default
         } finally {
             setIsLoading(false);
         }
@@ -101,478 +150,220 @@ const App: React.FC = () => {
   useEffect(() => {
       if (selectedStudent && studentsData.length > 0) {
           const updatedStudent = studentsData.find(s => s.id === selectedStudent.id);
-          // Only update if the object reference is different to avoid loops, 
-          // but ensure we capture updates.
           if (updatedStudent && JSON.stringify(updatedStudent) !== JSON.stringify(selectedStudent)) {
               setSelectedStudent(updatedStudent);
           }
       }
   }, [studentsData, selectedStudent]);
 
+  // PERSIST TO LOCAL STORAGE ON ANY CHANGE
+  useEffect(() => {
+      if (studentsData.length > 0) {
+          localStorage.setItem('sidata_students_cache', JSON.stringify(studentsData));
+      }
+  }, [studentsData]);
+
   const refreshData = () => {
       setDataVersion(prev => prev + 1);
   };
 
-  // UPDATED: Save Logic with Revert Capability
+  // UPDATED: Save Logic with Local Persistence Priority
   const saveStudentToCloud = async (student: Student) => {
-      const originalStudents = [...studentsData];
-      
-      // Ensure we sanitize outgoing student class name as well just in case
+      // 1. Update Local State Immediately (Optimistic UI)
       const sanitizedStudent = {
           ...student,
           className: student.className.replace(/kelas/gi, '').trim()
       };
 
-      // 1. Update Local State Immediately (Optimistic UI)
-      setStudentsData(prevStudents => 
-          prevStudents.map(s => s.id === sanitizedStudent.id ? sanitizedStudent : s)
-      );
+      setStudentsData(prevStudents => {
+          const newData = prevStudents.map(s => s.id === sanitizedStudent.id ? sanitizedStudent : s);
+          // SAVE TO CACHE IMMEDIATELY
+          localStorage.setItem('sidata_students_cache', JSON.stringify(newData)); 
+          return newData;
+      });
 
-      // 2. Send to Cloud with Error Handling
+      // 2. Attempt Send to Cloud (Background)
       try {
-          const success = await api.updateStudent(sanitizedStudent);
-          if (!success) {
-              throw new Error("Gagal menyimpan ke server database.");
-          }
+          // Even if this fails or partial fields are rejected by Sheet, 
+          // our local cache retains the correct data for the user session.
+          await api.updateStudent(sanitizedStudent);
       } catch (error) {
-          console.error("Save failed, reverting:", error);
-          // 3. Revert Local State on Failure
-          setStudentsData(originalStudents);
-          alert("Gagal menyimpan perubahan. Koneksi tidak stabil atau server sibuk. Perubahan dikembalikan.");
-          throw error; // Re-throw so component can handle UI state (e.g. stop spinner)
+          console.error("Cloud save failed (data saved locally):", error);
+          alert("Peringatan: Gagal menyimpan ke Cloud (Data tersimpan lokal)");
       }
   };
 
+  // Login Handler
   const handleLogin = (role: UserRole, studentData?: Student) => {
-      setUserRole(role);
       setIsAuthenticated(true);
+      setUserRole(role);
       if (role === 'STUDENT' && studentData) {
-          setCurrentUser({ name: studentData.fullName, role: 'Siswa' });
           setSelectedStudent(studentData);
-      } else if (role === 'GURU') {
-          setCurrentUser({ name: 'Guru Pengajar', role: 'Guru' });
+          setCurrentUser({ name: studentData.fullName, role: 'STUDENT' });
+          setCurrentView('dashboard');
       } else {
-          setCurrentUser({ name: 'Administrator', role: 'Admin' });
+          setCurrentUser({ name: 'Admin', role: role });
+          setCurrentView('dashboard');
       }
-      setCurrentView('dashboard');
   };
 
   const handleLogout = () => {
       setIsAuthenticated(false);
+      setUserRole('ADMIN');
       setCurrentUser(null);
       setSelectedStudent(null);
-      setUserRole('ADMIN');
+      setCurrentView('dashboard');
   };
 
-  // --- NOTIFICATION LOGIC ---
-  const notifications = useMemo(() => {
-      if (!studentsData) return [];
-      const notifs: DashboardNotification[] = [];
-
-      studentsData.forEach(s => {
-          // 1. Pending Documents
-          const pendingDocs = s.documents.filter(d => d.status === 'PENDING');
-          if (pendingDocs.length > 0) {
-              pendingDocs.forEach(d => {
-                  const isRapor = d.category === 'RAPOR';
-                  notifs.push({
-                      id: `doc-${d.id}`,
-                      // Distinguish between General Verification and Grade/Rapor Verification
-                      type: isRapor ? 'ADMIN_GRADE_VERIFY' : 'ADMIN_DOC_VERIFY',
-                      title: isRapor ? 'Verifikasi Nilai (Rapor)' : 'Verifikasi Buku Induk (Dokumen)',
-                      description: `${s.fullName} mengupload ${d.name} (${d.category})`,
-                      date: d.uploadDate,
-                      priority: 'HIGH',
-                      data: { 
-                          studentId: s.id, 
-                          docId: d.id, 
-                          category: d.category,
-                          targetView: isRapor ? 'grade-verification' : 'verification'
-                      }
-                  });
-              });
+  // Helper for Student Document Upload (used in Documents view)
+  const handleStudentUpload = async (file: File, category: string) => {
+      if (!selectedStudent) return;
+      try {
+          const driveUrl = await api.uploadFile(file, selectedStudent.id, category);
+          if (driveUrl) {
+              const newDoc: DocumentFile = {
+                  id: Math.random().toString(36).substr(2, 9),
+                  name: file.name,
+                  type: file.type.includes('pdf') ? 'PDF' : 'IMAGE',
+                  url: driveUrl,
+                  category: category as any,
+                  uploadDate: new Date().toISOString().split('T')[0],
+                  size: `${(file.size/1024).toFixed(0)} KB`,
+                  status: 'PENDING'
+              };
+              const updatedStudent = {
+                  ...selectedStudent,
+                  documents: [...selectedStudent.documents.filter(d => d.category !== category), newDoc]
+              };
+              await saveStudentToCloud(updatedStudent);
+              setSelectedStudent(updatedStudent); 
+          } else {
+              alert("Gagal upload ke Cloud. Silakan coba lagi.");
           }
-
-          // 2. Pending Corrections
-          const pendingReqs = s.correctionRequests?.filter(r => r.status === 'PENDING');
-          if (pendingReqs && pendingReqs.length > 0) {
-              pendingReqs.forEach(r => {
-                  // Check if it's academic (Grade/Class) or Bio (Buku Induk) or Ijazah
-                  const isAcademic = r.fieldKey.startsWith('grade-') || r.fieldKey.startsWith('class-');
-                  const isIjazah = ['nis', 'nisn', 'birthPlace', 'birthDate'].includes(r.fieldKey);
-                  
-                  let type: any = 'ADMIN_BIO_VERIFY';
-                  let title = 'Verifikasi Buku Induk (Data Diri)';
-                  let targetView = 'student-detail';
-
-                  if (isAcademic) {
-                      type = 'ADMIN_GRADE_VERIFY';
-                      title = 'Verifikasi Nilai (Koreksi Data)';
-                      targetView = 'grade-verification';
-                  } else if (isIjazah) {
-                      type = 'ADMIN_IJAZAH_VERIFY';
-                      title = 'Verifikasi Data Ijazah';
-                      targetView = 'ijazah-verification';
-                  }
-                  
-                  notifs.push({
-                      id: `req-${r.id}`,
-                      type: type,
-                      title: title,
-                      description: `${s.fullName} mengajukan perbaikan: ${r.fieldName}`,
-                      date: new Date(r.requestDate).toLocaleDateString(),
-                      priority: 'MEDIUM',
-                      data: { 
-                          studentId: s.id, 
-                          fieldKey: r.fieldKey,
-                          targetView: targetView
-                      }
-                  });
-              });
-          }
-
-          // 3. For STUDENT: Revisions & Approvals
-          if (userRole === 'STUDENT' && selectedStudent && s.id === selectedStudent.id) {
-               // Revisions
-               s.documents.filter(d => d.status === 'REVISION').forEach(d => {
-                   notifs.push({
-                       id: `rev-${d.id}`,
-                       type: 'STUDENT_REVISION',
-                       title: 'Revisi Dokumen Diperlukan',
-                       description: `Dokumen ${d.category} ditolak. Catatan: "${d.adminNote}"`,
-                       date: d.verificationDate || '',
-                       priority: 'HIGH',
-                       verifierName: d.verifierName
-                   });
-               });
-               
-               // Approved (Last 7 days)
-               s.documents.filter(d => d.status === 'APPROVED').forEach(d => {
-                   notifs.push({
-                       id: `app-${d.id}`,
-                       type: 'STUDENT_APPROVED',
-                       title: 'Dokumen Disetujui',
-                       description: `Dokumen ${d.category} telah diverifikasi.`,
-                       date: d.verificationDate || '',
-                       priority: 'LOW',
-                       verifierName: d.verifierName
-                   });
-               });
-
-               // Messages
-               s.adminMessages?.filter(m => !m.isRead).forEach(m => {
-                   notifs.push({
-                       id: `msg-${m.id}`,
-                       type: 'STUDENT_REVISION', // Use Revision style for visibility
-                       title: 'Pesan dari Admin',
-                       description: m.content,
-                       date: new Date(m.date).toLocaleDateString(),
-                       priority: 'HIGH'
-                   });
-               });
-          }
-      });
-
-      // Sort by priority then date
-      return notifs.sort((a, b) => {
-          if (a.priority === 'HIGH' && b.priority !== 'HIGH') return -1;
-          if (a.priority !== 'HIGH' && b.priority === 'HIGH') return 1;
-          return new Date(b.date).getTime() - new Date(a.date).getTime();
-      });
-  }, [studentsData, userRole, selectedStudent]);
-
-  const handleNotificationClick = (notif: DashboardNotification) => {
-      if (userRole === 'ADMIN' || userRole === 'GURU') {
-          if (notif.data) {
-              setTargetVerificationStudentId(notif.data.studentId);
-              
-              if (notif.data.docId) {
-                  // Document Handling
-                  setTargetHighlightDoc(notif.data.docId);
-                  // Use explicit target view from notification data
-                  if (notif.data.targetView) {
-                      setCurrentView(notif.data.targetView);
-                  } else {
-                      // Fallback
-                      setCurrentView(notif.data.category === 'RAPOR' ? 'grade-verification' : 'verification');
-                  }
-              } else if (notif.data.fieldKey) {
-                  // Correction Handling
-                  setTargetHighlightField(notif.data.fieldKey);
-                  
-                  // Use explicit target view
-                  if (notif.data.targetView) {
-                      setCurrentView(notif.data.targetView);
-                  } else {
-                      // Default to Student Detail for Bio/Buku Induk corrections
-                      const s = studentsData.find(st => st.id === notif.data.studentId);
-                      if (s) {
-                          setSelectedStudent(s);
-                          setCurrentView('student-detail');
-                      }
-                  }
-              }
-          }
-      } else {
-          // Student logic
-          if (notif.title.includes('Revisi') || notif.title.includes('Dokumen')) {
-              setCurrentView('documents');
-          } else if (notif.title.includes('Pesan')) {
-              // Just mark as read
-          }
+      } catch (e) {
+          console.error(e);
+          alert("Terjadi kesalahan saat upload.");
       }
-      setReadNotificationIds(prev => new Set(prev).add(notif.id));
   };
 
-  // --- RENDER CONTENT BASED ON VIEW ---
+  // Render Content Switch
   const renderContent = () => {
-      if (!isAuthenticated) return <Login onLogin={handleLogin} students={studentsData} />;
-
-      // Common Props
-      const commonProps = {
-          students: studentsData,
-          onUpdate: refreshData
-      };
-
       switch (currentView) {
           case 'dashboard':
-              return <Dashboard 
-                        notifications={notifications} 
-                        onNotificationClick={handleNotificationClick} 
-                        userRole={userRole} 
-                        students={studentsData}
-                     />;
+              return <Dashboard students={studentsData} userRole={userRole} />;
           case 'database':
-              return <DatabaseView students={studentsData} onUpdateStudents={(newData) => { setStudentsData(newData); refreshData(); }} />;
+              return <DatabaseView students={studentsData} onUpdateStudents={setStudentsData} />;
           case 'buku-induk':
               return <BukuIndukView students={studentsData} />;
-          case 'verification':
-              return <VerificationView 
-                        students={studentsData} 
-                        targetStudentId={targetVerificationStudentId}
-                        onUpdate={refreshData}
-                        onSave={saveStudentToCloud} 
-                        currentUser={currentUser || undefined}
-                     />;
-          case 'student-detail': // Specific for detailed view from list
-              if (!selectedStudent) return <DapodikList students={studentsData} onSelectStudent={(s) => { setSelectedStudent(s); setCurrentView('student-detail'); }} />;
-              return <StudentDetail 
-                        student={selectedStudent} 
-                        onBack={() => setCurrentView('database')} 
-                        viewMode="dapodik" 
-                        highlightFieldKey={targetHighlightField}
-                        onUpdate={refreshData}
-                        onSave={saveStudentToCloud} 
-                        currentUser={currentUser || undefined}
-                     />;
-          case 'student-docs': // Admin view of student docs
-              return <StudentDocsAdminView students={studentsData} onUpdate={refreshData} />;
           case 'grades':
-              return <GradesView 
-                        students={studentsData} 
-                        userRole={userRole} 
-                        loggedInStudent={selectedStudent || undefined} 
-                        onUpdate={refreshData}
-                     />;
-          case 'grade-verification':
-              return <GradeVerificationView 
-                        students={studentsData} 
-                        userRole={userRole}
-                        onUpdate={refreshData}
-                        onSave={saveStudentToCloud} 
-                        currentUser={currentUser || undefined}
-                     />;
+              return <GradesView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} onUpdate={refreshData} />;
           case 'recap':
               return <RecapView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
-          case 'skl': // NEW SKL ROUTE
-              return <SKLView 
-                        students={studentsData} 
-                        userRole={userRole} 
-                        loggedInStudent={selectedStudent || undefined} 
-                     />;
+          case 'skl':
+              return <SKLView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
           case 'data-ijazah':
               return <IjazahView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
+          case 'verification':
+              return <VerificationView students={studentsData} onUpdate={refreshData} currentUser={currentUser || undefined} onSave={saveStudentToCloud} />;
           case 'ijazah-verification':
-              return <IjazahVerificationView 
-                        students={studentsData} 
-                        onUpdate={refreshData} 
-                        onSave={saveStudentToCloud} 
-                        currentUser={currentUser || undefined} 
-                     />;
-          case 'settings':
-              return <SettingsView />;
-          case 'upload-rapor':
-              if (!selectedStudent) return <div>Data siswa tidak ditemukan</div>;
-              return <UploadRaporView student={selectedStudent} onUpdate={refreshData} />;
+              return <IjazahVerificationView students={studentsData} onUpdate={refreshData} currentUser={currentUser || undefined} onSave={saveStudentToCloud} />;
+          case 'grade-verification':
+              return <GradeVerificationView students={studentsData} onUpdate={refreshData} currentUser={currentUser || undefined} userRole={userRole} onSave={saveStudentToCloud} />;
+          case 'student-docs':
+              return <StudentDocsAdminView students={studentsData} onUpdate={refreshData} />;
           case 'history':
               return <HistoryView students={studentsData} />;
           case 'monitoring':
               return <MonitoringView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
           case 'reports':
               return <ReportsView students={studentsData} onUpdate={refreshData} />;
+          case 'settings':
+              return <SettingsView />;
           
-          // STUDENT SPECIFIC VIEWS
+          // Student Views
           case 'dapodik':
-              if (!selectedStudent) return <div>Loading...</div>;
-              return <StudentDetail 
-                        student={selectedStudent} 
-                        onBack={() => setCurrentView('dashboard')} 
-                        viewMode="student" 
-                        readOnly={true} // Student can edit via modal inside component
-                        onUpdate={refreshData}
-                        onSave={saveStudentToCloud} 
-                        currentUser={currentUser || undefined}
-                     />;
+              if (!selectedStudent) return null;
+              return <StudentDetail student={selectedStudent} onBack={() => {}} viewMode="dapodik" readOnly={true} onUpdate={refreshData} />;
           case 'documents':
-              if (!selectedStudent) return <div>Loading...</div>;
-              return (
-                  <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                      <div className="p-4 border-b">
-                          <h2 className="text-lg font-bold flex items-center gap-2 text-gray-800"><FolderOpen className="w-5 h-5 text-blue-600"/> Dokumen Saya</h2>
-                      </div>
-                      <div className="flex-1 p-4 overflow-y-auto bg-gray-50/50">
-                          <FileManager 
-                              documents={selectedStudent.documents} 
-                              onUpload={(f, c) => {
-                                  // Using saveStudentToCloud wrapper logic
-                                  // For simplicity, reusing API directly here
-                                  api.uploadFile(f, selectedStudent.id, c).then(url => {
-                                      if(url) {
-                                          const newDoc: DocumentFile = {
-                                              id: Math.random().toString(36).substr(2, 9),
-                                              name: f.name,
-                                              type: f.type.includes('pdf') ? 'PDF' : 'IMAGE',
-                                              url: url,
-                                              category: c as any,
-                                              uploadDate: new Date().toISOString().split('T')[0],
-                                              size: 'Unknown',
-                                              status: 'PENDING'
-                                          };
-                                          const updated = {...selectedStudent, documents: [...selectedStudent.documents.filter(d=>d.category!==c), newDoc]};
-                                          saveStudentToCloud(updated);
-                                          refreshData();
-                                      }
-                                  });
-                              }}
-                              onDelete={(id) => {
-                                  const updated = {...selectedStudent, documents: selectedStudent.documents.filter(d=>d.id !== id)};
-                                  saveStudentToCloud(updated);
-                                  refreshData();
-                              }}
-                          />
-                      </div>
-                  </div>
-              );
-
+              if (!selectedStudent) return null;
+              return <FileManager 
+                        documents={selectedStudent.documents} 
+                        onUpload={handleStudentUpload}
+                        onDelete={async (id) => {
+                            if(!selectedStudent) return;
+                            const updated = {...selectedStudent, documents: selectedStudent.documents.filter(d => d.id !== id)};
+                            await saveStudentToCloud(updated);
+                            setSelectedStudent(updated);
+                        }}
+                     />;
+          case 'upload-rapor':
+              if (!selectedStudent) return null;
+              return <UploadRaporView student={selectedStudent} onUpdate={refreshData} />;
+              
           default:
-              return <Dashboard notifications={notifications} userRole={userRole} students={studentsData} />;
+              return <Dashboard students={studentsData} userRole={userRole} />;
       }
   };
 
-  if (!isAuthenticated) {
+  if (isLoading) {
       return (
-          <>
-            {isLoading ? (
-                <div className="min-h-screen flex items-center justify-center flex-col bg-gray-50">
-                    <Loader2 className="w-10 h-10 animate-spin text-blue-600 mb-4" />
-                    <p className="text-gray-500 font-medium">Memuat Aplikasi...</p>
-                </div>
-            ) : (
-                <Login onLogin={handleLogin} students={studentsData} />
-            )}
-          </>
+          <div className="flex items-center justify-center h-screen bg-gray-50 flex-col">
+              <Loader2 className="w-10 h-10 animate-spin text-blue-600 mb-4" />
+              <p className="text-gray-600 font-medium animate-pulse">Memuat Data Sistem...</p>
+          </div>
       );
   }
 
+  if (!isAuthenticated) {
+      return <Login onLogin={handleLogin} students={studentsData} />;
+  }
+
   return (
-    <div className="flex h-screen bg-gray-100 overflow-hidden font-sans text-gray-900">
-      
-      {/* Mobile Sidebar Overlay */}
-      {isMobileMenuOpen && (
-          <div className="fixed inset-0 bg-black/50 z-20 md:hidden" onClick={() => setIsMobileMenuOpen(false)}></div>
-      )}
+    <div className="flex h-screen bg-gray-100 font-sans overflow-hidden">
+        {/* Sidebar */}
+        <div className={`fixed inset-y-0 left-0 transform ${isSidebarCollapsed ? '-translate-x-full' : 'translate-x-0'} md:relative md:translate-x-0 transition duration-200 ease-in-out z-30 md:block md:w-64 flex-shrink-0 bg-gray-900 m-0 md:m-4 rounded-none md:rounded-2xl shadow-xl`}>
+             <Sidebar 
+                currentView={currentView} 
+                setView={setCurrentView} 
+                onLogout={handleLogout} 
+                isCollapsed={false} 
+                toggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                userRole={userRole}
+             />
+        </div>
 
-      {/* Sidebar */}
-      <div className={`fixed md:static inset-y-0 left-0 z-30 transition-transform duration-300 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 md:p-4 h-full`}>
-          <Sidebar 
-            currentView={currentView} 
-            setView={(view) => { setCurrentView(view); setIsMobileMenuOpen(false); }} 
-            onLogout={handleLogout} 
-            isCollapsed={isSidebarCollapsed}
-            toggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            userRole={userRole}
-          />
-      </div>
+        {/* Mobile Overlay */}
+        {isSidebarCollapsed && (
+            <div className="fixed inset-0 bg-black/50 z-20 md:hidden" onClick={() => setIsSidebarCollapsed(false)}></div>
+        )}
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-        
-        {/* Header */}
-        <header className="h-16 bg-white/80 backdrop-blur-md border-b border-gray-200 flex items-center justify-between px-4 md:px-6 shadow-sm z-10">
-            <div className="flex items-center gap-3">
-                <button className="md:hidden p-2 text-gray-600 hover:bg-gray-100 rounded-lg" onClick={() => setIsMobileMenuOpen(true)}>
-                    <Menu className="w-6 h-6" />
-                </button>
-                <div className="hidden md:flex flex-col">
-                    <h1 className="text-lg font-bold text-gray-800 leading-tight">
-                        {currentView === 'dashboard' ? 'Dashboard' : 
-                         currentView === 'database' ? 'Database Dapodik' : 
-                         currentView === 'grades' ? 'Nilai Akademik' :
-                         currentView === 'settings' ? 'Pengaturan' : 'Menu Utama'}
-                    </h1>
-                    <span className="text-[10px] text-gray-500 font-medium">Tahun Ajaran {activeAcademicYear}</span>
-                </div>
-            </div>
-
-            <div className="flex items-center gap-3 md:gap-6">
-                {/* Cloud Status */}
-                <div className="hidden md:flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-full border border-gray-200" title={isCloudConnected ? "Terhubung ke Cloud" : "Mode Offline / Mock"}>
-                    {isCloudConnected ? <Cloud className="w-4 h-4 text-green-500" /> : <CloudOff className="w-4 h-4 text-red-500" />}
-                    <span className="text-xs font-bold text-gray-600">{isCloudConnected ? 'Online' : 'Offline'}</span>
-                </div>
-
-                <div className="h-6 w-px bg-gray-300 hidden md:block"></div>
-
-                {/* Profile Dropdown */}
-                <div className="relative">
-                    <button 
-                        onClick={() => setIsProfileOpen(!isProfileOpen)}
-                        className="flex items-center gap-3 hover:bg-gray-100 p-1.5 rounded-lg transition-colors"
-                    >
-                        <div className="text-right hidden md:block">
-                            <p className="text-sm font-bold text-gray-800 leading-none">{currentUser?.name}</p>
-                            <p className="text-[10px] text-gray-500 font-medium">{currentUser?.role}</p>
-                        </div>
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 text-white flex items-center justify-center font-bold text-sm shadow-md">
-                            {currentUser?.name.charAt(0)}
-                        </div>
-                        <ChevronDown className="w-4 h-4 text-gray-400" />
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+            {/* Header */}
+            <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 h-16 flex items-center justify-between px-6 z-20">
+                <div className="flex items-center gap-4">
+                    <button className="md:hidden p-2 rounded-lg hover:bg-gray-100 text-gray-600" onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}>
+                        <Menu className="w-6 h-6" />
                     </button>
-
-                    {isProfileOpen && (
-                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-gray-100 py-1 animate-fade-in z-50">
-                            <div className="px-4 py-3 border-b border-gray-100 md:hidden">
-                                <p className="text-sm font-bold text-gray-800">{currentUser?.name}</p>
-                                <p className="text-xs text-gray-500">{currentUser?.role}</p>
-                            </div>
-                            <button onClick={() => { refreshData(); setIsProfileOpen(false); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
-                                <RefreshCw className="w-4 h-4" /> Refresh Data
-                            </button>
-                            <button onClick={handleLogout} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2">
-                                <LogOut className="w-4 h-4" /> Keluar
-                            </button>
-                        </div>
-                    )}
+                    <h1 className="text-lg font-bold text-gray-800 capitalize hidden sm:block">
+                        {currentView.replace(/-/g, ' ')}
+                    </h1>
                 </div>
-            </div>
-        </header>
+                
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-full text-xs font-bold border border-blue-100 cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => setIsProfileOpen(!isProfileOpen)}>
+                        <User className="w-3 h-3" />
+                        {currentUser?.name || 'User'} ({currentUser?.role})
+                        <ChevronDown className="w-3 h-3" />
+                    </div>
+                </div>
+            </header>
 
-        {/* Content */}
-        <main className="flex-1 overflow-hidden p-4 md:p-6 bg-gray-100 relative">
-            {renderContent()}
-        </main>
-
-      </div>
+            {/* View Content */}
+            <main className="flex-1 overflow-hidden p-4 md:p-6 relative">
+                {renderContent()}
+            </main>
+        </div>
     </div>
   );
 };
