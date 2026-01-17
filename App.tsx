@@ -10,6 +10,7 @@ import BukuIndukView from './components/BukuIndukView';
 import GradesView from './components/GradesView';
 import RecapView from './components/RecapView';
 import IjazahView from './components/IjazahView';
+import SKLView from './components/SKLView'; // Import SKLView
 import FileManager from './components/FileManager';
 import SettingsView from './components/SettingsView';
 import UploadRaporView from './components/UploadRaporView';
@@ -369,6 +370,12 @@ const App: React.FC = () => {
                      />;
           case 'recap':
               return <RecapView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
+          case 'skl': // NEW SKL ROUTE
+              return <SKLView 
+                        students={studentsData} 
+                        userRole={userRole} 
+                        loggedInStudent={selectedStudent || undefined} 
+                     />;
           case 'data-ijazah':
               return <IjazahView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
           case 'ijazah-verification':

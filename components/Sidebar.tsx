@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, FileText, Settings, LogOut, GraduationCap, Database, ClipboardCheck, PanelLeftClose, PanelLeft, UserCircle, History, Book, ClipboardList, FolderOpen, Upload, FileCheck2, Calculator, Award, FileInput, LayoutTemplate, ScrollText } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Settings, LogOut, GraduationCap, Database, ClipboardCheck, PanelLeftClose, PanelLeft, UserCircle, History, Book, ClipboardList, FolderOpen, Upload, FileCheck2, Calculator, Award, FileInput, LayoutTemplate, ScrollText, FileBadge } from 'lucide-react';
 
 interface SidebarProps {
   currentView: string;
@@ -21,6 +21,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, onLogout, isCol
     { id: 'buku-induk', label: 'Buku Induk', icon: Book, visible: true },
     { id: 'grades', label: 'Nilai Siswa', icon: ClipboardList, visible: true },
     { id: 'recap', label: 'Rekap 5 Semester', icon: Calculator, visible: true },
+    
+    // NEW: SKL Menu
+    { id: 'skl', label: 'SKL', icon: FileBadge, visible: true },
+    
     // Consolidated Ijazah Menu
     { id: 'data-ijazah', label: 'Manajemen Ijazah', icon: Award, visible: true },
     
@@ -40,6 +44,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, onLogout, isCol
       { id: 'upload-rapor', label: 'Upload Rapor', icon: Upload, visible: true },
       { id: 'grades', label: 'Nilai Saya', icon: ClipboardList, visible: true }, 
       { id: 'recap', label: 'Rekap 5 Semester', icon: Calculator, visible: true },
+      { id: 'skl', label: 'SKL', icon: FileBadge, visible: true }, // Student can verify SKL too
       { id: 'data-ijazah', label: 'Ijazah & Transkrip', icon: Award, visible: true },
       { id: 'history', label: 'Riwayat', icon: History, visible: true },
       { id: 'monitoring', label: 'Monitoring', icon: LayoutTemplate, visible: true }, 

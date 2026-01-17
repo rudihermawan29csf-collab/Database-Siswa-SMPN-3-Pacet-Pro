@@ -5,7 +5,8 @@ const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyLeUDR_iMNcb
 
 // Helper for fetch with timeout
 const fetchWithTimeout = async (resource: string, options: RequestInit = {}) => {
-  const { timeout = 8000 } = options as any; // Default 8s timeout for general requests
+  // Increased default timeout to 15s because Google Apps Script can be slow (cold start)
+  const { timeout = 15000 } = options as any; 
   
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
@@ -17,8 +18,12 @@ const fetchWithTimeout = async (resource: string, options: RequestInit = {}) => 
     });
     clearTimeout(id);
     return response;
-  } catch (error) {
+  } catch (error: any) {
     clearTimeout(id);
+    // Handle AbortError specifically to give a clearer message
+    if (error.name === 'AbortError') {
+        throw new Error(`Request timed out after ${timeout}ms`);
+    }
     throw error;
   }
 }
