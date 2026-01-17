@@ -122,6 +122,14 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
       return count > 0 ? Number((totalAvg / count).toFixed(2)) : 0;
   };
 
+  // Helper: Format Date
+  const formatDateIndo = (dateStr: string) => {
+      if(!dateStr) return '-';
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return dateStr; 
+      return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+  };
+
   // --- HANDLERS ---
   const handleViewDocument = (s: Student, type: 'CERTIFICATE' | 'TRANSCRIPT') => {
       setSelectedStudent(s);
@@ -233,6 +241,11 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
   const InteractiveField = ({ label, value, fieldKey, className = "" }: any) => {
       const pendingReq = selectedStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING');
       const canEdit = userRole === 'STUDENT';
+      
+      let displayValue = pendingReq ? pendingReq.proposedValue : value;
+      if (fieldKey === 'birthDate') {
+          displayValue = formatDateIndo(displayValue);
+      }
 
       return (
           <div 
@@ -241,7 +254,7 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
             title={canEdit ? "Klik untuk koreksi data" : ""}
           >
               <span className={`font-bold ${pendingReq ? 'bg-yellow-100 text-yellow-800 px-1 rounded' : ''} transition-colors group-hover:text-blue-600`}>
-                  {pendingReq ? pendingReq.proposedValue : value}
+                  {displayValue}
               </span>
               {pendingReq && <span className="absolute -top-3 -right-3 text-[8px] bg-yellow-400 text-yellow-900 px-1 rounded shadow animate-pulse">Revisi</span>}
               {canEdit && !pendingReq && <Pencil className="w-3 h-3 absolute -right-4 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-blue-500" />}
@@ -402,7 +415,7 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                                                 <div className="font-bold text-gray-800">{student.fullName}</div>
                                                 <div className="text-xs text-gray-500 flex gap-2">
                                                     <span>{student.nisn}</span> • 
-                                                    <span>{student.birthPlace}, {student.birthDate}</span>
+                                                    <span>{student.birthPlace}, {formatDateIndo(student.birthDate)}</span>
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">

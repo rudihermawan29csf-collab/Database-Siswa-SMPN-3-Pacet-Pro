@@ -37,6 +37,15 @@ const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
     return url;
 };
 
+const formatDateIndo = (dateStr: string) => {
+    if (!dateStr) return '-';
+    try {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return dateStr;
+        return new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
+    } catch { return dateStr; }
+};
+
 const PDFPageCanvas: React.FC<{ pdf: any; pageNum: number; scale: number }> = ({ pdf, pageNum, scale }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -80,7 +89,7 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
 
   const [activeDocType, setActiveDocType] = useState<string>('IJAZAH');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedClassFilter, setSelectedClassFilter] = useState<string>(''); 
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('ALL'); 
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [zoomLevel, setZoomLevel] = useState<number>(1.0); 
   const [layoutMode, setLayoutMode] = useState<'split' | 'full-doc'>('split');
@@ -101,10 +110,10 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
 
   // ... (Effects and Helper functions for sorting/filtering/PDF loading remain the same) ...
   const uniqueClasses = useMemo(() => Array.from(new Set(students.map(s => s.className))).sort(), [students]);
-  useEffect(() => { if (!selectedClassFilter && uniqueClasses.length > 0) setSelectedClassFilter(uniqueClasses[0]); }, [uniqueClasses]);
+  useEffect(() => { if (selectedClassFilter === 'ALL' && uniqueClasses.length > 0) setSelectedClassFilter(uniqueClasses[0]); }, [uniqueClasses]);
   const filteredStudents = useMemo(() => {
       let filtered = students;
-      if (selectedClassFilter) filtered = filtered.filter(s => s.className === selectedClassFilter);
+      if (selectedClassFilter !== 'ALL') filtered = filtered.filter(s => s.className === selectedClassFilter);
       if (searchTerm) filtered = filtered.filter(s => s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || s.nisn.includes(searchTerm));
       return filtered.sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [students, searchTerm, selectedClassFilter]);
@@ -288,19 +297,22 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
   const FormField = ({ label, value, fieldKey }: { label: string, value: string | undefined, fieldKey?: string }) => {
       const pendingReq = fieldKey ? currentStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING') : null;
       const displayValue = isEditingData && editFormData && fieldKey ? getNestedValue(editFormData, fieldKey) : value;
+      const isDate = fieldKey === 'birthDate';
+      
+      const formattedValue = isDate && !isEditingData ? formatDateIndo(value || '') : value;
 
       return (
         <div className="flex flex-col border-b border-gray-100 py-2">
             <span className="text-[10px] uppercase font-bold text-gray-400">{label}</span>
             <div className="flex items-center gap-2 w-full">
                 {isEditingData && fieldKey ? (
-                    <input type="text" className="w-full text-sm font-bold bg-blue-50 border-b border-blue-300 outline-none text-blue-900 px-1" value={displayValue || ''} onChange={(e) => handleInputChange(fieldKey, e.target.value)} />
+                    <input type={isDate ? "date" : "text"} className="w-full text-sm font-bold bg-blue-50 border-b border-blue-300 outline-none text-blue-900 px-1" value={displayValue || ''} onChange={(e) => handleInputChange(fieldKey, e.target.value)} />
                 ) : (
-                    <span className={`text-sm font-semibold ${pendingReq ? 'line-through text-gray-400' : 'text-gray-800'}`}>{value || '-'}</span>
+                    <span className={`text-sm font-semibold ${pendingReq ? 'line-through text-gray-400' : 'text-gray-800'}`}>{formattedValue || '-'}</span>
                 )}
                 {pendingReq && !isEditingData && (
                     <div className="flex items-center gap-1 bg-yellow-100 px-2 py-0.5 rounded border border-yellow-300 cursor-pointer animate-pulse ml-auto" onClick={() => handleAdminVerifyClick(pendingReq)} title="Klik untuk verifikasi">
-                        <span className="text-xs font-bold text-yellow-800">{pendingReq.proposedValue}</span>
+                        <span className="text-xs font-bold text-yellow-800">{isDate ? formatDateIndo(pendingReq.proposedValue) : pendingReq.proposedValue}</span>
                         <AlertCircle className="w-3 h-3 text-yellow-700" />
                     </div>
                 )}
@@ -346,7 +358,7 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
         <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col xl:flex-row justify-between items-center gap-4 mb-4">
             {/* ... (Keep existing toolbar logic) ... */}
             <div className="flex gap-2 w-full xl:w-auto">
-                <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200"><Filter className="w-4 h-4 text-gray-500" /><select className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-24 md:w-auto" value={selectedClassFilter} onChange={(e) => setSelectedClassFilter(e.target.value)}>{uniqueClasses.map(c => <option key={c} value={c}>Kelas {c}</option>)}</select></div>
+                <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200"><Filter className="w-4 h-4 text-gray-500" /><select className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-24 md:w-auto" value={selectedClassFilter} onChange={(e) => setSelectedClassFilter(e.target.value)}><option value="ALL">Semua Kelas</option>{uniqueClasses.map(c => <option key={c} value={c}>Kelas {c}</option>)}</select></div>
                 <div className="relative flex-1 md:w-64"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" /><input type="text" placeholder="Cari Siswa..." className="w-full pl-9 pr-4 py-2 bg-gray-50 rounded-lg text-sm border border-gray-200 focus:bg-white transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
                 <select className="pl-3 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-bold text-gray-700 w-full md:w-auto" value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>{filteredStudents.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}</select>
             </div>
@@ -391,7 +403,7 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
                                 <FormField label="NISN" value={currentStudent.nisn} fieldKey="nisn" />
                                 <FormField label="NIS" value={currentStudent.nis} fieldKey="nis" />
                                 <FormField label="Tempat Lahir" value={currentStudent.birthPlace} fieldKey="birthPlace" />
-                                <FormField label="Tanggal Lahir" value={currentStudent.birthDate} fieldKey="birthDate" />
+                                <FormField label="Tanggal Lahir" value={formatDateIndo(currentStudent.birthDate)} fieldKey="birthDate" />
                                 <FormField label="Nama Ayah" value={currentStudent.father.name} fieldKey="father.name" />
                                 <FormField label="Nama Ibu" value={currentStudent.mother.name} fieldKey="mother.name" />
                                 <FormField label="NIK Siswa" value={currentStudent.dapodik.nik} fieldKey="dapodik.nik" />

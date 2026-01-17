@@ -15,6 +15,15 @@ interface StudentDetailProps {
   currentUser?: { name: string; role: string };
 }
 
+const formatDateIndo = (dateStr: string) => {
+    if (!dateStr) return '-';
+    try {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return dateStr;
+        return new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
+    } catch { return dateStr; }
+};
+
 const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode, readOnly = false, highlightFieldKey, onUpdate, onSave, currentUser }) => {
   // Correction State
   const [correctionModalOpen, setCorrectionModalOpen] = useState(false);
@@ -255,7 +264,11 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                   <div className="space-y-3">
                       <div>
                           <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Data Baru</label>
-                          <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={proposedValue} onChange={(e) => setProposedValue(e.target.value)} autoFocus />
+                          {targetField?.key === 'birthDate' ? (
+                              <input type="date" className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={proposedValue} onChange={(e) => setProposedValue(e.target.value)} autoFocus />
+                          ) : (
+                              <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={proposedValue} onChange={(e) => setProposedValue(e.target.value)} autoFocus />
+                          )}
                       </div>
                       <div>
                           <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Alasan Perubahan</label>
@@ -357,7 +370,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                         <FormField label="7. NIK" value={student.dapodik.nik} fieldKey="dapodik.nik" />
                         <FormField label="NPSN Sekolah Asal" value={student.previousSchool ? "20502873" : "-"} />
                         <FormField label="Nama Sekolah Asal" value={student.previousSchool} fieldKey="previousSchool" />
-                        <FormField label="8. Tempat, Tgl Lahir" value={`${student.birthPlace}, ${student.birthDate}`} fieldKey="birthPlace" />
+                        <FormField label="8. Tempat, Tgl Lahir" value={`${student.birthPlace}, ${formatDateIndo(student.birthDate)}`} fieldKey="birthPlace" />
                         <FormField label="9. Agama" value={student.religion} fieldKey="religion" />
                         <FormField label="10. Berkebutuhan Khusus" value={student.dapodik.specialNeeds} fieldKey="dapodik.specialNeeds" />
                         <FormField label="11. Alamat Tempat Tinggal" value={student.address} fieldKey="address" />

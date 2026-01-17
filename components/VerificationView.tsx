@@ -55,6 +55,15 @@ const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
     return url;
 };
 
+const formatDateIndo = (dateStr: string) => {
+    if (!dateStr) return '-';
+    try {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return dateStr;
+        return new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
+    } catch { return dateStr; }
+};
+
 const PDFPageCanvas: React.FC<{ pdf: any; pageNum: number; scale: number }> = ({ pdf, pageNum, scale }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -420,6 +429,10 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       // Check for pending correction request
       const pendingReq = fieldKey ? currentStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING') : null;
 
+      // Conditional formatting logic
+      const isDate = fieldKey === 'birthDate';
+      const formattedValue = isDate && !isEditingData ? formatDateIndo(value) : value;
+
       return (
         <div className={`flex border-b border-gray-300 min-h-[20px] ${className}`}>
             <div className={`${labelCol} px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center ${labelClassName}`}>
@@ -438,7 +451,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                         </select>
                     ) : (
                         <input 
-                            type="text" 
+                            type={isDate ? "date" : "text"} 
                             className="w-full h-full bg-blue-50 px-1 outline-none text-blue-800 font-bold focus:ring-1 focus:ring-blue-300"
                             value={displayValue || ''}
                             onChange={(e) => handleInputChange(fieldKey, e.target.value)}
@@ -446,14 +459,14 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                     )
                 ) : (
                     <>
-                        <span className={pendingReq ? 'line-through text-gray-400' : ''}>{value || '-'}</span>
+                        <span className={pendingReq ? 'line-through text-gray-400' : ''}>{formattedValue || '-'}</span>
                         {pendingReq && (
                             <div 
                                 className="ml-2 flex items-center gap-1 bg-yellow-100 px-2 py-0.5 rounded border border-yellow-300 cursor-pointer animate-pulse"
                                 onClick={() => handleAdminVerifyClick(pendingReq)}
                                 title="Klik untuk verifikasi data"
                             >
-                                <span className="font-bold text-yellow-800">{pendingReq.proposedValue}</span>
+                                <span className="font-bold text-yellow-800">{isDate ? formatDateIndo(pendingReq.proposedValue) : pendingReq.proposedValue}</span>
                                 <AlertCircle className="w-3 h-3 text-yellow-700" />
                             </div>
                         )}
@@ -747,7 +760,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
                         {/* REPLICATED BUKU INDUK LAYOUT */}
                         <div className="bg-white p-4 border border-gray-200 shadow-sm text-gray-800">
-                            {/* ... FORM FIELDS (IDENTITAS, AYAH, IBU, WALI, PERIODIK) - Full content as per original file ... */}
                             <div className="border-2 border-gray-800 p-1 mb-2 bg-gray-800 text-white text-center">
                                 <h1 className="text-sm font-black tracking-widest uppercase">FORMULIR PESERTA DIDIK</h1>
                             </div>
@@ -778,13 +790,9 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                                 <FormField label="5. No Seri SKHUN" value={currentStudent.dapodik.skhun} fieldKey="dapodik.skhun" />
                                 <FormField label="6. No. Ujian Nasional" value={currentStudent.dapodik.unExamNumber} fieldKey="dapodik.unExamNumber" />
                                 <FormField label="7. NIK" value={currentStudent.dapodik.nik} fieldKey="dapodik.nik" />
-                                {/* ... Rest of form fields ... */}
-                                <FormField label="8. Tempat, Tgl Lahir" value={`${currentStudent.birthPlace}, ${currentStudent.birthDate}`} fieldKey="birthPlace" />
+                                <FormField label="8. Tempat, Tgl Lahir" value={`${currentStudent.birthPlace}, ${formatDateIndo(currentStudent.birthDate)}`} fieldKey="birthPlace" />
                                 <FormField label="11. Alamat Tempat Tinggal" value={currentStudent.address} fieldKey="address" />
-                                {/* Simplified for brevity in diff, assume rest of fields are same as original VerificationView */}
                             </div>
-                            
-                            {/* ... Other Sections ... */}
                         </div>
                     </div>
                 </div>

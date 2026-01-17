@@ -225,6 +225,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                               <div><label className="text-xs font-bold text-gray-500 uppercase">Agama</label><input type="text" className="w-full p-2 border rounded" value={formData.religion} onChange={e => setFormData({...formData, religion: e.target.value})} /></div>
                               <div><label className="text-xs font-bold text-gray-500 uppercase">Kewarganegaraan</label><select className="w-full p-2 border rounded bg-white" value={formData.nationality} onChange={e => setFormData({...formData, nationality: e.target.value as any})}><option value="WNI">WNI</option><option value="WNA">WNA</option></select></div>
                               <div><label className="text-xs font-bold text-gray-500 uppercase">Berkebutuhan Khusus</label><input type="text" className="w-full p-2 border rounded" value={formData.dapodik.specialNeeds} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, specialNeeds: e.target.value}})} /></div>
+                              <div className="md:col-span-2"><label className="text-xs font-bold text-gray-500 uppercase">Sekolah Asal</label><input type="text" className="w-full p-2 border rounded" value={formData.previousSchool} onChange={e => setFormData({...formData, previousSchool: e.target.value})} /></div>
                           </div>
                       )}
 

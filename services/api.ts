@@ -7,24 +7,39 @@ const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxb8fmeWo7qN
 const normalizeStudentData = (rawData: any[]): Student[] => {
     if (!Array.isArray(rawData)) return [];
 
+    // Helper to clean date strings (remove ISO time part)
+    const cleanDate = (val: any) => {
+        if (!val) return '';
+        const str = String(val);
+        // If it looks like ISO (contains T), split it. e.g. 2010-08-11T17:00:00.000Z -> 2010-08-11
+        if (str.includes('T')) return str.split('T')[0];
+        return str;
+    };
+
     return rawData.map((originalRow: any) => {
         // Handle if rawData is array of arrays instead of objects (failsafe)
-        const row: Record<string, any> = {};
         if (Array.isArray(originalRow)) { return null as any; }
 
-        // Lowercase keys for fuzzy matching
+        // Create a normalized object with lowercase keys for fuzzy matching
+        const normalizedRow: Record<string, any> = {};
         Object.keys(originalRow).forEach(key => {
             if (key) {
-                const cleanKey = key.toString().replace(/\s+/g, ' ').trim().toLowerCase();
-                row[cleanKey] = originalRow[key];
-                row[cleanKey.replace(/[^a-z0-9]/g, '')] = originalRow[key];
+                const cleanKey = key.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+                normalizedRow[cleanKey] = originalRow[key];
+                normalizedRow[key] = originalRow[key]; // Keep original too
             }
         });
 
-        // Jika data dari JSON string (cara baru), langsung return
-        // Karena script GAS kita yang baru sudah mengembalikan object yang bersih
-        if (originalRow.id && originalRow.fullName) {
-             // Pastikan nested objects diparsing jika masih string (double safety)
+        // Helper to find value by multiple possible keys
+        const findVal = (...keys: string[]) => {
+            for (const k of keys) {
+                if (normalizedRow[k] !== undefined) return normalizedRow[k];
+            }
+            return '';
+        };
+
+        // If data is already in structured JSON format (from my own save)
+        if (originalRow.id && originalRow.fullName && originalRow.dapodik) {
              const parseIfString = (val: any, def: any) => {
                  if (typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))) {
                      try { return JSON.parse(val); } catch(e) { return def; }
@@ -32,7 +47,7 @@ const normalizeStudentData = (rawData: any[]): Student[] => {
                  return val || def;
              };
 
-             return {
+             const student = {
                  ...originalRow,
                  dapodik: parseIfString(originalRow.dapodik, {}),
                  father: parseIfString(originalRow.father, {}),
@@ -43,9 +58,109 @@ const normalizeStudentData = (rawData: any[]): Student[] => {
                  correctionRequests: parseIfString(originalRow.correctionRequests, []),
                  adminMessages: parseIfString(originalRow.adminMessages, [])
              } as Student;
+
+             // Ensure birthDate is clean even in existing JSON structure
+             student.birthDate = cleanDate(student.birthDate);
+             return student;
         }
-        
-        return null;
+
+        // Fallback: Map from flat Spreadsheet columns (if data comes from raw sheet import)
+        // Adjust these mappings based on common Indonesian column headers
+        return {
+            id: findVal('id', 'nipd', 'no') || Math.random().toString(36).substr(2, 9),
+            fullName: findVal('fullname', 'nama', 'namasiswa', 'namalengkap'),
+            nis: findVal('nis', 'nipd', 'noinduk'),
+            nisn: findVal('nisn'),
+            gender: findVal('gender', 'jk', 'jeniskelamin', 'lp') === 'P' ? 'P' : 'L',
+            
+            // Critical Fixes
+            birthPlace: findVal('birthplace', 'tempatlahir', 'tmplahir'),
+            birthDate: cleanDate(findVal('birthdate', 'tanggallahir', 'tgllahir')), // Applied cleanDate here
+            previousSchool: findVal('previousschool', 'sekolahasal', 'sklasal', 'asalsekolah'), // Fix for missing previous school
+            
+            religion: findVal('religion', 'agama'),
+            nationality: findVal('nationality', 'kewarganegaraan') || 'WNI',
+            address: findVal('address', 'alamat', 'alamatjalan'),
+            subDistrict: findVal('subdistrict', 'kecamatan'),
+            district: findVal('district', 'kabupaten', 'kota'),
+            postalCode: findVal('postalcode', 'kodepos'),
+            className: findVal('classname', 'kelas', 'rombel', 'rombelsaatini') || 'VII A',
+            
+            height: Number(findVal('height', 'tinggibadan', 'tb')) || 0,
+            weight: Number(findVal('weight', 'beratbadan', 'bb')) || 0,
+            bloodType: findVal('bloodtype', 'golongandarah', 'goldar') || '-',
+            siblingCount: Number(findVal('siblingcount', 'jmlsaudara', 'jumlahsaudara')) || 0,
+            childOrder: Number(findVal('childorder', 'anakke')) || 1,
+            
+            entryYear: new Date().getFullYear(),
+            status: 'AKTIF',
+            
+            father: {
+                name: findVal('fathername', 'namaayah'),
+                nik: findVal('fathernik', 'nikayah'),
+                birthPlaceDate: findVal('fatherttl', 'ttlayah', 'tahunlahirayah'),
+                education: findVal('fathereducation', 'pendidikanayah'),
+                job: findVal('fatherjob', 'pekerjaanayah'),
+                income: findVal('fatherincome', 'penghasilanayah'),
+                phone: findVal('fatherphone', 'nohpayah', 'telepon', 'hp')
+            },
+            mother: {
+                name: findVal('mothername', 'namaibu'),
+                nik: findVal('mothernik', 'nikibu'),
+                birthPlaceDate: findVal('motherttl', 'ttlibu', 'tahunlahiribu'),
+                education: findVal('mothereducation', 'pendidikanibu'),
+                job: findVal('motherjob', 'pekerjaanibu'),
+                income: findVal('motherincome', 'penghasilanibu'),
+                phone: findVal('motherphone', 'nohpibu')
+            },
+            guardian: {
+                name: findVal('guardianname', 'namawali'),
+                nik: findVal('guardiannik', 'nikwali'),
+                birthPlaceDate: findVal('guardianttl', 'ttlwali'),
+                education: findVal('guardianeducation', 'pendidikanwali'),
+                job: findVal('guardianjob', 'pekerjaanwali'),
+                income: findVal('guardianincome', 'penghasilanwali'),
+                phone: findVal('guardianphone', 'nohpwali')
+            },
+            
+            dapodik: {
+                nik: findVal('nik', 'niksiswa'),
+                noKK: findVal('nokk'),
+                rt: findVal('rt'),
+                rw: findVal('rw'),
+                dusun: findVal('dusun'),
+                kelurahan: findVal('kelurahan', 'desa'),
+                kecamatan: findVal('kecamatan'),
+                kodePos: findVal('kodepos'),
+                livingStatus: findVal('livingstatus', 'jenistinggal'),
+                transportation: findVal('transportation', 'alattransportasi'),
+                email: findVal('email'),
+                skhun: findVal('skhun', 'noskhun'),
+                kpsReceiver: findVal('kpsreceiver', 'penerimakps'),
+                kpsNumber: findVal('kpsnumber', 'nokps'),
+                kipReceiver: findVal('kipreceiver', 'penerimakip'),
+                kipNumber: findVal('kipnumber', 'nomorkip'),
+                kipName: findVal('kipname', 'namadikip'),
+                kksNumber: findVal('kksnumber', 'nomorkks'),
+                birthRegNumber: findVal('birthregnumber', 'noregistrasiakta', 'noakta'),
+                bank: findVal('bank'),
+                bankAccount: findVal('bankaccount', 'norek'),
+                bankAccountName: findVal('bankaccountname', 'rekatasnama'),
+                pipEligible: findVal('pipeligible', 'layakpip'),
+                pipReason: findVal('pipreason', 'alasanlayakpip'),
+                specialNeeds: findVal('specialneeds', 'kebutuhankhusus'),
+                latitude: findVal('latitude', 'lintang'),
+                longitude: findVal('longitude', 'bujur'),
+                headCircumference: Number(findVal('headcircumference', 'lingkarkepala')) || 0,
+                distanceToSchool: findVal('distancetoschool', 'jarakkesekolah'),
+                unExamNumber: findVal('unexamnumber', 'nopesertaun'),
+                travelTimeMinutes: Number(findVal('traveltimeminutes', 'waktutempuh')) || 0
+            },
+            documents: [],
+            academicRecords: {},
+            correctionRequests: [],
+            adminMessages: []
+        } as Student;
     }).filter(s => s !== null);
 };
 
