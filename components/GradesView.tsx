@@ -580,6 +580,9 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
               row['Sakit'] = '';
               row['Ijin'] = '';
               row['Alpha'] = '';
+              if ([2,4,6].includes(dbSemester)) {
+                  row['Ket. Naik Kelas'] = ''; // NAIK/TINGGAL/LULUS
+              }
               
               return row;
           });
@@ -588,6 +591,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
               const dummyRow: any = { 'No': 1, 'Nama Siswa': 'Contoh Siswa', 'NISN': '1234567890', 'Kelas': 'VII A' };
               SUBJECT_MAP.forEach(sub => dummyRow[sub.label] = '');
               dummyRow['Ekstrakurikuler'] = ''; dummyRow['Sakit'] = ''; dummyRow['Ijin'] = ''; dummyRow['Alpha'] = '';
+              if ([2,4,6].includes(dbSemester)) dummyRow['Ket. Naik Kelas'] = '';
               templateData.push(dummyRow);
           }
 
@@ -604,7 +608,128 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       }
   };
 
-  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => { /* ...existing logic... */ };
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      // @ts-ignore
+      const xlsx = window.XLSX;
+      if (!xlsx) { alert("Library Excel belum siap."); return; }
+
+      setIsImporting(true);
+      const reader = new FileReader();
+
+      reader.onload = async (evt) => {
+          try {
+              const bstr = evt.target?.result;
+              const wb = xlsx.read(bstr, { type: 'binary' });
+              const wsname = wb.SheetNames[0];
+              const ws = wb.Sheets[wsname];
+              const data = xlsx.utils.sheet_to_json(ws);
+
+              let updatedCount = 0;
+              let errorCount = 0;
+
+              // We'll update the local state first, then save
+              // Deep clone current students to modify
+              // Fix: Explicitly type the Map to avoid 'unknown' type inference issues
+              const updatedStudentsMap = new Map<string, Student>();
+              students.forEach(s => updatedStudentsMap.set(s.id, { ...s }));
+
+              for (const row of data as any[]) {
+                  // Find Student by NISN (Preferred) or Name
+                  const nisn = row['NISN'] ? String(row['NISN']).trim() : '';
+                  const name = row['Nama Siswa'] ? String(row['Nama Siswa']).trim().toLowerCase() : '';
+                  
+                  const targetStudent = students.find(s => 
+                      (nisn && s.nisn === nisn) || 
+                      (name && s.fullName.toLowerCase() === name)
+                  );
+
+                  if (targetStudent) {
+                      const studentToUpdate = updatedStudentsMap.get(targetStudent.id)!;
+                      
+                      // Ensure Record Exists
+                      if (!studentToUpdate.academicRecords) studentToUpdate.academicRecords = {};
+                      if (!studentToUpdate.academicRecords[dbSemester]) {
+                          const level = (dbSemester <= 2) ? 'VII' : (dbSemester <= 4) ? 'VIII' : 'IX';
+                          studentToUpdate.academicRecords[dbSemester] = { 
+                              semester: dbSemester, classLevel: level, className: studentToUpdate.className, phase: 'D', year: '2024', 
+                              subjects: [], p5Projects: [], extracurriculars: [], teacherNote: '', attendance: {sick:0, permitted:0, noReason:0}
+                          };
+                      }
+                      
+                      const record = studentToUpdate.academicRecords[dbSemester];
+
+                      // Update Subjects
+                      SUBJECT_MAP.forEach((mapItem, idx) => {
+                          const scoreVal = row[mapItem.label];
+                          if (scoreVal !== undefined) {
+                              const score = Number(scoreVal) || 0;
+                              const competency = getCompetencyDescription(score, mapItem.full);
+                              
+                              let subj = record.subjects.find(sub => 
+                                  sub.subject === mapItem.full || 
+                                  sub.subject.startsWith(mapItem.key) || 
+                                  (mapItem.key === 'PAI' && sub.subject.includes('Agama'))
+                              );
+
+                              if (subj) {
+                                  subj.score = score;
+                                  subj.competency = competency;
+                              } else {
+                                  record.subjects.push({
+                                      no: record.subjects.length + 1,
+                                      subject: mapItem.full,
+                                      score: score,
+                                      competency: competency
+                                  });
+                              }
+                          }
+                      });
+
+                      // Update Attendance
+                      if (row['Sakit'] !== undefined) record.attendance.sick = Number(row['Sakit']) || 0;
+                      if (row['Ijin'] !== undefined) record.attendance.permitted = Number(row['Ijin']) || 0;
+                      if (row['Alpha'] !== undefined) record.attendance.noReason = Number(row['Alpha']) || 0;
+
+                      // Update Extras
+                      if (row['Ekstrakurikuler']) {
+                          record.extracurriculars = [{ name: String(row['Ekstrakurikuler']), score: 'Baik' }];
+                      }
+
+                      // Update Promotion
+                      if (row['Ket. Naik Kelas']) {
+                          record.promotionStatus = String(row['Ket. Naik Kelas']).toUpperCase();
+                      }
+
+                      // SAVE INDIVIDUALLY TO API (To keep persistence)
+                      // Ideally we'd use a bulk update, but for now we iterate
+                      try {
+                          await api.updateStudent(studentToUpdate);
+                          updatedCount++;
+                      } catch (e) {
+                          console.error(`Failed to update ${studentToUpdate.fullName}`, e);
+                          errorCount++;
+                      }
+                  }
+              }
+
+              alert(`Import Selesai.\nBerhasil: ${updatedCount} siswa.\nGagal: ${errorCount} siswa.`);
+              if (onUpdate) onUpdate();
+
+          } catch (err) {
+              console.error(err);
+              alert("Gagal membaca file Excel. Pastikan format sesuai template.");
+          } finally {
+              setIsImporting(false);
+              if (fileInputRef.current) fileInputRef.current.value = '';
+          }
+      };
+
+      reader.readAsBinaryString(file);
+  };
+
   const handleViewReport = (s: Student) => { setSelectedStudent(s); setViewMode('REPORT'); };
   
   const handleDownloadPDF = () => {

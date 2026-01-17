@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Search, Plus, Pencil, Trash2, Save, X, Loader2, Download, UploadCloud, RotateCcw, User, MapPin, Users, Heart, Wallet } from 'lucide-react';
+import { Search, Plus, Pencil, Trash2, Save, X, Loader2, Download, UploadCloud, RotateCcw, User, MapPin, Users, Heart, Wallet, Filter, CheckSquare, Square, FileSpreadsheet } from 'lucide-react';
 import { Student } from '../types';
 import { api } from '../services/api';
 
@@ -12,10 +12,15 @@ const CLASS_OPTIONS = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 
 
 const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [classFilter, setClassFilter] = useState('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('PROFILE');
+  
+  // Selection State
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Initial Empty Student for Form
@@ -58,14 +63,37 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
 
   const [formData, setFormData] = useState<Student>(initialFormState);
 
+  const uniqueClasses = useMemo(() => {
+      const classes = Array.from(new Set(students.map(s => s.className))).sort();
+      return ['ALL', ...classes];
+  }, [students]);
+
   // Filter Logic
   const filteredStudents = useMemo(() => {
-      return students.filter(s => 
-          s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          s.nisn.includes(searchTerm) ||
-          s.nis.includes(searchTerm)
-      );
-  }, [students, searchTerm]);
+      return students.filter(s => {
+          const matchSearch = s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                              s.nisn.includes(searchTerm) ||
+                              s.nis.includes(searchTerm);
+          const matchClass = classFilter === 'ALL' || s.className === classFilter;
+          return matchSearch && matchClass;
+      });
+  }, [students, searchTerm, classFilter]);
+
+  // --- SELECTION HANDLERS ---
+  const toggleSelection = (id: string) => {
+      const newSet = new Set(selectedIds);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      setSelectedIds(newSet);
+  };
+
+  const toggleSelectAll = () => {
+      if (selectedIds.size === filteredStudents.length && filteredStudents.length > 0) {
+          setSelectedIds(new Set());
+      } else {
+          setSelectedIds(new Set(filteredStudents.map(s => s.id)));
+      }
+  };
 
   const handleEdit = (student: Student) => {
       setFormData(JSON.parse(JSON.stringify(student))); // Deep copy
@@ -74,30 +102,20 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
       setIsModalOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-      if (window.confirm("Yakin ingin menghapus data siswa ini?")) {
-          const newStudents = students.filter(s => s.id !== id);
+  const handleDelete = async (ids: string[]) => {
+      if (window.confirm(`Yakin ingin menghapus ${ids.length} data siswa?`)) {
+          const newStudents = students.filter(s => !ids.includes(s.id));
           onUpdateStudents(newStudents);
-          await api.syncInitialData(newStudents); 
-      }
-  };
-
-  const handleResetData = async () => {
-      if (window.confirm("PERINGATAN: Apakah anda yakin menghapus SEMUA data siswa? Data yang dihapus tidak dapat dikembalikan.")) {
-          if (window.confirm("Konfirmasi kedua: Yakin hapus semua data?")) {
-              onUpdateStudents([]);
-              await api.syncInitialData([]);
-          }
+          await api.syncInitialData(newStudents);
+          setSelectedIds(new Set());
       }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       setIsLoading(true);
-      
       try {
           let updatedStudents = [...students];
-          
           if (isEditing) {
               updatedStudents = updatedStudents.map(s => s.id === formData.id ? formData : s);
               await api.updateStudent(formData);
@@ -106,7 +124,6 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
               updatedStudents.push(newStudent);
               await api.updateStudent(newStudent); 
           }
-          
           onUpdateStudents(updatedStudents);
           setIsModalOpen(false);
           setFormData(initialFormState);
@@ -125,18 +142,151 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
       setIsModalOpen(true);
   };
 
-  const handleDownloadTemplate = () => {
+  // --- EXCEL EXPORT (FULL DATA) ---
+  const handleDownloadExcel = () => {
       try {
           // @ts-ignore
           const xlsx = window.XLSX;
           if (!xlsx) { alert("Library Excel belum siap."); return; }
-          // ... (Existing download logic) ...
-          alert("Template downloaded (mock)");
+
+          const dataToExport = filteredStudents.map((s, index) => ({
+              'No': index + 1,
+              'Nama Lengkap': s.fullName,
+              'NIS': s.nis,
+              'NISN': s.nisn,
+              'Kelas': s.className,
+              'L/P': s.gender,
+              'Tempat Lahir': s.birthPlace,
+              'Tanggal Lahir': s.birthDate,
+              'Agama': s.religion,
+              'Alamat': s.address,
+              'Dusun': s.dapodik.dusun,
+              'Kelurahan': s.dapodik.kelurahan,
+              'Kecamatan': s.subDistrict,
+              'Kabupaten': s.district,
+              'Kode Pos': s.postalCode,
+              'NIK Siswa': s.dapodik.nik,
+              'No KK': s.dapodik.noKK,
+              'Nama Ayah': s.father.name,
+              'NIK Ayah': s.father.nik,
+              'Pekerjaan Ayah': s.father.job,
+              'Nama Ibu': s.mother.name,
+              'NIK Ibu': s.mother.nik,
+              'Pekerjaan Ibu': s.mother.job,
+              'Nama Wali': s.guardian?.name || '',
+              'No HP Ortu': s.father.phone || s.mother.phone,
+              'Sekolah Asal': s.previousSchool,
+              'Penerima KIP': s.dapodik.kipReceiver,
+              'No KIP': s.dapodik.kipNumber,
+              'Penerima PIP': s.dapodik.pipEligible,
+              'Bank': s.dapodik.bank,
+              'No Rekening': s.dapodik.bankAccount,
+              'Atas Nama Rekening': s.dapodik.bankAccountName,
+              'Status': s.status
+          }));
+
+          const ws = xlsx.utils.json_to_sheet(dataToExport);
+          const wb = xlsx.utils.book_new();
+          xlsx.utils.book_append_sheet(wb, ws, "Database Siswa");
+          xlsx.writeFile(wb, `Database_Siswa_Lengkap_${classFilter}.xlsx`);
       } catch (e) { console.error(e); }
   };
 
-  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
-      // ... (Existing import logic) ...
+  // --- EXCEL IMPORT (APPEND) ---
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      // @ts-ignore
+      const xlsx = window.XLSX;
+      if (!xlsx) { alert("Library Excel belum siap."); return; }
+
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+          try {
+              const bstr = evt.target?.result;
+              const wb = xlsx.read(bstr, { type: 'binary' });
+              const wsname = wb.SheetNames[0];
+              const ws = wb.Sheets[wsname];
+              const data = xlsx.utils.sheet_to_json(ws);
+
+              const newStudents: Student[] = data.map((row: any) => {
+                  // Basic mapping loosely matching export structure
+                  return {
+                      id: Math.random().toString(36).substr(2, 9),
+                      fullName: row['Nama Lengkap'] || row['Nama'] || row['Nama Siswa'] || '',
+                      nis: String(row['NIS'] || row['NIPD'] || ''),
+                      nisn: String(row['NISN'] || ''),
+                      gender: (row['L/P'] || row['JK'] || 'L') === 'P' ? 'P' : 'L',
+                      birthPlace: row['Tempat Lahir'] || '',
+                      birthDate: row['Tanggal Lahir'] || '', // Assume YYYY-MM-DD or formatted string
+                      religion: row['Agama'] || 'Islam',
+                      nationality: 'WNI',
+                      address: row['Alamat'] || '',
+                      subDistrict: row['Kecamatan'] || '',
+                      district: row['Kabupaten'] || '',
+                      postalCode: String(row['Kode Pos'] || ''),
+                      className: row['Kelas'] || classFilter || 'VII A', // Default to filter if empty
+                      height: 0, weight: 0, bloodType: '-', siblingCount: 0, childOrder: 1,
+                      father: { 
+                          name: row['Nama Ayah'] || '', 
+                          nik: String(row['NIK Ayah'] || ''), 
+                          birthPlaceDate: '', education: '', 
+                          job: row['Pekerjaan Ayah'] || '', income: '', 
+                          phone: String(row['No HP Ortu'] || '') 
+                      },
+                      mother: { 
+                          name: row['Nama Ibu'] || '', 
+                          nik: String(row['NIK Ibu'] || ''), 
+                          birthPlaceDate: '', education: '', 
+                          job: row['Pekerjaan Ibu'] || '', income: '', phone: '' 
+                      },
+                      guardian: { name: row['Nama Wali'] || '', nik: '', birthPlaceDate: '', education: '', job: '', income: '', phone: '' },
+                      entryYear: new Date().getFullYear(),
+                      status: 'AKTIF',
+                      previousSchool: row['Sekolah Asal'] || '',
+                      dapodik: {
+                          nik: String(row['NIK Siswa'] || row['NIK'] || ''), 
+                          noKK: String(row['No KK'] || ''), 
+                          rt: '', rw: '', 
+                          dusun: row['Dusun'] || '', 
+                          kelurahan: row['Kelurahan'] || '', 
+                          kecamatan: row['Kecamatan'] || '', 
+                          kodePos: String(row['Kode Pos'] || ''),
+                          livingStatus: '', transportation: '', email: '', skhun: '', kpsReceiver: '', kpsNumber: '',
+                          kipReceiver: row['Penerima KIP'] || 'Tidak', 
+                          kipNumber: String(row['No KIP'] || ''), 
+                          kipName: '', kksNumber: '', birthRegNumber: '', 
+                          bank: row['Bank'] || '', 
+                          bankAccount: String(row['No Rekening'] || ''), 
+                          bankAccountName: row['Atas Nama Rekening'] || '', 
+                          pipEligible: row['Penerima PIP'] || 'Tidak', 
+                          pipReason: '', specialNeeds: '',
+                          latitude: '', longitude: '', headCircumference: 0, distanceToSchool: '', unExamNumber: '',
+                          travelTimeMinutes: 0
+                      },
+                      documents: []
+                  } as Student;
+              });
+
+              if (newStudents.length > 0) {
+                  // APPEND DATA
+                  const mergedStudents = [...students, ...newStudents];
+                  onUpdateStudents(mergedStudents);
+                  await api.syncInitialData(mergedStudents);
+                  alert(`Berhasil menambahkan ${newStudents.length} data siswa.`);
+              } else {
+                  alert("Tidak ada data valid yang ditemukan dalam file.");
+              }
+
+          } catch (err) {
+              console.error(err);
+              alert("Gagal membaca file Excel. Pastikan format benar.");
+          } finally {
+              if (fileInputRef.current) fileInputRef.current.value = '';
+          }
+      };
+      reader.readAsBinaryString(file);
   };
 
   const TabButton = ({ id, label, icon: Icon }: any) => (
@@ -154,39 +304,93 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
       <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx,.xls,.csv" onChange={handleImportExcel} />
 
       {/* Toolbar */}
-      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
         <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">Database Siswa</h2>
-        <div className="flex flex-col md:flex-row gap-2 w-full lg:w-auto">
+        
+        <div className="flex flex-col md:flex-row gap-2 w-full xl:w-auto">
+            {/* Class Filter */}
+            <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
+                <Filter className="w-4 h-4 text-gray-500" />
+                <select 
+                    className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-28"
+                    value={classFilter}
+                    onChange={(e) => setClassFilter(e.target.value)}
+                >
+                    {uniqueClasses.map(c => <option key={c} value={c}>{c === 'ALL' ? 'Semua Kelas' : c}</option>)}
+                </select>
+            </div>
+
             <div className="relative flex-1 md:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <input type="text" placeholder="Cari Nama / NISN..." className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
             </div>
+            
             <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0">
-                <button onClick={openAddModal} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 whitespace-nowrap shadow-sm"><Plus className="w-4 h-4 mr-2" /> Tambah</button>
+                <button onClick={() => fileInputRef.current?.click()} className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 whitespace-nowrap shadow-sm">
+                    <UploadCloud className="w-4 h-4 mr-2" /> Import Excel
+                </button>
+                <button onClick={handleDownloadExcel} className="flex items-center px-4 py-2 bg-gray-800 text-white rounded-lg text-sm font-bold hover:bg-gray-900 whitespace-nowrap shadow-sm">
+                    <FileSpreadsheet className="w-4 h-4 mr-2" /> Export
+                </button>
+                <button onClick={openAddModal} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 whitespace-nowrap shadow-sm">
+                    <Plus className="w-4 h-4 mr-2" /> Tambah
+                </button>
             </div>
         </div>
       </div>
+
+      {/* Bulk Actions */}
+      {selectedIds.size > 0 && (
+          <div className="bg-red-50 border border-red-200 p-3 rounded-xl flex items-center justify-between animate-fade-in">
+              <div className="flex items-center gap-2 text-red-700 font-medium text-sm">
+                  <span className="bg-red-200 px-2 py-0.5 rounded text-xs font-bold">{selectedIds.size}</span>
+                  Siswa terpilih
+              </div>
+              <button 
+                  onClick={() => handleDelete(Array.from(selectedIds))}
+                  className="flex items-center gap-2 px-4 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors shadow-sm"
+              >
+                  <Trash2 className="w-3 h-3" /> Hapus Terpilih
+              </button>
+          </div>
+      )}
 
       {/* Table */}
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex-1 overflow-hidden flex flex-col">
         <div className="overflow-auto flex-1 pb-32">
             <table className="w-full text-left border-collapse">
-                <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-700 uppercase">
-                    <tr><th className="px-6 py-4">Nama Siswa</th><th className="px-6 py-4">NIS / NISN</th><th className="px-6 py-4">Kelas</th><th className="px-6 py-4">L/P</th><th className="px-6 py-4 text-center">Aksi</th></tr>
+                <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-700 uppercase sticky top-0 z-10 shadow-sm">
+                    <tr>
+                        <th className="px-4 py-4 w-10 text-center">
+                            <button onClick={toggleSelectAll} className="text-gray-500 hover:text-blue-600">
+                                {selectedIds.size === filteredStudents.length && filteredStudents.length > 0 ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                            </button>
+                        </th>
+                        <th className="px-6 py-4">Nama Siswa</th>
+                        <th className="px-6 py-4">NIS / NISN</th>
+                        <th className="px-6 py-4">Kelas</th>
+                        <th className="px-6 py-4">L/P</th>
+                        <th className="px-6 py-4 text-center">Aksi</th>
+                    </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                     {filteredStudents.length > 0 ? filteredStudents.map(student => (
-                        <tr key={student.id} className="hover:bg-blue-50/50 transition-colors">
+                        <tr key={student.id} className={`hover:bg-blue-50/50 transition-colors ${selectedIds.has(student.id) ? 'bg-blue-50' : ''}`}>
+                            <td className="px-4 py-3 text-center">
+                                <button onClick={() => toggleSelection(student.id)} className="text-gray-400 hover:text-blue-600">
+                                    {selectedIds.has(student.id) ? <CheckSquare className="w-4 h-4 text-blue-600" /> : <Square className="w-4 h-4" />}
+                                </button>
+                            </td>
                             <td className="px-6 py-3 font-medium text-gray-900">{student.fullName}</td>
                             <td className="px-6 py-3 text-sm text-gray-500">{student.nis} / {student.nisn}</td>
                             <td className="px-6 py-3"><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">{student.className}</span></td>
                             <td className="px-6 py-3 text-sm">{student.gender}</td>
                             <td className="px-6 py-3 text-center flex justify-center gap-2">
                                 <button onClick={() => handleEdit(student)} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"><Pencil className="w-4 h-4" /></button>
-                                <button onClick={() => handleDelete(student.id)} className="p-2 text-red-600 hover:bg-red-100 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                                <button onClick={() => handleDelete([student.id])} className="p-2 text-red-600 hover:bg-red-100 rounded-lg"><Trash2 className="w-4 h-4" /></button>
                             </td>
                         </tr>
-                    )) : <tr><td colSpan={5} className="px-6 py-10 text-center text-gray-500">Tidak ada data.</td></tr>}
+                    )) : <tr><td colSpan={6} className="px-6 py-10 text-center text-gray-500">Tidak ada data.</td></tr>}
                 </tbody>
             </table>
         </div>
