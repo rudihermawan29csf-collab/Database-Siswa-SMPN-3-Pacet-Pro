@@ -349,6 +349,7 @@ const App: React.FC = () => {
                         viewMode="dapodik" 
                         highlightFieldKey={targetHighlightField}
                         onUpdate={refreshData}
+                        onSave={saveStudentToCloud} // PASSED HERE
                         currentUser={currentUser || undefined}
                      />;
           case 'student-docs': // Admin view of student docs
@@ -406,6 +407,7 @@ const App: React.FC = () => {
                         viewMode="student" 
                         readOnly={true} // Student can edit via modal inside component
                         onUpdate={refreshData}
+                        onSave={saveStudentToCloud} // PASSED HERE
                         currentUser={currentUser || undefined}
                      />;
           case 'documents':

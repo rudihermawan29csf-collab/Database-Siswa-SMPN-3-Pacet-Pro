@@ -11,10 +11,11 @@ interface StudentDetailProps {
   highlightFieldKey?: string;
   highlightDocumentId?: string;
   onUpdate?: () => void;
+  onSave?: (student: Student) => void; // ADDED onSave Prop
   currentUser?: { name: string; role: string };
 }
 
-const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode, readOnly = false, highlightFieldKey, onUpdate, currentUser }) => {
+const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode, readOnly = false, highlightFieldKey, onUpdate, onSave, currentUser }) => {
   // Correction State
   const [correctionModalOpen, setCorrectionModalOpen] = useState(false);
   const [targetField, setTargetField] = useState<{key: string, label: string, currentValue: string} | null>(null);
@@ -76,10 +77,15 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
       
       updatedStudent.correctionRequests.push(newRequest);
       
-      await api.updateStudent(updatedStudent);
+      if (onSave) {
+          await onSave(updatedStudent);
+      } else {
+          await api.updateStudent(updatedStudent);
+          if (onUpdate) onUpdate();
+      }
+      
       setCorrectionModalOpen(false);
       alert("✅ Usulan perbaikan berhasil dikirim. Menunggu verifikasi admin.");
-      if (onUpdate) onUpdate();
   };
 
   // ADMIN ACTION: Verify Request PER ITEM
@@ -124,10 +130,21 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
           }
       }
 
-      // 4. Save to API immediately
+      // 4. Save Logic
       try {
-          await api.updateStudent(updatedStudent);
-          if (onUpdate) onUpdate(); // Refresh parent UI
+          if (onSave) {
+              // OPTIMISTIC UPDATE: Use onSave passed from App.tsx which updates state locally first
+              await onSave(updatedStudent);
+          } else {
+              // Fallback: Send to API directly
+              await api.updateStudent(updatedStudent);
+              // CRITICAL FIX: Do NOT call onUpdate() immediately. 
+              // GAS takes time to commit. If we fetch immediately, we get old data.
+              // Instead, we just trust the local operation or set a delay if absolutely needed.
+              if (onUpdate) {
+                  setTimeout(() => onUpdate(), 4000); 
+              }
+          }
       } catch (e) {
           alert("Gagal menyimpan verifikasi.");
           console.error(e);
