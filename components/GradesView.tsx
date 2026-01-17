@@ -135,7 +135,7 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
     const waliNip = waliData?.nip || '..................................';
 
     return (
-        <div className={`bg-white ${isBatch ? '' : 'shadow-xl'} min-h-[297mm] w-[210mm] mx-auto p-[10mm] text-black font-sans relative print:shadow-none print:w-full print:m-0 print:p-0 box-border page-break-inside-avoid`}>
+        <div className={`bg-white ${isBatch ? '' : 'shadow-xl'} h-[296mm] w-[210mm] mx-auto p-[10mm] text-black font-sans relative print:shadow-none print:w-full print:m-0 print:p-0 box-border overflow-hidden`}>
             {/* Header Identity */}
             <div className="text-xs mb-4">
                 <table className="w-full">
@@ -653,6 +653,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       setIsBatchGenerating(true);
 
       setTimeout(() => {
+          // IMPORTANT: Capture the specific batch container ID
           const element = document.getElementById('batch-rapor-container');
           const className = dbClassFilter === 'ALL' ? 'Semua_Kelas' : dbClassFilter.replace(/\s+/g, '_');
           const filename = `Rapor_Batch_Sem${dbSemester}_${className}.pdf`;
@@ -678,7 +679,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                   alert("Gagal melakukan batch download.");
               });
           }
-      }, 4000); // 4 seconds
+      }, 4000); // Wait 4 seconds for rendering
   };
 
   return (
@@ -862,7 +863,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
 
         {/* VISIBLE OVERLAY FOR BATCH DOWNLOAD - USING PORTAL FOR ROBUSTNESS */}
         {isBatchGenerating && createPortal(
-            <div className="fixed inset-0 z-[9999] bg-gray-900/95 flex flex-col items-center justify-start overflow-auto">
+            <div className="fixed inset-0 z-[9999] bg-gray-900 flex flex-col items-center justify-start overflow-auto">
                 <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center animate-bounce-in">
                     <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
                     <h3 className="text-xl font-bold text-gray-900">Memproses PDF...</h3>
@@ -871,7 +872,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                 </div>
 
                 {/* The Container for html2pdf - Absolutely positioned to ensure full rendering */}
-                <div className="absolute top-0 left-0 w-full flex flex-col items-center pt-20 pb-20 pointer-events-none">
+                <div className="absolute top-0 left-0 w-full flex flex-col items-center pt-20 pb-20 bg-gray-900 min-h-screen">
                     <div id="batch-rapor-container" className="bg-white w-[210mm]">
                         {filteredStudents.map((student, index) => (
                             <div key={student.id} className="relative">
