@@ -1,91 +1,77 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Student, CorrectionRequest } from '../types';
-import { Search, Filter, AlertCircle, CheckCircle2, XCircle, Save, Loader2, UserCheck, X, Pencil, ListChecks } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Student, CorrectionRequest, DocumentFile } from '../types';
 import { api } from '../services/api';
+import { CheckCircle2, XCircle, FileText, User, AlertCircle, Loader2, Filter, FolderOpen } from 'lucide-react';
 
 interface VerificationViewProps {
   students: Student[];
   targetStudentId?: string;
-  onUpdate?: () => void;
-  onSave?: (student: Student) => void;
+  onUpdate: () => void;
+  onSave: (student: Student) => void;
   currentUser?: { name: string; role: string };
 }
 
 const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStudentId, onUpdate, onSave, currentUser }) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('');
-  const [selectedStudentId, setSelectedStudentId] = useState<string>('');
-  
-  // Verification State
+  const [filterClass, setFilterClass] = useState('ALL');
   const [adminVerifyModalOpen, setAdminVerifyModalOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<CorrectionRequest | null>(null);
+  const [selectedDoc, setSelectedDoc] = useState<DocumentFile | null>(null);
+  const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
   const [adminResponseNote, setAdminResponseNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   
-  // Edit State
-  const [isEditing, setIsEditing] = useState(false);
-  const [editFormData, setEditFormData] = useState<Student | null>(null);
-
-  // Force Update to refresh view
+  // Dummy state to force re-render if needed
   const [forceUpdate, setForceUpdate] = useState(0);
 
-  // Derived Data
   const uniqueClasses = useMemo(() => {
-      return Array.from(new Set(students.map(s => s.className))).sort();
+      const classes = Array.from(new Set(students.map(s => s.className))).sort();
+      return ['ALL', ...classes];
   }, [students]);
 
-  useEffect(() => {
-      if (!selectedClassFilter && uniqueClasses.length > 0) {
-          setSelectedClassFilter(uniqueClasses[0]);
-      }
-  }, [uniqueClasses]);
+  // Aggregate Pending Items (Bio Corrections & General Documents)
+  const verificationItems = useMemo(() => {
+      const items: { type: 'REQ' | 'DOC', student: Student, item: CorrectionRequest | DocumentFile }[] = [];
+      
+      students.forEach(s => {
+          if (filterClass !== 'ALL' && s.className !== filterClass) return;
 
-  const filteredStudents = useMemo(() => {
-      let filtered = students;
-      if (selectedClassFilter) filtered = filtered.filter(s => s.className === selectedClassFilter);
-      if (searchTerm) filtered = filtered.filter(s => s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || s.nisn.includes(searchTerm));
-      return filtered.sort((a, b) => a.fullName.localeCompare(b.fullName));
-  }, [students, searchTerm, selectedClassFilter]);
+          // Bio Corrections (Exclude Academic)
+          const bioRequests = s.correctionRequests?.filter(r => 
+              r.status === 'PENDING' && 
+              !r.fieldKey.startsWith('grade-') && 
+              !r.fieldKey.startsWith('class-') &&
+              r.fieldKey !== 'className'
+          ) || [];
+          
+          bioRequests.forEach(r => items.push({ type: 'REQ', student: s, item: r }));
 
-  // Auto-select target or first student
-  useEffect(() => {
-      if (targetStudentId) {
-          const target = students.find(s => s.id === targetStudentId);
-          if (target) {
-              setSelectedClassFilter(target.className);
-              setSelectedStudentId(target.id);
-          }
-      } else if (filteredStudents.length > 0 && !selectedStudentId) {
-          setSelectedStudentId(filteredStudents[0].id);
-      } else if (filteredStudents.length === 0) {
-          setSelectedStudentId('');
-      }
-  }, [targetStudentId, filteredStudents, selectedStudentId]);
-
-  const currentStudent = students.find(s => s.id === selectedStudentId);
-
-  // Filter requests relevant to Bio Data (exclude grades/class which are in GradeVerificationView)
-  const relevantRequests = useMemo(() => {
-      if (!currentStudent?.correctionRequests) return [];
-      return currentStudent.correctionRequests.filter(r => 
-          !r.fieldKey.startsWith('grade-') && 
-          !r.fieldKey.startsWith('class-')
-      ).sort((a, b) => {
-          if (a.status === 'PENDING' && b.status !== 'PENDING') return -1;
-          if (a.status !== 'PENDING' && b.status === 'PENDING') return 1;
-          return new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime();
+          // General Documents (Exclude RAPOR)
+          const generalDocs = s.documents.filter(d => 
+              d.status === 'PENDING' && 
+              d.category !== 'RAPOR'
+          );
+          
+          generalDocs.forEach(d => items.push({ type: 'DOC', student: s, item: d }));
       });
-  }, [currentStudent]);
 
-  // Handlers
-  const handleAdminVerifyClick = (request: CorrectionRequest) => {
-      setSelectedRequest(request);
-      setAdminResponseNote(request.adminNote || '');
+      return items;
+  }, [students, filterClass, forceUpdate]);
+
+  const openVerificationModal = (student: Student, item: CorrectionRequest | DocumentFile, type: 'REQ' | 'DOC') => {
+      setCurrentStudent(student);
+      if (type === 'REQ') {
+          setSelectedRequest(item as CorrectionRequest);
+          setSelectedDoc(null);
+      } else {
+          setSelectedDoc(item as DocumentFile);
+          setSelectedRequest(null);
+      }
+      setAdminResponseNote('');
       setAdminVerifyModalOpen(true);
   };
 
   const processVerification = async (action: 'APPROVED' | 'REJECTED') => {
-      if (!currentStudent || !selectedRequest) return;
+      if (!currentStudent) return;
       
       if (action === 'REJECTED' && !adminResponseNote.trim()) {
           alert("Mohon isi alasan penolakan.");
@@ -94,49 +80,69 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
       setIsSaving(true);
 
-      // Clone student to avoid direct mutation
+      // 1. Clone Student Data
       const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
       
-      // Update Request Status
-      updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((req: CorrectionRequest) => {
-          if (req.id === selectedRequest.id) {
-              return {
-                  ...req,
-                  status: action,
-                  adminNote: adminResponseNote || (action === 'APPROVED' ? 'Disetujui.' : 'Ditolak.'),
-                  verifierName: currentUser?.name || 'Admin',
-                  processedDate: new Date().toISOString()
-              };
+      if (selectedRequest) {
+          // Handle Correction Request
+          if (updatedStudent.correctionRequests) {
+              updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((req: CorrectionRequest) => {
+                  if (req.id === selectedRequest.id) {
+                      return {
+                          ...req,
+                          status: action,
+                          adminNote: adminResponseNote || (action === 'APPROVED' ? 'Disetujui.' : 'Ditolak.'),
+                          verifierName: currentUser?.name || 'Admin',
+                          processedDate: new Date().toISOString()
+                      };
+                  }
+                  return req;
+              });
           }
-          return req;
-      });
 
-      // Apply Data Changes if Approved
-      if (action === 'APPROVED') {
-          const { fieldKey, proposedValue } = selectedRequest;
-          const keys = fieldKey.split('.');
-          let current: any = updatedStudent;
-          
-          for (let i = 0; i < keys.length - 1; i++) {
-               if (!current[keys[i]]) current[keys[i]] = {};
-               current = current[keys[i]];
+          // Apply Data Change if Approved
+          if (action === 'APPROVED') {
+              const { fieldKey, proposedValue } = selectedRequest;
+              const keys = fieldKey.split('.');
+              let current: any = updatedStudent;
+              
+              // Traverse to parent
+              for (let i = 0; i < keys.length - 1; i++) {
+                   if (!current[keys[i]]) current[keys[i]] = {};
+                   current = current[keys[i]];
+              }
+              
+              // Set value
+              const lastKey = keys[keys.length - 1];
+              if (current[lastKey] !== undefined && typeof current[lastKey] === 'number') {
+                  current[lastKey] = Number(proposedValue);
+              } else {
+                  current[lastKey] = proposedValue;
+              }
           }
-          
-          const lastKey = keys[keys.length - 1];
-          // Type safety
-          if (typeof current[lastKey] === 'number') {
-              current[lastKey] = Number(proposedValue);
-          } else {
-              current[lastKey] = proposedValue;
-          }
+      } else if (selectedDoc) {
+          // Handle Document Verification
+          updatedStudent.documents = updatedStudent.documents.map((doc: DocumentFile) => {
+              if (doc.id === selectedDoc.id) {
+                  return {
+                      ...doc,
+                      status: action === 'APPROVED' ? 'APPROVED' : 'REVISION',
+                      adminNote: adminResponseNote || (action === 'APPROVED' ? 'Dokumen valid.' : 'Dokumen tidak valid.'),
+                      verifierName: currentUser?.name || 'Admin',
+                      verificationDate: new Date().toISOString()
+                  };
+              }
+              return doc;
+          });
       }
 
+      // 4. Save Updated Student to API
       try {
           if (onSave) {
               await onSave(updatedStudent);
           } else {
               await api.updateStudent(updatedStudent);
-              if (onUpdate) onUpdate();
+              if (onUpdate) onUpdate(); 
           }
           
           setAdminVerifyModalOpen(false);
@@ -149,302 +155,135 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       }
   };
 
-  // Edit Handlers
-  const startEdit = () => {
-      if (currentStudent) {
-          setEditFormData(JSON.parse(JSON.stringify(currentStudent)));
-          setIsEditing(true);
-      }
-  };
-
-  const cancelEdit = () => {
-      setIsEditing(false);
-      setEditFormData(null);
-  };
-
-  const saveEdit = async () => {
-      if (!editFormData) return;
-      setIsSaving(true);
-      try {
-          if (onSave) {
-              await onSave(editFormData);
-          } else {
-              await api.updateStudent(editFormData);
-              if (onUpdate) onUpdate();
-          }
-          setIsEditing(false);
-          setEditFormData(null);
-      } catch (e) {
-          console.error(e);
-          alert("Gagal menyimpan data.");
-      } finally {
-          setIsSaving(false);
-      }
-  };
-
-  const handleInputChange = (fieldKey: string, value: string) => {
-      if (!editFormData) return;
-      const keys = fieldKey.split('.');
-      const newData = { ...editFormData };
-      let current: any = newData;
-      for (let i = 0; i < keys.length - 1; i++) {
-          if (!current[keys[i]]) current[keys[i]] = {};
-          current = current[keys[i]];
-      }
-      current[keys[keys.length - 1]] = value;
-      setEditFormData(newData);
-  };
-
-  const getNestedValue = (obj: any, path: string) => {
-      if (!path) return '';
-      return path.split('.').reduce((o, i) => (o ? o[i] : ''), obj);
-  };
-
-  // Form Field Component
-  const FormField = ({ label, value, fieldKey }: { label: string, value: string | number | undefined, fieldKey?: string }) => {
-      const pendingReq = fieldKey ? currentStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING') : null;
-      const displayValue = isEditing && editFormData && fieldKey ? getNestedValue(editFormData, fieldKey) : value;
-
-      return (
-        <div className="flex flex-col border-b border-gray-100 py-2">
-            <span className="text-[10px] uppercase font-bold text-gray-400">{label}</span>
-            <div className="flex items-center gap-2 w-full">
-                {isEditing && fieldKey ? (
-                    <input 
-                        type="text" 
-                        className="w-full text-sm font-bold bg-blue-50 border-b border-blue-300 outline-none text-blue-900 px-1"
-                        value={displayValue || ''}
-                        onChange={(e) => handleInputChange(fieldKey, e.target.value)}
-                    />
-                ) : (
-                    <span className={`text-sm font-semibold ${pendingReq ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-                        {value !== undefined && value !== null ? value : '-'}
-                    </span>
-                )}
-                
-                {pendingReq && !isEditing && (
-                    <div 
-                        className="flex items-center gap-1 bg-yellow-100 px-2 py-0.5 rounded border border-yellow-300 cursor-pointer animate-pulse ml-auto"
-                        onClick={() => handleAdminVerifyClick(pendingReq)}
-                        title="Klik untuk verifikasi"
-                    >
-                        <span className="text-xs font-bold text-yellow-800">{pendingReq.proposedValue}</span>
-                        <AlertCircle className="w-3 h-3 text-yellow-700" />
-                    </div>
-                )}
-            </div>
-        </div>
-      );
-  };
-
   return (
-    <div className="flex flex-col h-full animate-fade-in relative">
-        {/* Verification Modal */}
-        {adminVerifyModalOpen && selectedRequest && (
-            <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform scale-100 transition-all">
-                    <div className="flex justify-between items-center mb-4 border-b pb-2">
-                        <h3 className="text-lg font-bold text-gray-800">Verifikasi Data</h3>
-                        <button onClick={() => setAdminVerifyModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>
-                    </div>
+    <div className="flex flex-col h-full space-y-4 animate-fade-in relative">
+      {/* Modal */}
+      {adminVerifyModalOpen && (currentStudent) && (
+          <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 flex flex-col max-h-[90vh]">
+                  <h3 className="text-lg font-bold text-gray-800 mb-2">Verifikasi {selectedRequest ? 'Data' : 'Dokumen'}</h3>
+                  <div className="bg-blue-50 p-3 rounded mb-4 text-sm text-blue-800">
+                      <p><strong>Siswa:</strong> {currentStudent.fullName}</p>
+                      <p><strong>Kelas:</strong> {currentStudent.className}</p>
+                  </div>
 
-                    <div className="space-y-4 mb-6">
-                        <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                            <p className="text-xs font-bold text-gray-500 uppercase mb-1">Item Perubahan</p>
-                            <p className="text-sm font-semibold text-gray-800">{selectedRequest.fieldName}</p>
-                        </div>
-                        
-                        <div className="flex items-center gap-3">
-                            <div className="flex-1 p-3 bg-red-50 border border-red-100 rounded-lg">
-                                <p className="text-[10px] text-red-500 font-bold uppercase">Lama</p>
-                                <p className="text-sm font-bold text-gray-700 line-through decoration-red-400">{selectedRequest.originalValue}</p>
-                            </div>
-                            <div className="flex-1 p-3 bg-green-50 border border-green-100 rounded-lg">
-                                <p className="text-[10px] text-green-600 font-bold uppercase">Baru</p>
-                                <p className="text-sm font-bold text-gray-800">{selectedRequest.proposedValue}</p>
-                            </div>
-                        </div>
+                  <div className="flex-1 overflow-y-auto mb-4">
+                      {selectedRequest && (
+                          <div className="space-y-3">
+                              <div className="grid grid-cols-2 gap-4">
+                                  <div className="bg-gray-100 p-3 rounded">
+                                      <p className="text-xs text-gray-500 uppercase font-bold">Data Lama</p>
+                                      <p className="font-medium text-gray-700">{selectedRequest.originalValue || '-'}</p>
+                                  </div>
+                                  <div className="bg-blue-100 p-3 rounded border border-blue-200">
+                                      <p className="text-xs text-blue-600 uppercase font-bold">Data Baru</p>
+                                      <p className="font-bold text-blue-800">{selectedRequest.proposedValue}</p>
+                                  </div>
+                              </div>
+                              <div>
+                                  <p className="text-xs font-bold text-gray-600 uppercase">Alasan Siswa</p>
+                                  <p className="text-sm italic text-gray-700 bg-gray-50 p-2 rounded">{selectedRequest.studentReason}</p>
+                              </div>
+                          </div>
+                      )}
 
-                        <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100">
-                            <p className="text-xs font-bold text-yellow-700 uppercase mb-1">Alasan</p>
-                            <p className="text-sm text-gray-700 italic">"{selectedRequest.studentReason}"</p>
-                        </div>
+                      {selectedDoc && (
+                          <div className="flex flex-col items-center">
+                              <a href={selectedDoc.url} target="_blank" rel="noreferrer" className="block w-full h-48 bg-gray-100 rounded-lg mb-2 flex items-center justify-center border border-dashed border-gray-300 hover:bg-gray-200 transition-colors">
+                                  <div className="text-center">
+                                      <FileText className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                                      <p className="text-sm text-blue-600 underline font-bold">{selectedDoc.name}</p>
+                                      <p className="text-xs text-gray-500">{selectedDoc.category} - {selectedDoc.size}</p>
+                                  </div>
+                              </a>
+                              <p className="text-xs text-gray-500">Klik preview di atas untuk melihat dokumen asli.</p>
+                          </div>
+                      )}
+                  </div>
 
-                        {selectedRequest.status === 'PENDING' && (
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Catatan (Opsional)</label>
-                                <textarea 
-                                    className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                    rows={2}
-                                    placeholder="Alasan penolakan..."
-                                    value={adminResponseNote}
-                                    onChange={(e) => setAdminResponseNote(e.target.value)}
-                                />
-                            </div>
-                        )}
-                        
-                        {selectedRequest.status !== 'PENDING' && (
-                             <div className={`p-3 rounded-lg border ${selectedRequest.status === 'APPROVED' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                                <p className={`text-xs font-bold uppercase mb-1 ${selectedRequest.status === 'APPROVED' ? 'text-green-700' : 'text-red-700'}`}>
-                                    Status: {selectedRequest.status === 'APPROVED' ? 'Disetujui' : 'Ditolak'}
-                                </p>
-                                <p className="text-sm text-gray-700 italic">"{selectedRequest.adminNote}"</p>
-                            </div>
-                        )}
-                    </div>
+                  <div>
+                      <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Catatan Admin (Opsional untuk Approve)</label>
+                      <textarea 
+                          className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                          rows={2}
+                          placeholder="Berikan alasan jika menolak..."
+                          value={adminResponseNote}
+                          onChange={(e) => setAdminResponseNote(e.target.value)}
+                      />
+                  </div>
 
-                    {selectedRequest.status === 'PENDING' && (
-                        <div className="flex gap-2">
-                            <button onClick={() => processVerification('REJECTED')} disabled={isSaving} className="flex-1 py-2 bg-white border border-red-200 text-red-600 font-bold rounded-lg text-sm hover:bg-red-50 flex items-center justify-center gap-2">
-                                <XCircle className="w-4 h-4" /> Tolak
-                            </button>
-                            <button onClick={() => processVerification('APPROVED')} disabled={isSaving} className="flex-1 py-2 bg-green-600 text-white font-bold rounded-lg text-sm hover:bg-green-700 flex items-center justify-center gap-2">
-                                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Setujui
-                            </button>
-                        </div>
-                    )}
-                </div>
-            </div>
-        )}
+                  <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100">
+                      <button onClick={() => setAdminVerifyModalOpen(false)} className="flex-1 py-2 bg-gray-100 text-gray-600 font-bold rounded hover:bg-gray-200 text-sm">Batal</button>
+                      <button onClick={() => processVerification('REJECTED')} disabled={isSaving} className="flex-1 py-2 bg-white border border-red-200 text-red-600 font-bold rounded hover:bg-red-50 text-sm flex items-center justify-center gap-1">
+                          <XCircle className="w-4 h-4" /> Tolak
+                      </button>
+                      <button onClick={() => processVerification('APPROVED')} disabled={isSaving} className="flex-1 py-2 bg-green-600 text-white font-bold rounded hover:bg-green-700 text-sm flex items-center justify-center gap-1 shadow-sm">
+                          {isSaving ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle2 className="w-4 h-4" />} Setujui
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
 
-        {/* Header Controls */}
-        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4 mb-4">
-            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                <UserCheck className="w-6 h-6 text-blue-600" />
-                Verifikasi Buku Induk
-            </h2>
-            <div className="flex gap-2 w-full md:w-auto">
-                <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
-                    <Filter className="w-4 h-4 text-gray-500" />
-                    <select className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-24 md:w-auto" value={selectedClassFilter} onChange={(e) => setSelectedClassFilter(e.target.value)}>
-                        {uniqueClasses.map(c => <option key={c} value={c}>Kelas {c}</option>)}
-                    </select>
-                </div>
-                <div className="relative flex-1 md:w-64">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <input type="text" placeholder="Cari Siswa..." className="w-full pl-9 pr-4 py-2 bg-gray-50 rounded-lg text-sm border border-gray-200 focus:bg-white transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                </div>
-                <select className="pl-3 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-bold text-gray-700 w-full md:w-auto" value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>
-                    {filteredStudents.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}
-                </select>
-            </div>
-        </div>
+      {/* Toolbar */}
+      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center">
+          <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-blue-600" />
+              <h2 className="text-lg font-bold text-gray-800">Verifikasi Buku Induk & Dokumen</h2>
+          </div>
+          <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-gray-500" />
+              <select 
+                  className="bg-gray-100 border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500"
+                  value={filterClass}
+                  onChange={(e) => setFilterClass(e.target.value)}
+              >
+                  {uniqueClasses.map(c => <option key={c} value={c}>{c === 'ALL' ? 'Semua Kelas' : c}</option>)}
+              </select>
+          </div>
+      </div>
 
-        {/* Content */}
-        {currentStudent ? (
-            <div className="flex-1 flex gap-4 overflow-hidden">
-                {/* Left Panel: Request List */}
-                <div className="w-80 bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden">
-                    <div className="p-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
-                        <span className="text-xs font-bold text-gray-600 flex items-center gap-2">
-                            <ListChecks className="w-4 h-4" /> Pengajuan ({relevantRequests.length})
-                        </span>
-                        {isEditing ? (
-                            <div className="flex gap-1">
-                                <button onClick={saveEdit} disabled={isSaving} className="p-1 text-green-600 hover:bg-green-100 rounded" title="Simpan"><Save className="w-4 h-4" /></button>
-                                <button onClick={cancelEdit} className="p-1 text-gray-600 hover:bg-gray-100 rounded" title="Batal"><X className="w-4 h-4" /></button>
-                            </div>
-                        ) : (
-                            <button onClick={startEdit} className="p-1 text-blue-600 hover:bg-blue-100 rounded" title="Edit Data"><Pencil className="w-4 h-4" /></button>
-                        )}
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-gray-50">
-                        {relevantRequests.length > 0 ? (
-                            relevantRequests.map(req => (
-                                <div 
-                                    key={req.id} 
-                                    onClick={() => handleAdminVerifyClick(req)}
-                                    className={`p-3 rounded-lg border cursor-pointer hover:shadow-md transition-all ${req.status === 'PENDING' ? 'bg-white border-yellow-300' : 'bg-gray-100 border-gray-200 opacity-80'}`}
-                                >
-                                    <div className="flex justify-between items-start mb-1">
-                                        <p className="text-xs font-bold text-gray-800 line-clamp-1">{req.fieldName}</p>
-                                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${req.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' : req.status === 'APPROVED' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                            {req.status}
-                                        </span>
-                                    </div>
-                                    <div className="text-[10px] text-gray-500 flex gap-1 items-center">
-                                        <span className="line-through max-w-[40%] truncate">{req.originalValue}</span>
-                                        <span>➔</span>
-                                        <span className="font-bold text-gray-700 truncate">{req.proposedValue}</span>
-                                    </div>
-                                    <p className="text-[9px] text-gray-400 mt-1 italic">{new Date(req.requestDate).toLocaleDateString()}</p>
-                                </div>
-                            ))
-                        ) : (
-                            <div className="text-center py-8 text-gray-400 text-xs">
-                                Tidak ada pengajuan perubahan data.
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Right Panel: Student Detail (Editable) */}
-                <div className="flex-1 bg-white border border-gray-200 rounded-xl shadow-sm overflow-y-auto p-6">
-                    <div className="mb-6 flex justify-between items-start border-b pb-4">
-                        <div>
-                            <h2 className="text-xl font-bold text-gray-800">{currentStudent.fullName}</h2>
-                            <p className="text-sm text-gray-500">{currentStudent.nisn} | Kelas {currentStudent.className}</p>
-                        </div>
-                        <div className="text-right">
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold ${currentStudent.status === 'AKTIF' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-                                {currentStudent.status}
-                            </span>
-                        </div>
-                    </div>
-
-                    <div className="space-y-6">
-                        <section>
-                            <h3 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3 bg-blue-50 p-2 rounded">Identitas Peserta Didik</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                                <FormField label="Nama Lengkap" value={currentStudent.fullName} fieldKey="fullName" />
-                                <FormField label="NISN" value={currentStudent.nisn} fieldKey="nisn" />
-                                <FormField label="NIS" value={currentStudent.nis} fieldKey="nis" />
-                                <FormField label="NIK" value={currentStudent.dapodik.nik} fieldKey="dapodik.nik" />
-                                <FormField label="Tempat Lahir" value={currentStudent.birthPlace} fieldKey="birthPlace" />
-                                <FormField label="Tanggal Lahir" value={currentStudent.birthDate} fieldKey="birthDate" />
-                                <FormField label="Jenis Kelamin" value={currentStudent.gender} fieldKey="gender" />
-                                <FormField label="Agama" value={currentStudent.religion} fieldKey="religion" />
-                                <FormField label="Alamat" value={currentStudent.address} fieldKey="address" />
-                                <FormField label="Dusun" value={currentStudent.dapodik.dusun} fieldKey="dapodik.dusun" />
-                                <FormField label="Kelurahan" value={currentStudent.dapodik.kelurahan} fieldKey="dapodik.kelurahan" />
-                                <FormField label="Kecamatan" value={currentStudent.subDistrict} fieldKey="subDistrict" />
-                                <FormField label="Kabupaten" value={currentStudent.district} fieldKey="district" />
-                                <FormField label="Kode Pos" value={currentStudent.postalCode} fieldKey="postalCode" />
-                            </div>
-                        </section>
-
-                        <section>
-                            <h3 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3 bg-blue-50 p-2 rounded">Data Orang Tua / Wali</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                                <FormField label="Nama Ayah" value={currentStudent.father.name} fieldKey="father.name" />
-                                <FormField label="NIK Ayah" value={currentStudent.father.nik} fieldKey="father.nik" />
-                                <FormField label="Pekerjaan Ayah" value={currentStudent.father.job} fieldKey="father.job" />
-                                <FormField label="Nama Ibu" value={currentStudent.mother.name} fieldKey="mother.name" />
-                                <FormField label="NIK Ibu" value={currentStudent.mother.nik} fieldKey="mother.nik" />
-                                <FormField label="Pekerjaan Ibu" value={currentStudent.mother.job} fieldKey="mother.job" />
-                                <FormField label="No HP Ortu" value={currentStudent.father.phone} fieldKey="father.phone" />
-                            </div>
-                        </section>
-
-                        <section>
-                            <h3 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3 bg-blue-50 p-2 rounded">Data Lainnya</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                                <FormField label="SKHUN" value={currentStudent.dapodik.skhun} fieldKey="dapodik.skhun" />
-                                <FormField label="No Peserta UN" value={currentStudent.dapodik.unExamNumber} fieldKey="dapodik.unExamNumber" />
-                                <FormField label="No Seri Ijazah" value={currentStudent.diplomaNumber} fieldKey="diplomaNumber" />
-                                <FormField label="Penerima KIP" value={currentStudent.dapodik.kipReceiver} fieldKey="dapodik.kipReceiver" />
-                                <FormField label="Nomor KIP" value={currentStudent.dapodik.kipNumber} fieldKey="dapodik.kipNumber" />
-                            </div>
-                        </section>
-                    </div>
-                </div>
-            </div>
-        ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                <Search className="w-16 h-16 mb-4 opacity-20" />
-                <p>Pilih siswa untuk verifikasi data.</p>
-            </div>
-        )}
+      {/* List */}
+      <div className="flex-1 overflow-y-auto pb-32">
+          {verificationItems.length > 0 ? (
+              <div className="space-y-3">
+                  {verificationItems.map((v, idx) => (
+                      <div key={idx} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:border-blue-300 transition-colors">
+                          <div className="flex items-start gap-3">
+                              <div className={`p-2 rounded-full ${v.type === 'REQ' ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>
+                                  {v.type === 'REQ' ? <User className="w-5 h-5" /> : <FolderOpen className="w-5 h-5" />}
+                              </div>
+                              <div>
+                                  <h4 className="font-bold text-gray-800">{v.student.fullName}</h4>
+                                  <p className="text-xs text-gray-500 mb-1">{v.student.className} • {v.student.nisn}</p>
+                                  <div className="text-sm">
+                                      {v.type === 'REQ' ? (
+                                          <span>Pengajuan Perubahan: <strong>{(v.item as CorrectionRequest).fieldName}</strong></span>
+                                      ) : (
+                                          <span>Upload Dokumen: <strong>{(v.item as DocumentFile).category}</strong></span>
+                                      )}
+                                  </div>
+                              </div>
+                          </div>
+                          
+                          <div className="flex gap-2 w-full md:w-auto">
+                              <button 
+                                  onClick={() => openVerificationModal(v.student, v.item, v.type)}
+                                  className="flex-1 md:flex-none px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 shadow-sm transition-transform active:scale-95"
+                              >
+                                  Verifikasi
+                              </button>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          ) : (
+              <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+                  <CheckCircle2 className="w-12 h-12 mb-2 text-green-100" />
+                  <p>Tidak ada permintaan verifikasi pending.</p>
+              </div>
+          )}
+      </div>
     </div>
   );
 };
