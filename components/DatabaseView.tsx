@@ -379,7 +379,10 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                           distanceToSchool: getValue(row, 'Jarak Sekolah (km)', 'Jarak Rumah ke Sekolah (KM)', 'Jarak ke Sekolah'), 
                           travelTimeMinutes: Number(getValue(row, 'Waktu Tempuh (menit)', 'Waktu Tempuh')) || 0
                       },
-                      documents: []
+                      documents: [],
+                      academicRecords: {},
+                      correctionRequests: [],
+                      adminMessages: []
                   } as Student;
               });
 
@@ -552,6 +555,23 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                               <div><label className="text-xs font-bold text-gray-500 uppercase">Kelas</label><select className="w-full p-2 border rounded bg-white" value={formData.className} onChange={e => setFormData({...formData, className: e.target.value})}>{CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
                               <div><label className="text-xs font-bold text-gray-500 uppercase">Agama</label><input type="text" className="w-full p-2 border rounded" value={formData.religion} onChange={e => setFormData({...formData, religion: e.target.value})} /></div>
                               <div><label className="text-xs font-bold text-gray-500 uppercase">Kewarganegaraan</label><select className="w-full p-2 border rounded bg-white" value={formData.nationality} onChange={e => setFormData({...formData, nationality: e.target.value as any})}><option value="WNI">WNI</option><option value="WNA">WNA</option></select></div>
+                              
+                              <div>
+                                  <label className="text-xs font-bold text-gray-500 uppercase">Status Siswa</label>
+                                  <select className="w-full p-2 border rounded bg-white" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value as any})}>
+                                      <option value="AKTIF">AKTIF</option>
+                                      <option value="LULUS">LULUS</option>
+                                      <option value="PINDAH">PINDAH</option>
+                                      <option value="KELUAR">KELUAR</option>
+                                      <option value="HILANG">HILANG</option>
+                                      <option value="WAFAT">WAFAT</option>
+                                  </select>
+                              </div>
+                              <div>
+                                  <label className="text-xs font-bold text-gray-500 uppercase">Tahun Masuk</label>
+                                  <input type="number" className="w-full p-2 border rounded" value={formData.entryYear} onChange={e => setFormData({...formData, entryYear: Number(e.target.value)})} />
+                              </div>
+
                               <div><label className="text-xs font-bold text-gray-500 uppercase">Berkebutuhan Khusus</label><input type="text" className="w-full p-2 border rounded" value={formData.dapodik.specialNeeds} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, specialNeeds: e.target.value}})} /></div>
                               <div className="md:col-span-2"><label className="text-xs font-bold text-gray-500 uppercase">Sekolah Asal</label><input type="text" className="w-full p-2 border rounded" value={formData.previousSchool} onChange={e => setFormData({...formData, previousSchool: e.target.value})} /></div>
                           </div>
@@ -622,9 +642,25 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                               <div><label className="text-xs font-bold text-gray-500 uppercase">Tinggi Badan (cm)</label><input type="number" className="w-full p-2 border rounded" value={formData.height} onChange={e => setFormData({...formData, height: Number(e.target.value)})} /></div>
                               <div><label className="text-xs font-bold text-gray-500 uppercase">Berat Badan (kg)</label><input type="number" className="w-full p-2 border rounded" value={formData.weight} onChange={e => setFormData({...formData, weight: Number(e.target.value)})} /></div>
                               <div><label className="text-xs font-bold text-gray-500 uppercase">Lingkar Kepala (cm)</label><input type="number" className="w-full p-2 border rounded" value={formData.dapodik.headCircumference} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, headCircumference: Number(e.target.value)}})} /></div>
+                              
+                              <div>
+                                  <label className="text-xs font-bold text-gray-500 uppercase">Golongan Darah</label>
+                                  <select className="w-full p-2 border rounded bg-white" value={formData.bloodType} onChange={e => setFormData({...formData, bloodType: e.target.value})}>
+                                      <option value="-">-</option>
+                                      <option value="A">A</option>
+                                      <option value="B">B</option>
+                                      <option value="AB">AB</option>
+                                      <option value="O">O</option>
+                                  </select>
+                              </div>
+                              <div>
+                                  <label className="text-xs font-bold text-gray-500 uppercase">Anak ke-berapa</label>
+                                  <input type="number" className="w-full p-2 border rounded" value={formData.childOrder} onChange={e => setFormData({...formData, childOrder: Number(e.target.value)})} />
+                              </div>
+
+                              <div><label className="text-xs font-bold text-gray-500 uppercase">Jumlah Saudara Kandung</label><input type="number" className="w-full p-2 border rounded" value={formData.siblingCount} onChange={e => setFormData({...formData, siblingCount: Number(e.target.value)})} /></div>
                               <div><label className="text-xs font-bold text-gray-500 uppercase">Jarak ke Sekolah (km)</label><input type="text" className="w-full p-2 border rounded" value={formData.dapodik.distanceToSchool} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, distanceToSchool: e.target.value}})} /></div>
                               <div><label className="text-xs font-bold text-gray-500 uppercase">Waktu Tempuh (menit)</label><input type="number" className="w-full p-2 border rounded" value={formData.dapodik.travelTimeMinutes} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, travelTimeMinutes: Number(e.target.value)}})} /></div>
-                              <div><label className="text-xs font-bold text-gray-500 uppercase">Jumlah Saudara Kandung</label><input type="number" className="w-full p-2 border rounded" value={formData.siblingCount} onChange={e => setFormData({...formData, siblingCount: Number(e.target.value)})} /></div>
                           </div>
                       )}
 
@@ -635,6 +671,11 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                                   <div><label className="text-xs font-bold text-gray-500 uppercase">No Ujian Nasional</label><input type="text" className="w-full p-2 border rounded" value={formData.dapodik.unExamNumber} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, unExamNumber: e.target.value}})} /></div>
                                   <div><label className="text-xs font-bold text-gray-500 uppercase">No Seri Ijazah (Lama)</label><input type="text" className="w-full p-2 border rounded" value={formData.diplomaNumber} onChange={e => setFormData({...formData, diplomaNumber: e.target.value})} /></div>
                                   <div><label className="text-xs font-bold text-gray-500 uppercase">No KKS</label><input type="text" className="w-full p-2 border rounded" value={formData.dapodik.kksNumber} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, kksNumber: e.target.value}})} /></div>
+                                  
+                                  <div className="md:col-span-2">
+                                      <label className="text-xs font-bold text-gray-500 uppercase">Email Pribadi</label>
+                                      <input type="email" className="w-full p-2 border rounded" value={formData.dapodik.email} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, email: e.target.value}})} />
+                                  </div>
                               </div>
                               <div className="bg-yellow-50 p-4 rounded border border-yellow-200">
                                   <h4 className="font-bold text-sm mb-2">Program KIP/PIP</h4>
@@ -644,6 +685,25 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                                       <div><label className="text-xs">Nama di KIP</label><input type="text" className="w-full p-2 border rounded" value={formData.dapodik.kipName} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, kipName: e.target.value}})} /></div>
                                       <div><label className="text-xs">Layak PIP</label><select className="w-full p-2 border rounded bg-white" value={formData.dapodik.pipEligible} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, pipEligible: e.target.value}})}><option value="Tidak">Tidak</option><option value="Ya">Ya</option></select></div>
                                       <div className="md:col-span-2"><label className="text-xs">Alasan Layak PIP</label><input type="text" className="w-full p-2 border rounded" value={formData.dapodik.pipReason} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, pipReason: e.target.value}})} /></div>
+                                  </div>
+                              </div>
+
+                              {/* NEW: Bank Section */}
+                              <div className="bg-gray-50 p-4 rounded border border-gray-200">
+                                  <h4 className="font-bold text-sm mb-2 text-gray-700">Data Rekening Bank</h4>
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                      <div>
+                                          <label className="text-xs font-bold text-gray-500">Nama Bank</label>
+                                          <input type="text" className="w-full p-2 border rounded" value={formData.dapodik.bank} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, bank: e.target.value}})} placeholder="Contoh: BRI" />
+                                      </div>
+                                      <div>
+                                          <label className="text-xs font-bold text-gray-500">No. Rekening</label>
+                                          <input type="text" className="w-full p-2 border rounded" value={formData.dapodik.bankAccount} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, bankAccount: e.target.value}})} />
+                                      </div>
+                                      <div>
+                                          <label className="text-xs font-bold text-gray-500">Atas Nama</label>
+                                          <input type="text" className="w-full p-2 border rounded" value={formData.dapodik.bankAccountName} onChange={e => setFormData({...formData, dapodik: {...formData.dapodik, bankAccountName: e.target.value}})} />
+                                      </div>
                                   </div>
                               </div>
                           </div>

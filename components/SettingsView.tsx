@@ -596,37 +596,6 @@ const SettingsView: React.FC = () => {
                 {activeTab === 'ACADEMIC' && (
                     <div className="max-w-6xl space-y-6">
                          
-                         {/* ACADEMIC YEAR MANAGEMENT */}
-                         <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm mb-6">
-                             <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
-                                <Calendar className="w-5 h-5 text-blue-600" /> Kelola Tahun Pelajaran
-                             </h3>
-                             
-                             <div className="flex gap-2 mb-4">
-                                 <input 
-                                    type="text" 
-                                    className="p-2 border rounded text-sm w-48" 
-                                    placeholder="Contoh: 2026/2027" 
-                                    value={newYearInput}
-                                    onChange={(e) => setNewYearInput(e.target.value)}
-                                 />
-                                 <button onClick={handleAddYear} className="px-4 py-2 bg-green-600 text-white rounded text-sm font-bold flex items-center gap-1 hover:bg-green-700">
-                                     <Plus className="w-4 h-4" /> Tambah
-                                 </button>
-                             </div>
-
-                             <div className="flex flex-wrap gap-2">
-                                 {availableYears.map(year => (
-                                     <div key={year} className="bg-blue-50 text-blue-800 px-3 py-1 rounded-full text-sm font-bold border border-blue-200 flex items-center gap-2 group">
-                                         {year}
-                                         <button onClick={() => handleDeleteYear(year)} className="text-blue-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                                             <X className="w-3 h-3" />
-                                         </button>
-                                     </div>
-                                 ))}
-                             </div>
-                         </div>
-
                          {/* ... Existing Academic Config ... */}
                          <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4">
                              <p className="text-sm text-blue-800 font-medium">
@@ -781,6 +750,37 @@ const SettingsView: React.FC = () => {
                                     </div>
                                 )) : <span className="text-xs text-gray-400 italic p-2">Belum ada kelas terdaftar.</span>}
                             </div>
+                        </div>
+
+                        {/* MOVED: ACADEMIC YEAR MANAGEMENT */}
+                        <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                             <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
+                                <Calendar className="w-4 h-4 text-orange-600" /> Kelola Tahun Pelajaran (Dropdown)
+                             </h3>
+                             
+                             <div className="flex gap-2 mb-4">
+                                 <input 
+                                    type="text" 
+                                    className="p-2 border rounded text-sm w-48" 
+                                    placeholder="Contoh: 2026/2027" 
+                                    value={newYearInput}
+                                    onChange={(e) => setNewYearInput(e.target.value)}
+                                 />
+                                 <button onClick={handleAddYear} className="px-4 py-2 bg-green-600 text-white rounded text-sm font-bold flex items-center gap-1 hover:bg-green-700">
+                                     <Plus className="w-4 h-4" /> Tambah
+                                 </button>
+                             </div>
+
+                             <div className="flex flex-wrap gap-2">
+                                 {availableYears.map(year => (
+                                     <div key={year} className="bg-blue-50 text-blue-800 px-3 py-1 rounded-full text-sm font-bold border border-blue-200 flex items-center gap-2 group">
+                                         {year}
+                                         <button onClick={() => handleDeleteYear(year)} className="text-blue-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                             <X className="w-3 h-3" />
+                                         </button>
+                                     </div>
+                                 ))}
+                             </div>
                         </div>
 
                         {/* 2. Konfigurasi Wali Kelas */}
