@@ -191,7 +191,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
               'Berat Badan (kg)': s.weight,
               'Lingkar Kepala (cm)': s.dapodik.headCircumference,
               'Gol Darah': s.bloodType,
-              'Jarak Sekolah (km)': s.dapodik.distanceToSchool,
+              'Jarak Rumah ke Sekolah (KM)': s.dapodik.distanceToSchool,
               'Waktu Tempuh (menit)': s.dapodik.travelTimeMinutes,
 
               // Data Ayah
@@ -201,7 +201,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
               'Pendidikan Ayah': s.father.education,
               'Pekerjaan Ayah': s.father.job,
               'Penghasilan Ayah': s.father.income,
-              'No HP Ayah': s.father.phone,
+              'No HP': s.father.phone,
 
               // Data Ibu
               'Nama Ibu': s.mother.name,
@@ -229,15 +229,15 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
               'Prestasi': s.achievements ? s.achievements.join(', ') : '',
               'No SKHUN': s.dapodik.skhun,
               'No Peserta UN': s.dapodik.unExamNumber,
-              'No Reg Akta Lahir': s.dapodik.birthRegNumber,
+              'No Registrasi Akta Lahir': s.dapodik.birthRegNumber,
               'Berkebutuhan Khusus': s.dapodik.specialNeeds,
-              'Email': s.dapodik.email,
+              'E-mail': s.dapodik.email,
               'Penerima KPS': s.dapodik.kpsReceiver,
-              'No KPS': s.dapodik.kpsNumber,
+              'No. KPS': s.dapodik.kpsNumber,
               'Penerima KIP': s.dapodik.kipReceiver,
-              'No KIP': s.dapodik.kipNumber,
+              'Nomor KIP': s.dapodik.kipNumber,
               'Nama di KIP': s.dapodik.kipName,
-              'No KKS': s.dapodik.kksNumber,
+              'Nomor KKS': s.dapodik.kksNumber,
               'Layak PIP': s.dapodik.pipEligible,
               'Alasan Layak PIP': s.dapodik.pipReason,
               'Bank': s.dapodik.bank,
@@ -270,102 +270,114 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
               const ws = wb.Sheets[wsname];
               const data = xlsx.utils.sheet_to_json(ws);
 
+              // Helper to find value from multiple possible keys (Aliases)
+              const getValue = (row: any, ...keys: string[]) => {
+                  for (const key of keys) {
+                      if (row[key] !== undefined && row[key] !== null) {
+                          const val = String(row[key]).trim();
+                          if (val !== '' && val !== '-') return val;
+                      }
+                  }
+                  return '';
+              };
+
               const newStudents: Student[] = data.map((row: any) => {
                   return {
                       id: Math.random().toString(36).substr(2, 9),
-                      fullName: row['Nama Lengkap'] || row['Nama Siswa'] || '',
-                      nis: String(row['NIS'] || ''),
-                      nisn: String(row['NISN'] || ''),
-                      className: row['Kelas'] || classFilter || 'VII A',
-                      gender: (row['L/P'] || row['Gender'] || 'L') === 'P' ? 'P' : 'L',
-                      birthPlace: row['Tempat Lahir'] || '',
-                      birthDate: row['Tanggal Lahir'] || '', 
-                      religion: row['Agama'] || 'Islam',
-                      nationality: row['Kewarganegaraan'] || 'WNI',
-                      status: row['Status'] || 'AKTIF',
-                      entryYear: Number(row['Tahun Masuk']) || new Date().getFullYear(),
+                      fullName: getValue(row, 'Nama Lengkap', 'Nama Siswa', 'Nama', 'Nama Peserta Didik'),
+                      nis: getValue(row, 'NIS', 'NIPD', 'No Induk'),
+                      nisn: getValue(row, 'NISN', 'Nomor Induk Siswa Nasional'),
+                      className: getValue(row, 'Kelas', 'Rombel Saat Ini', 'Rombel') || classFilter || 'VII A',
+                      gender: (getValue(row, 'L/P', 'Gender', 'JK', 'Jenis Kelamin') === 'P' || getValue(row, 'L/P', 'Gender', 'JK', 'Jenis Kelamin') === 'Perempuan') ? 'P' : 'L',
                       
-                      address: row['Alamat Jalan'] || '',
-                      subDistrict: row['Kecamatan'] || '',
-                      district: row['Kabupaten'] || '',
-                      postalCode: String(row['Kode Pos'] || ''),
+                      birthPlace: getValue(row, 'Tempat Lahir', 'Tmp Lahir'),
+                      birthDate: getValue(row, 'Tanggal Lahir', 'Tgl Lahir'), 
+                      religion: getValue(row, 'Agama'),
+                      nationality: getValue(row, 'Kewarganegaraan') || 'WNI',
+                      status: getValue(row, 'Status') || 'AKTIF',
+                      entryYear: Number(getValue(row, 'Tahun Masuk')) || new Date().getFullYear(),
                       
-                      height: Number(row['Tinggi Badan (cm)']) || 0,
-                      weight: Number(row['Berat Badan (kg)']) || 0,
-                      bloodType: row['Gol Darah'] || '-',
-                      siblingCount: Number(row['Jml Saudara']) || 0,
-                      childOrder: Number(row['Anak ke']) || 1,
+                      address: getValue(row, 'Alamat Jalan', 'Alamat', 'Jalan'),
+                      subDistrict: getValue(row, 'Kecamatan'),
+                      district: getValue(row, 'Kabupaten', 'Kabupaten/Kota', 'Kota'),
+                      postalCode: getValue(row, 'Kode Pos'),
                       
-                      // Updated Mappings
-                      previousSchool: row['Sekolah Asal'] || row['Asal Sekolah'] || '',
-                      graduationYear: Number(row['Tahun Lulus']) || 0,
-                      diplomaNumber: row['No Seri Ijazah'] || row['No Ijazah'] || '',
-                      averageScore: Number(row['Nilai Rata-rata']) || 0,
-                      achievements: row['Prestasi'] ? String(row['Prestasi']).split(',').map(s => s.trim()) : [],
+                      height: Number(getValue(row, 'Tinggi Badan (cm)', 'Tinggi Badan')) || 0,
+                      weight: Number(getValue(row, 'Berat Badan (kg)', 'Berat Badan')) || 0,
+                      bloodType: getValue(row, 'Gol Darah', 'Golongan Darah') || '-',
+                      siblingCount: Number(getValue(row, 'Jml Saudara', 'Jml. Saudara Kandung', 'Jumlah Saudara')) || 0,
+                      childOrder: Number(getValue(row, 'Anak ke', 'Anak ke-berapa')) || 1,
+                      
+                      // IMPROVED MAPPINGS FOR REPORTED MISSING FIELDS
+                      previousSchool: getValue(row, 'Sekolah Asal', 'Asal Sekolah', 'SKHUN'), // Sometimes mixed up in raw data
+                      graduationYear: Number(getValue(row, 'Tahun Lulus', 'Tahun Tamat')) || 0,
+                      diplomaNumber: getValue(row, 'No Seri Ijazah', 'No Ijazah', 'Nomor Ijazah'),
+                      averageScore: Number(getValue(row, 'Nilai Rata-rata', 'Rata-rata US')) || 0,
+                      achievements: getValue(row, 'Prestasi') ? getValue(row, 'Prestasi').split(',').map(s => s.trim()) : [],
 
                       father: { 
-                          name: row['Nama Ayah'] || '', 
-                          nik: String(row['NIK Ayah'] || ''), 
-                          birthPlaceDate: String(row['Tahun Lahir Ayah'] || ''), 
-                          education: row['Pendidikan Ayah'] || '', 
-                          job: row['Pekerjaan Ayah'] || '', 
-                          income: row['Penghasilan Ayah'] || '', 
-                          phone: String(row['No HP Ayah'] || '') 
+                          name: getValue(row, 'Nama Ayah', 'Nama Ayah Kandung', 'Nm Ayah'), 
+                          nik: getValue(row, 'NIK Ayah', 'NIK Ayah Kandung'), 
+                          birthPlaceDate: getValue(row, 'Tahun Lahir Ayah', 'Tgl Lahir Ayah'), 
+                          education: getValue(row, 'Pendidikan Ayah'), 
+                          job: getValue(row, 'Pekerjaan Ayah'), 
+                          income: getValue(row, 'Penghasilan Ayah'), 
+                          phone: getValue(row, 'No HP', 'No HP Ayah', 'Nomor HP', 'HP', 'Telepon') // General phone mapped to father
                       },
                       mother: { 
-                          name: row['Nama Ibu'] || '', 
-                          nik: String(row['NIK Ibu'] || ''), 
-                          birthPlaceDate: String(row['Tahun Lahir Ibu'] || ''), 
-                          education: row['Pendidikan Ibu'] || '', 
-                          job: row['Pekerjaan Ibu'] || '', 
-                          income: row['Penghasilan Ibu'] || '', 
-                          phone: String(row['No HP Ibu'] || '') 
+                          name: getValue(row, 'Nama Ibu', 'Nama Ibu Kandung', 'Nm Ibu'), 
+                          nik: getValue(row, 'NIK Ibu', 'NIK Ibu Kandung'), 
+                          birthPlaceDate: getValue(row, 'Tahun Lahir Ibu', 'Tgl Lahir Ibu'), 
+                          education: getValue(row, 'Pendidikan Ibu'), 
+                          job: getValue(row, 'Pekerjaan Ibu'), 
+                          income: getValue(row, 'Penghasilan Ibu'), 
+                          phone: getValue(row, 'No HP Ibu', 'Nomor HP Ibu') 
                       },
                       guardian: { 
-                          name: row['Nama Wali'] || '', 
-                          nik: String(row['NIK Wali'] || ''), 
-                          birthPlaceDate: String(row['Tahun Lahir Wali'] || ''), 
-                          education: row['Pendidikan Wali'] || '', 
-                          job: row['Pekerjaan Wali'] || '', 
-                          income: row['Penghasilan Wali'] || '', 
-                          phone: String(row['No HP Wali'] || '') 
+                          name: getValue(row, 'Nama Wali', 'Nm Wali'), 
+                          nik: getValue(row, 'NIK Wali'), 
+                          birthPlaceDate: getValue(row, 'Tahun Lahir Wali'), 
+                          education: getValue(row, 'Pendidikan Wali'), 
+                          job: getValue(row, 'Pekerjaan Wali'), 
+                          income: getValue(row, 'Penghasilan Wali'), 
+                          phone: getValue(row, 'No HP Wali', 'Nomor HP Wali') 
                       },
                       
                       dapodik: {
-                          nik: String(row['NIK'] || ''), 
-                          noKK: String(row['No KK'] || ''), 
-                          rt: String(row['RT'] || ''), 
-                          rw: String(row['RW'] || ''), 
-                          dusun: row['Dusun'] || '', 
-                          kelurahan: row['Kelurahan'] || '', 
-                          kecamatan: row['Kecamatan'] || '', 
-                          kodePos: String(row['Kode Pos'] || ''),
-                          livingStatus: row['Jenis Tinggal'] || '', 
-                          transportation: row['Transportasi'] || '', 
-                          email: row['Email'] || '', 
-                          skhun: String(row['No SKHUN'] || ''), 
-                          unExamNumber: String(row['No Peserta UN'] || ''),
-                          birthRegNumber: String(row['No Reg Akta Lahir'] || ''),
+                          nik: getValue(row, 'NIK', 'NIK Peserta Didik', 'NIK Siswa'), 
+                          noKK: getValue(row, 'No KK', 'Nomor KK', 'No. KK'), 
+                          rt: getValue(row, 'RT'), 
+                          rw: getValue(row, 'RW'), 
+                          dusun: getValue(row, 'Dusun', 'Nama Dusun'), 
+                          kelurahan: getValue(row, 'Kelurahan', 'Desa/Kelurahan', 'Desa'), 
+                          kecamatan: getValue(row, 'Kecamatan'), 
+                          kodePos: getValue(row, 'Kode Pos'),
+                          livingStatus: getValue(row, 'Jenis Tinggal'), 
+                          transportation: getValue(row, 'Transportasi', 'Alat Transportasi'), 
+                          email: getValue(row, 'Email', 'E-mail', 'Alamat Email'), 
+                          skhun: getValue(row, 'No SKHUN', 'SKHUN', 'Nomor SKHUN'), 
+                          unExamNumber: getValue(row, 'No Peserta UN', 'No Peserta Ujian Nasional'),
+                          birthRegNumber: getValue(row, 'No Registrasi Akta Lahir', 'No Reg Akta Lahir', 'No. Registrasi Akta Lahir'),
                           
-                          kpsReceiver: row['Penerima KPS'] || 'Tidak', 
-                          kpsNumber: String(row['No KPS'] || ''), 
-                          kipReceiver: row['Penerima KIP'] || 'Tidak', 
-                          kipNumber: String(row['No KIP'] || ''), 
-                          kipName: row['Nama di KIP'] || '', 
-                          kksNumber: String(row['No KKS'] || ''), 
+                          kpsReceiver: getValue(row, 'Penerima KPS', 'Penerima KPH'), 
+                          kpsNumber: getValue(row, 'No KPS', 'No. KPS', 'Nomor KPS'), 
+                          kipReceiver: getValue(row, 'Penerima KIP'), 
+                          kipNumber: getValue(row, 'No KIP', 'No. KIP', 'Nomor KIP'), 
+                          kipName: getValue(row, 'Nama di KIP', 'Nama tertera di KIP'), 
+                          kksNumber: getValue(row, 'No KKS', 'No. KKS', 'Nomor KKS'), 
                           
-                          pipEligible: row['Layak PIP'] || 'Tidak',
-                          pipReason: row['Alasan Layak PIP'] || '',
-                          bank: row['Bank'] || '', 
-                          bankAccount: String(row['No Rekening'] || ''), 
-                          bankAccountName: row['Atas Nama Rekening'] || '', 
+                          pipEligible: getValue(row, 'Layak PIP', 'Layak PIP (usulan dari sekolah)'),
+                          pipReason: getValue(row, 'Alasan Layak PIP'),
+                          bank: getValue(row, 'Bank'), 
+                          bankAccount: getValue(row, 'No Rekening', 'Nomor Rekening Bank'), 
+                          bankAccountName: getValue(row, 'Atas Nama Rekening', 'Rekening Atas Nama'), 
                           
-                          specialNeeds: row['Berkebutuhan Khusus'] || 'Tidak',
-                          latitude: String(row['Lintang'] || ''), 
-                          longitude: String(row['Bujur'] || ''), 
-                          headCircumference: Number(row['Lingkar Kepala (cm)']) || 0, 
-                          distanceToSchool: String(row['Jarak Sekolah (km)'] || ''), 
-                          travelTimeMinutes: Number(row['Waktu Tempuh (menit)']) || 0
+                          specialNeeds: getValue(row, 'Berkebutuhan Khusus', 'Kebutuhan Khusus') || 'Tidak',
+                          latitude: getValue(row, 'Lintang'), 
+                          longitude: getValue(row, 'Bujur'), 
+                          headCircumference: Number(getValue(row, 'Lingkar Kepala (cm)', 'Lingkar Kepala')) || 0, 
+                          distanceToSchool: getValue(row, 'Jarak Sekolah (km)', 'Jarak Rumah ke Sekolah (KM)', 'Jarak ke Sekolah'), 
+                          travelTimeMinutes: Number(getValue(row, 'Waktu Tempuh (menit)', 'Waktu Tempuh')) || 0
                       },
                       documents: []
                   } as Student;
