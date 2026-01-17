@@ -114,7 +114,12 @@ const SettingsView: React.FC = () => {
       nomorSK: '421.3/1456/416-101.64/2025',
       tanggalKeputusan: '2 Juni 2025',
       tanggalSurat: '2 Juni 2025',
-      titimangsa: 'Mojokerto'
+      titimangsa: 'Mojokerto',
+      logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/e/eb/Lambang_Kabupaten_Mojokerto.png',
+      // New fields for Address/Header
+      headerLine1: 'Jl. Tirtawening Ds. Kembangbelor Kec. Pacet Kab. Mojokerto Kode Pos 61374',
+      headerLine2: 'NSS: 201050314970 NIS: 200970 NPSN: 20555784',
+      headerLine3: 'Email : smpn3pacet2007@gmail.com, HP: 0815 5386 0273'
   });
 
   // INITIAL LOAD FROM CLOUD
@@ -143,7 +148,16 @@ const SettingsView: React.FC = () => {
                   if (cloudSettings.raporPageCount) setRaporPageCount(Number(cloudSettings.raporPageCount));
 
                   // Load SKL Config
-                  if (cloudSettings.sklConfig) setSklConfig(cloudSettings.sklConfig);
+                  if (cloudSettings.sklConfig) {
+                      setSklConfig(prev => ({
+                          ...prev,
+                          ...cloudSettings.sklConfig,
+                          // Ensure we don't lose defaults if key is missing in cloud
+                          headerLine1: cloudSettings.sklConfig.headerLine1 || prev.headerLine1,
+                          headerLine2: cloudSettings.sklConfig.headerLine2 || prev.headerLine2,
+                          headerLine3: cloudSettings.sklConfig.headerLine3 || prev.headerLine3
+                      }));
+                  }
               }
 
               // 2. Fetch Users
@@ -183,7 +197,7 @@ const SettingsView: React.FC = () => {
       localStorage.setItem('sys_recap_config', JSON.stringify(recapSubjects));
       localStorage.setItem('sys_doc_config', JSON.stringify(docConfig));
       localStorage.setItem('sys_rapor_config', String(raporPageCount));
-      localStorage.setItem('skl_config', JSON.stringify(sklConfig)); // Fallback for SKL
+      localStorage.setItem('skl_config', JSON.stringify(sklConfig));
 
       const success = await api.saveAppSettings(settingsPayload);
       setIsSavingSettings(false);
@@ -415,6 +429,53 @@ const SettingsView: React.FC = () => {
                             Konfigurasi Surat Keterangan Lulus
                         </h3>
                         <div className="space-y-4">
+                            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4">
+                                <h4 className="text-sm font-bold text-blue-800 mb-2">Header / Kop Surat (Alamat & Kontak)</h4>
+                                <div className="space-y-2">
+                                    <div>
+                                        <label className="block text-xs font-bold text-blue-700 uppercase mb-1">Baris 1 (Jalan/Desa/Kec/Kab)</label>
+                                        <input 
+                                            type="text" 
+                                            className="w-full p-2 border border-blue-200 rounded text-sm outline-none focus:ring-2 focus:ring-blue-300"
+                                            value={sklConfig.headerLine1}
+                                            onChange={(e) => setSklConfig({...sklConfig, headerLine1: e.target.value})}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-blue-700 uppercase mb-1">Baris 2 (Kode Identitas Sekolah)</label>
+                                        <input 
+                                            type="text" 
+                                            className="w-full p-2 border border-blue-200 rounded text-sm outline-none focus:ring-2 focus:ring-blue-300"
+                                            value={sklConfig.headerLine2}
+                                            onChange={(e) => setSklConfig({...sklConfig, headerLine2: e.target.value})}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-blue-700 uppercase mb-1">Baris 3 (Kontak Email/HP)</label>
+                                        <input 
+                                            type="text" 
+                                            className="w-full p-2 border border-blue-200 rounded text-sm outline-none focus:ring-2 focus:ring-blue-300"
+                                            value={sklConfig.headerLine3}
+                                            onChange={(e) => setSklConfig({...sklConfig, headerLine3: e.target.value})}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-gray-600 uppercase mb-1">URL Logo Instansi (Kop Surat)</label>
+                                <input 
+                                    type="text" 
+                                    className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                    value={sklConfig.logoUrl}
+                                    onChange={(e) => setSklConfig({...sklConfig, logoUrl: e.target.value})}
+                                    placeholder="https://..."
+                                />
+                                <p className="text-[10px] text-gray-500 mt-1">
+                                    Gunakan <strong>Direct Link</strong> gambar (harus berakhiran .png, .jpg, atau .jpeg). <br/>
+                                    Contoh: <code>https://iili.io/fUaqCDQ.png</code> (Bukan link web viewer).
+                                </p>
+                            </div>
                             <div>
                                 <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Nomor Surat (Header)</label>
                                 <input 
@@ -472,6 +533,7 @@ const SettingsView: React.FC = () => {
                     </div>
                 )}
 
+                {/* ... (Other Tabs omitted for brevity, they are unchanged) ... */}
                 {activeTab === 'ACADEMIC' && (
                     <div className="max-w-2xl space-y-4 bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
                          <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4">
@@ -553,8 +615,6 @@ const SettingsView: React.FC = () => {
                     </div>
                 )}
 
-                {/* Other tabs remain similar... (KELAS, DOCS, P5, REKAP, USERS) */}
-                
                 {activeTab === 'KELAS' && (
                     <div className="space-y-4">
                         <div className="flex flex-col md:flex-row items-center gap-3 bg-white p-4 rounded-lg border border-gray-200 shadow-sm">

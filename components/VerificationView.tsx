@@ -792,6 +792,111 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                                 <FormField label="7. NIK" value={currentStudent.dapodik.nik} fieldKey="dapodik.nik" />
                                 <FormField label="8. Tempat, Tgl Lahir" value={`${currentStudent.birthPlace}, ${formatDateIndo(currentStudent.birthDate)}`} fieldKey="birthPlace" />
                                 <FormField label="11. Alamat Tempat Tinggal" value={currentStudent.address} fieldKey="address" />
+                                <div className="flex border-b border-gray-300 min-h-[20px]">
+                                    <div className="w-1/3 flex flex-col">
+                                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic"> - Dusun</div>
+                                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic"> - Kelurahan / Desa</div>
+                                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic"> - Kecamatan</div>
+                                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic"> - Kabupaten / Kota</div>
+                                    </div>
+                                    <div className="w-1/3 flex flex-col border-x border-gray-300">
+                                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{currentStudent.dapodik.dusun}</div>
+                                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{currentStudent.dapodik.kelurahan}</div>
+                                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{currentStudent.subDistrict}</div>
+                                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{currentStudent.district}</div>
+                                    </div>
+                                    <div className="flex-1 flex flex-col">
+                                        <div className="flex border-b border-gray-200 h-1/3">
+                                                <div className="w-10 px-1 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] font-bold">RT:</div>
+                                                <div className="flex-1 px-1 py-0.5 text-[9px]">{currentStudent.dapodik.rt}</div>
+                                                <div className="w-10 px-1 py-0.5 bg-gray-50 border-x border-gray-300 text-[8px] font-bold">RW:</div>
+                                                <div className="flex-1 px-1 py-0.5 text-[9px]">{currentStudent.dapodik.rw}</div>
+                                        </div>
+                                        <div className="flex border-b border-gray-200 h-1/3">
+                                                <div className="w-20 px-1 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] font-bold">Kode Pos</div>
+                                                <div className="flex-1 px-1 py-0.5 text-[9px]">{currentStudent.postalCode}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <FormField label="12. Transportasi" value={currentStudent.dapodik.transportation} fieldKey="dapodik.transportation" />
+                                <FormField label="13. Jenis Tinggal" value={currentStudent.dapodik.livingStatus} fieldKey="dapodik.livingStatus" />
+                                <div className="flex border-b border-gray-300 min-h-[20px]">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">14. No. Telp Rumah</div>
+                                    <div className="w-1/3 px-1.5 py-0.5 text-[9px] font-medium uppercase">-</div>
+                                    <div className="w-12 px-1.5 py-0.5 bg-gray-100 border-x border-gray-300 text-[9px] font-bold">HP :</div>
+                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] bg-white">{currentStudent.father.phone || currentStudent.mother.phone || '-'}</div>
+                                </div>
+                                <FormField label="15. Email" value={currentStudent.dapodik.email} fieldKey="dapodik.email" />
+                                <FormField label="16. No. KKS" value={currentStudent.dapodik.kksNumber} fieldKey="dapodik.kksNumber" />
+                                <div className="flex border-b border-gray-300 min-h-[20px]">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">17. Penerima KPS/KPH</div>
+                                    <div className="w-1/6 px-1.5 py-0.5 text-[9px] border-x border-gray-300 uppercase">{currentStudent.dapodik.kpsReceiver}</div>
+                                    <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">No. KPS</div>
+                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase">{currentStudent.dapodik.kpsNumber}</div>
+                                </div>
+                                <div className="flex border-b border-gray-300 min-h-[20px]">
+                                    <div className="w-1/3 px-1.5 py-0.5 text-[8px] italic"> - Penerima PIP</div>
+                                    <div className="w-1/6 px-1.5 py-0.5 text-[9px] border-x border-gray-300 uppercase">{currentStudent.dapodik.kipReceiver}</div>
+                                    <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">No. KIP</div>
+                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase">{currentStudent.dapodik.kipNumber}</div>
+                                </div>
+                                <FormField label=" - Nama di KIP" value={currentStudent.dapodik.kipName} fieldKey="dapodik.kipName" />
+                            </div>
+
+                            {/* SECTION 2: DATA AYAH */}
+                            <SubHeader>DATA AYAH KANDUNG</SubHeader>
+                            <div className="border-x border-t border-gray-300">
+                                <FormField label="18. Nama Ayah" value={currentStudent.father.name} fieldKey="father.name" className="font-bold" />
+                                <FormField label=" - NIK Ayah" value={currentStudent.father.nik} fieldKey="father.nik" />
+                                <FormField label=" - Tahun Lahir" value={currentStudent.father.birthPlaceDate} fieldKey="father.birthPlaceDate" />
+                                <FormField label=" - Pekerjaan" value={currentStudent.father.job} fieldKey="father.job" />
+                                <FormField label=" - Pendidikan" value={currentStudent.father.education} fieldKey="father.education" />
+                                <FormField label=" - Penghasilan" value={currentStudent.father.income} fieldKey="father.income" />
+                            </div>
+
+                            {/* SECTION 3: DATA IBU */}
+                            <SubHeader>DATA IBU KANDUNG</SubHeader>
+                            <div className="border-x border-t border-gray-300">
+                                <FormField label="19. Nama Ibu" value={currentStudent.mother.name} fieldKey="mother.name" className="font-bold" />
+                                <FormField label=" - NIK Ibu" value={currentStudent.mother.nik} fieldKey="mother.nik" />
+                                <FormField label=" - Tahun Lahir" value={currentStudent.mother.birthPlaceDate} fieldKey="mother.birthPlaceDate" />
+                                <FormField label=" - Pekerjaan" value={currentStudent.mother.job} fieldKey="mother.job" />
+                                <FormField label=" - Pendidikan" value={currentStudent.mother.education} fieldKey="mother.education" />
+                                <FormField label=" - Penghasilan" value={currentStudent.mother.income} fieldKey="mother.income" />
+                            </div>
+
+                            {/* SECTION 4: DATA WALI */}
+                            <SubHeader>DATA WALI</SubHeader>
+                            <div className="border-x border-t border-gray-300">
+                                <FormField label="20. Nama Wali" value={currentStudent.guardian?.name || '-'} fieldKey="guardian.name" />
+                                <FormField label=" - NIK Wali" value={currentStudent.guardian?.nik || '-'} fieldKey="guardian.nik" />
+                                <FormField label=" - Tahun Lahir" value={currentStudent.guardian?.birthPlaceDate || '-'} fieldKey="guardian.birthPlaceDate" />
+                                <FormField label=" - Pekerjaan" value={currentStudent.guardian?.job || '-'} fieldKey="guardian.job" />
+                                <FormField label=" - Pendidikan" value={currentStudent.guardian?.education || '-'} fieldKey="guardian.education" />
+                                <FormField label=" - Penghasilan" value={currentStudent.guardian?.income || '-'} fieldKey="guardian.income" />
+                            </div>
+
+                            {/* SECTION 5: PERIODIK */}
+                            <SubHeader>DATA PERIODIK</SubHeader>
+                            <div className="border border-gray-300 mt-1">
+                                <div className="flex border-b border-gray-300 h-6">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">21. Tinggi Badan</div>
+                                    <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-white border-r border-gray-300">{currentStudent.height}</div>
+                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] flex items-center">cm</div>
+                                </div>
+                                <div className="flex border-b border-gray-300 h-6">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">Berat Badan</div>
+                                    <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-white border-r border-gray-300">{currentStudent.weight}</div>
+                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] flex items-center">kg</div>
+                                </div>
+                                <div className="flex border-b border-gray-300 h-6">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">22. Jarak Ke Sekolah</div>
+                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">{currentStudent.dapodik.distanceToSchool} Km</div>
+                                </div>
+                                <div className="flex h-6">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">23. Waktu Tempuh</div>
+                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">{currentStudent.dapodik.travelTimeMinutes} Menit</div>
+                                </div>
                             </div>
                         </div>
                     </div>
