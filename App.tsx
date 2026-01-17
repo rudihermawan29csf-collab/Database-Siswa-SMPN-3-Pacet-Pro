@@ -1,412 +1,383 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { 
+  LayoutDashboard, Database, Book, ClipboardList, Calculator, 
+  FileBadge, Award, ClipboardCheck, ScrollText, FileCheck2, 
+  FileInput, History, LayoutTemplate, Settings, LogOut, Menu
+} from 'lucide-react';
+
+// Components
 import Sidebar from './components/Sidebar';
 import Dashboard, { DashboardNotification } from './components/Dashboard';
-import DapodikList from './components/DapodikList';
-import StudentDetail from './components/StudentDetail';
-import VerificationView from './components/VerificationView';
+import Login from './components/Login';
 import DatabaseView from './components/DatabaseView';
-import HistoryView from './components/HistoryView';
 import BukuIndukView from './components/BukuIndukView';
 import GradesView from './components/GradesView';
 import RecapView from './components/RecapView';
+import SKLView from './components/SKLView';
 import IjazahView from './components/IjazahView';
-import SKLView from './components/SKLView'; 
-import FileManager from './components/FileManager';
-import SettingsView from './components/SettingsView';
-import UploadRaporView from './components/UploadRaporView';
-import GradeVerificationView from './components/GradeVerificationView';
-import MonitoringView from './components/MonitoringView';
-import ReportsView from './components/ReportsView';
-import StudentDocsAdminView from './components/StudentDocsAdminView'; 
+import VerificationView from './components/VerificationView';
 import IjazahVerificationView from './components/IjazahVerificationView';
-import Login from './components/Login';
-import { api } from './services/api'; 
-import { MOCK_STUDENTS } from './services/mockData';
+import GradeVerificationView from './components/GradeVerificationView';
+import StudentDocsAdminView from './components/StudentDocsAdminView';
+import HistoryView from './components/HistoryView';
+import MonitoringView from './components/MonitoringView';
+import SettingsView from './components/SettingsView';
+import StudentDetail from './components/StudentDetail'; // For Student Profile View
+import UploadRaporView from './components/UploadRaporView'; // For Student Rapor View
+import FileManager from './components/FileManager'; // For Student Docs View
+
+// Services & Types
+import { api } from './services/api';
 import { Student, DocumentFile } from './types';
-import { Search, Bell, ChevronDown, LogOut, User, Loader2, Cloud, CloudOff, RefreshCw, Menu, FolderOpen, WifiOff, AlertTriangle, Database } from 'lucide-react';
+import { MOCK_STUDENTS } from './services/mockData';
 
-type UserRole = 'ADMIN' | 'STUDENT' | 'GURU';
-
-// CACHE KEY VERSIONING
-const CACHE_KEY = 'sidata_students_cache_v4';
-
-const App: React.FC = () => {
-  const [isLoading, setIsLoading] = useState(true);
-  const [isCloudConnected, setIsCloudConnected] = useState(false);
-  const [studentsData, setStudentsData] = useState<Student[]>([]);
-  const [activeAcademicYear, setActiveAcademicYear] = useState('2024/2025'); 
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userRole, setUserRole] = useState<UserRole>('ADMIN');
-  const [currentUser, setCurrentUser] = useState<{name: string, role: string} | null>(null);
+function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userRole, setUserRole] = useState<'ADMIN' | 'GURU' | 'STUDENT' | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null); // For Student Login Context
+  
   const [currentView, setCurrentView] = useState('dashboard');
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [connectionError, setConnectionError] = useState(false);
-  const [initStatus, setInitStatus] = useState(''); // Status message for initial sync
-  
-  // Triggers & Navigation State
-  const [dataVersion, setDataVersion] = useState(0); 
-  const [targetHighlightField, setTargetHighlightField] = useState<string | undefined>(undefined);
-  const [targetHighlightDoc, setTargetHighlightDoc] = useState<string | undefined>(undefined);
-  const [targetVerificationStudentId, setTargetVerificationStudentId] = useState<string | undefined>(undefined); 
-  
-  const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(new Set());
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); 
+  const [students, setStudents] = useState<Student[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const sanitizeStudents = (data: Student[]): Student[] => {
-      return data.map(s => ({
-          ...s,
-          className: s.className ? s.className.replace(/kelas/gi, '').trim() : '-'
-      }));
+  // --- DATA FETCHING ---
+  const fetchStudents = async () => {
+    setIsLoading(true);
+    try {
+      const data = await api.getStudents();
+      if (data && data.length > 0) {
+        setStudents(data);
+      } else {
+        // Fallback if API empty (first run)
+        setStudents(MOCK_STUDENTS); 
+      }
+    } catch (error) {
+      console.error("Failed to fetch students, using mock", error);
+      setStudents(MOCK_STUDENTS);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // FETCH DATA ON MOUNT & UPDATE
   useEffect(() => {
-    const initData = async () => {
-        if (studentsData.length === 0) setIsLoading(true);
-        setConnectionError(false);
-        setInitStatus('Menghubungkan ke Cloud...');
+    if (isLoggedIn) {
+      fetchStudents();
+    }
+  }, [isLoggedIn]);
 
-        // 1. Try Load from LocalStorage Cache (Fast Load)
-        const cached = localStorage.getItem(CACHE_KEY);
-        let localData: Student[] = [];
-        if (cached) {
-            try { localData = JSON.parse(cached); } catch (e) { localStorage.removeItem(CACHE_KEY); }
-        }
+  // --- NOTIFICATION LOGIC ---
+  const notifications = useMemo(() => {
+    const list: DashboardNotification[] = [];
 
-        try {
-            // 2. Fetch from Cloud
-            let onlineData: Student[] | null = null;
-            let settings: any = null;
-
-            try {
-                [onlineData, settings] = await Promise.all([
-                    api.getStudents(),
-                    api.getAppSettings()
-                ]);
-            } catch (err: any) {
-                // Check if it's just a "not configured" error or a real fetch error
-                if (err.message === "URL Not Configured") throw err;
-                throw err;
-            }
-            
-            // 3. Handle Empty Database (First Run)
-            if (onlineData && onlineData.length === 0) {
-                setInitStatus('Database kosong. Menginisialisasi data awal...');
-                console.warn("Database empty. Initializing with Mock Data...");
-                // Force sync mock data to cloud
-                const success = await api.syncInitialData(MOCK_STUDENTS);
-                if (success) {
-                    setInitStatus('Inisialisasi berhasil. Memuat ulang...');
-                    onlineData = await api.getStudents(); // Refetch
-                } else {
-                    console.error("Failed to initialize database.");
-                }
-            }
-
-            // 4. Set Data
-            if (onlineData && onlineData.length > 0) {
-                const sanitizedOnline = sanitizeStudents(onlineData);
-                setStudentsData(sanitizedOnline);
-                localStorage.setItem(CACHE_KEY, JSON.stringify(sanitizedOnline));
-                setIsCloudConnected(true);
-                setConnectionError(false);
-                
-                if (settings && settings.academicData && settings.academicData.year) {
-                    setActiveAcademicYear(settings.academicData.year);
-                }
-            } else {
-                // Still empty after sync attempt? Fallback to mock logic locally but mark as offline
-                console.warn("Cloud data empty after sync attempt.");
-                if (localData.length > 0) {
-                    setStudentsData(localData);
-                } else {
-                    setStudentsData(sanitizeStudents(MOCK_STUDENTS));
-                }
-                setIsCloudConnected(false); // Treat as offline/mock mode
-            }
-
-        } catch (error: any) {
-            console.error("Connection Error:", error);
-            setConnectionError(true);
-            setIsCloudConnected(false);
-            
-            // Fallback to cache or mock
-            if (localData.length > 0) {
-                setStudentsData(localData);
-            } else {
-                setStudentsData(sanitizeStudents(MOCK_STUDENTS));
-            }
-        } finally {
-            setIsLoading(false);
-            setInitStatus('');
-        }
-    };
-    initData();
-  }, [dataVersion]);
-
-  // SYNC SELECTED STUDENT DATA
-  useEffect(() => {
-      if (selectedStudent && studentsData.length > 0) {
-          const updatedStudent = studentsData.find(s => s.id === selectedStudent.id);
-          if (updatedStudent && JSON.stringify(updatedStudent) !== JSON.stringify(selectedStudent)) {
-              setSelectedStudent(updatedStudent);
+    if (userRole === 'ADMIN' || userRole === 'GURU') {
+      // ADMIN/GURU VIEW: Show PENDING items
+      students.forEach(s => {
+        // 1. Pending Documents
+        s.documents.forEach(d => {
+          if (d.status === 'PENDING') {
+            list.push({
+              id: `doc-${d.id}`,
+              type: 'ADMIN_DOC_VERIFY',
+              title: 'Verifikasi Dokumen',
+              description: `${s.fullName} mengupload ${d.category} (${d.name})`,
+              date: d.uploadDate,
+              priority: 'HIGH',
+              data: { studentId: s.id, category: d.category } // Meta for navigation
+            });
           }
-      }
-  }, [studentsData, selectedStudent]);
+        });
 
-  // Sync to LocalStorage on change
-  useEffect(() => {
-      if (studentsData.length > 0) {
-          localStorage.setItem(CACHE_KEY, JSON.stringify(studentsData));
-      }
-  }, [studentsData]);
+        // 2. Pending Requests (Bio, Grade, Class)
+        s.correctionRequests?.forEach(r => {
+          if (r.status === 'PENDING') {
+            let type: any = 'ADMIN_BIO_VERIFY';
+            let title = 'Verifikasi Data Diri';
+            
+            if (r.fieldKey.startsWith('grade-')) {
+               type = 'ADMIN_GRADE_VERIFY';
+               title = 'Verifikasi Nilai';
+            } else if (r.fieldKey.startsWith('class-')) {
+               type = 'ADMIN_BIO_VERIFY'; // Class change counts as bio/academic data
+               title = 'Verifikasi Kelas';
+            }
 
-  const refreshData = () => {
-      setDataVersion(prev => prev + 1);
-  };
-
-  const loadOfflineMode = () => {
-      setStudentsData(sanitizeStudents(MOCK_STUDENTS));
-      setConnectionError(false);
-  };
-
-  const saveStudentToCloud = async (student: Student) => {
-      const sanitizedStudent = {
-          ...student,
-          className: student.className.replace(/kelas/gi, '').trim()
-      };
-
-      // Optimistic Update
-      setStudentsData(prevStudents => {
-          const newData = prevStudents.map(s => s.id === sanitizedStudent.id ? sanitizedStudent : s);
-          localStorage.setItem(CACHE_KEY, JSON.stringify(newData)); 
-          return newData;
+            list.push({
+              id: `req-${r.id}`,
+              type: type,
+              title: title,
+              description: `${s.fullName}: ${r.fieldName} (${r.originalValue || '-'} ➔ ${r.proposedValue})`,
+              date: r.requestDate.split('T')[0],
+              priority: 'MEDIUM',
+              data: { studentId: s.id, type: r.fieldKey.startsWith('grade-') ? 'grade' : 'bio' }
+            });
+          }
+        });
       });
 
-      try {
-          await api.updateStudent(sanitizedStudent);
-      } catch (error) {
-          console.error("Cloud save failed:", error);
-          alert("Gagal menyimpan ke Cloud (Data tersimpan di perangkat ini sementara).");
-      }
-  };
+    } else if (userRole === 'STUDENT' && selectedStudent) {
+      // STUDENT VIEW: Show APPROVED / REJECTED items for *this* student
+      // IMPORTANT: Get latest data from students array, not stale selectedStudent state
+      const currentData = students.find(s => s.id === selectedStudent.id) || selectedStudent;
 
-  const handleLogin = (role: UserRole, studentData?: Student) => {
-      setUserRole(role);
-      setIsAuthenticated(true);
-      if (role === 'STUDENT' && studentData) {
-          setCurrentUser({ name: studentData.fullName, role: 'Siswa' });
-          setSelectedStudent(studentData);
-      } else if (role === 'GURU') {
-          setCurrentUser({ name: 'Guru Pengajar', role: 'Guru' });
-      } else {
-          setCurrentUser({ name: 'Administrator', role: 'Admin' });
-      }
-      setCurrentView('dashboard');
+      // 1. Documents (Approved or Revision)
+      currentData.documents.forEach(d => {
+        if (d.status === 'APPROVED') {
+           list.push({
+             id: `doc-ok-${d.id}`,
+             type: 'STUDENT_APPROVED',
+             title: 'Dokumen Disetujui',
+             description: `Dokumen ${d.category} Anda telah disetujui oleh admin.`,
+             date: d.verificationDate || new Date().toISOString().split('T')[0],
+             priority: 'LOW',
+             verifierName: d.verifierName
+           });
+        } else if (d.status === 'REVISION') {
+           list.push({
+             id: `doc-rev-${d.id}`,
+             type: 'STUDENT_REVISION',
+             title: 'Revisi Dokumen',
+             description: `Dokumen ${d.category} ditolak. Catatan: "${d.adminNote}"`,
+             date: d.verificationDate || new Date().toISOString().split('T')[0],
+             priority: 'HIGH',
+             verifierName: d.verifierName
+           });
+        }
+      });
+
+      // 2. Correction Requests (Approved or Rejected)
+      currentData.correctionRequests?.forEach(r => {
+         if (r.status === 'APPROVED') {
+            list.push({
+              id: `req-ok-${r.id}`,
+              type: 'STUDENT_APPROVED',
+              title: 'Perubahan Disetujui',
+              description: `Pengajuan perubahan ${r.fieldName} telah disetujui.`,
+              date: r.processedDate ? r.processedDate.split('T')[0] : '',
+              priority: 'LOW',
+              verifierName: r.verifierName
+            });
+         } else if (r.status === 'REJECTED') {
+            list.push({
+              id: `req-rej-${r.id}`,
+              type: 'STUDENT_REVISION',
+              title: 'Pengajuan Ditolak',
+              description: `Pengajuan ${r.fieldName} ditolak. Alasan: "${r.adminNote}"`,
+              date: r.processedDate ? r.processedDate.split('T')[0] : '',
+              priority: 'HIGH',
+              verifierName: r.verifierName
+            });
+         }
+      });
+      
+      // 3. Admin Messages
+      currentData.adminMessages?.forEach(msg => {
+          list.push({
+              id: `msg-${msg.id}`,
+              type: 'STUDENT_REVISION', // Use generic alert style
+              title: 'Pesan Admin',
+              description: msg.content,
+              date: msg.date.split('T')[0],
+              priority: 'MEDIUM'
+          });
+      });
+    }
+
+    // Sort by date (newest first)
+    return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [students, userRole, selectedStudent]);
+
+  // --- HANDLERS ---
+  const handleLogin = (role: 'ADMIN' | 'GURU' | 'STUDENT', studentData?: Student) => {
+    setIsLoggedIn(true);
+    setUserRole(role);
+    if (role === 'STUDENT' && studentData) {
+      setSelectedStudent(studentData);
+    }
+    setCurrentView('dashboard');
   };
 
   const handleLogout = () => {
-      setIsAuthenticated(false);
-      setCurrentUser(null);
-      setSelectedStudent(null);
-      setUserRole('ADMIN');
+    setIsLoggedIn(false);
+    setUserRole(null);
+    setSelectedStudent(null);
+    setCurrentView('dashboard');
   };
 
-  const notifications = useMemo(() => {
-      if (!studentsData) return [];
-      const notifs: DashboardNotification[] = [];
-      studentsData.forEach(s => {
-          const pendingDocs = s.documents.filter(d => d.status === 'PENDING');
-          if (pendingDocs.length > 0) {
-              pendingDocs.forEach(d => {
-                  const isRapor = d.category === 'RAPOR';
-                  notifs.push({
-                      id: `doc-${d.id}`,
-                      type: isRapor ? 'ADMIN_GRADE_VERIFY' : 'ADMIN_DOC_VERIFY',
-                      title: isRapor ? 'Verifikasi Nilai (Rapor)' : 'Verifikasi Buku Induk (Dokumen)',
-                      description: `${s.fullName} mengupload ${d.name} (${d.category})`,
-                      date: d.uploadDate,
-                      priority: 'HIGH',
-                      data: { studentId: s.id, docId: d.id, category: d.category, targetView: isRapor ? 'grade-verification' : 'verification' }
-                  });
-              });
-          }
-          const pendingReqs = s.correctionRequests?.filter(r => r.status === 'PENDING');
-          if (pendingReqs && pendingReqs.length > 0) {
-              pendingReqs.forEach(r => {
-                  const isAcademic = r.fieldKey.startsWith('grade-') || r.fieldKey.startsWith('class-');
-                  const isIjazah = ['nis', 'nisn', 'birthPlace', 'birthDate'].includes(r.fieldKey);
-                  let type: any = 'ADMIN_BIO_VERIFY';
-                  let title = 'Verifikasi Buku Induk';
-                  let targetView = 'student-detail';
-                  if (isAcademic) { type = 'ADMIN_GRADE_VERIFY'; title = 'Verifikasi Nilai'; targetView = 'grade-verification'; } 
-                  else if (isIjazah) { type = 'ADMIN_IJAZAH_VERIFY'; title = 'Verifikasi Data Ijazah'; targetView = 'ijazah-verification'; }
-                  notifs.push({
-                      id: `req-${r.id}`, type: type, title: title, description: `${s.fullName} mengajukan perbaikan: ${r.fieldName}`, date: new Date(r.requestDate).toLocaleDateString(), priority: 'MEDIUM',
-                      data: { studentId: s.id, fieldKey: r.fieldKey, targetView: targetView }
-                  });
-              });
-          }
-      });
-      return notifs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [studentsData, userRole, selectedStudent]);
+  const handleUpdateStudents = (updatedStudents: Student[]) => {
+    setStudents(updatedStudents);
+  };
 
-  const handleNotificationClick = (notif: DashboardNotification) => {
-      if (userRole === 'ADMIN' || userRole === 'GURU') {
-          if (notif.data) {
-              setTargetVerificationStudentId(notif.data.studentId);
-              if (notif.data.docId) {
-                  setTargetHighlightDoc(notif.data.docId);
-                  if (notif.data.targetView) setCurrentView(notif.data.targetView);
-                  else setCurrentView(notif.data.category === 'RAPOR' ? 'grade-verification' : 'verification');
-              } else if (notif.data.fieldKey) {
-                  setTargetHighlightField(notif.data.fieldKey);
-                  if (notif.data.targetView) setCurrentView(notif.data.targetView);
-                  else {
-                      const s = studentsData.find(st => st.id === notif.data.studentId);
-                      if (s) { setSelectedStudent(s); setCurrentView('student-detail'); }
-                  }
+  const refreshData = () => {
+    fetchStudents();
+  };
+
+  // --- STUDENT UPLOAD HANDLER ---
+  const handleStudentUpload = async (file: File, category: string) => {
+      if (!selectedStudent) return;
+      
+      // We must upload to API then update state
+      try {
+          const driveUrl = await api.uploadFile(file, selectedStudent.id, category);
+          if (driveUrl) {
+              const newDoc: DocumentFile = {
+                  id: Math.random().toString(36).substr(2, 9),
+                  name: file.name,
+                  type: file.type.includes('pdf') ? 'PDF' : 'IMAGE',
+                  url: driveUrl,
+                  category: category as any,
+                  uploadDate: new Date().toISOString().split('T')[0],
+                  size: `${(file.size/1024).toFixed(0)} KB`,
+                  status: 'PENDING'
+              };
+              
+              // Update local state immediately for UI response
+              const updatedStudent = { ...selectedStudent };
+              // Remove old doc of same category if exists (except Rapor which allows multiple)
+              if (category !== 'RAPOR') {
+                  updatedStudent.documents = updatedStudent.documents.filter(d => d.category !== category);
               }
+              updatedStudent.documents.push(newDoc);
+              
+              await api.updateStudent(updatedStudent);
+              refreshData(); // Sync full list
+              alert("File berhasil diupload!");
+          } else {
+              alert("Gagal upload file.");
           }
+      } catch (e) {
+          console.error(e);
+          alert("Terjadi kesalahan saat upload.");
       }
-      setReadNotificationIds(prev => new Set(prev).add(notif.id));
   };
 
+  // --- RENDER CONTENT SWITCHER ---
   const renderContent = () => {
-      // Error State Handler inside App - Enhanced with manual offline button
-      if (connectionError && studentsData.length === 0) {
-          return (
-              <div className="flex flex-col items-center justify-center h-full text-center p-8 bg-white rounded-xl border border-red-200 shadow-sm m-4">
-                  <WifiOff className="w-16 h-16 text-red-400 mb-4" />
-                  <h3 className="text-xl font-bold text-gray-800 mb-2">Gagal Terhubung ke Cloud</h3>
-                  <p className="text-gray-500 mb-2 max-w-md">
-                      Aplikasi tidak dapat terhubung ke Google Apps Script. 
-                  </p>
-                  <div className="text-xs text-left bg-yellow-50 p-4 rounded border border-yellow-200 text-yellow-800 max-w-md mb-6">
-                      <strong>Tips Perbaikan:</strong>
-                      <ul className="list-disc pl-4 mt-1 space-y-1">
-                          <li>Pastikan Deployment Web App diset ke: <strong>Who has access: Anyone</strong> (Siapa saja).</li>
-                          <li>Jika baru dideploy, tunggu 1-2 menit lalu coba lagi.</li>
-                          <li>Pastikan URL di <code>services/api.ts</code> sudah benar (berakhiran /exec).</li>
-                          <li>Cek koneksi internet anda.</li>
-                      </ul>
-                  </div>
-                  <div className="flex gap-3">
-                      <button onClick={refreshData} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 flex items-center gap-2">
-                          <RefreshCw className="w-4 h-4" /> Coba Lagi
-                      </button>
-                      <button onClick={loadOfflineMode} className="px-6 py-2 bg-gray-100 text-gray-700 rounded-lg font-bold hover:bg-gray-200 flex items-center gap-2 border border-gray-300">
-                          <Database className="w-4 h-4" /> Gunakan Data Offline
-                      </button>
-                  </div>
-              </div>
-          );
-      }
+    // Helper to get fresh student object
+    const studentContext = userRole === 'STUDENT' && selectedStudent 
+        ? students.find(s => s.id === selectedStudent.id) || selectedStudent 
+        : undefined;
 
-      switch (currentView) {
-          case 'dashboard': return <Dashboard notifications={notifications} onNotificationClick={handleNotificationClick} userRole={userRole} students={studentsData} />;
-          case 'database': return <DatabaseView students={studentsData} onUpdateStudents={(newData) => { setStudentsData(newData); saveStudentToCloud(newData[0]); }} />;
-          case 'buku-induk': return <BukuIndukView students={studentsData} />;
-          case 'verification': return <VerificationView students={studentsData} targetStudentId={targetVerificationStudentId} onUpdate={refreshData} onSave={saveStudentToCloud} currentUser={currentUser || undefined} />;
-          case 'student-detail': 
-              if (!selectedStudent) return <DapodikList students={studentsData} onSelectStudent={(s) => { setSelectedStudent(s); setCurrentView('student-detail'); }} />;
-              return <StudentDetail student={selectedStudent} onBack={() => setCurrentView('database')} viewMode="dapodik" highlightFieldKey={targetHighlightField} onUpdate={refreshData} onSave={saveStudentToCloud} currentUser={currentUser || undefined} />;
-          case 'student-docs': return <StudentDocsAdminView students={studentsData} onUpdate={refreshData} />;
-          case 'grades': return <GradesView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} onUpdate={refreshData} />;
-          case 'grade-verification': return <GradeVerificationView students={studentsData} userRole={userRole} onUpdate={refreshData} onSave={saveStudentToCloud} currentUser={currentUser || undefined} />;
-          case 'recap': return <RecapView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
-          case 'skl': return <SKLView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
-          case 'data-ijazah': return <IjazahView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
-          case 'ijazah-verification': return <IjazahVerificationView students={studentsData} onUpdate={refreshData} onSave={saveStudentToCloud} currentUser={currentUser || undefined} />;
-          case 'settings': return <SettingsView />;
-          case 'upload-rapor': 
-              if (!selectedStudent) return <div>Data siswa tidak ditemukan</div>;
-              return <UploadRaporView student={selectedStudent} onUpdate={refreshData} />;
-          case 'history': return <HistoryView students={studentsData} />;
-          case 'monitoring': return <MonitoringView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
-          case 'reports': return <ReportsView students={studentsData} onUpdate={refreshData} />;
-          case 'dapodik':
-              if (!selectedStudent) return <div>Loading...</div>;
-              return <StudentDetail student={selectedStudent} onBack={() => setCurrentView('dashboard')} viewMode="student" readOnly={true} onUpdate={refreshData} onSave={saveStudentToCloud} currentUser={currentUser || undefined} />;
-          case 'documents':
-              if (!selectedStudent) return <div>Loading...</div>;
-              return (
-                  <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                      <div className="p-4 border-b"><h2 className="text-lg font-bold flex items-center gap-2 text-gray-800"><FolderOpen className="w-5 h-5 text-blue-600"/> Dokumen Saya</h2></div>
-                      <div className="flex-1 p-4 overflow-y-auto bg-gray-50/50">
-                          <FileManager 
-                              documents={selectedStudent.documents} 
-                              onUpload={(f, c) => {
-                                  api.uploadFile(f, selectedStudent.id, c).then(url => {
-                                      if(url) {
-                                          const newDoc: DocumentFile = { id: Math.random().toString(36).substr(2, 9), name: f.name, type: f.type.includes('pdf') ? 'PDF' : 'IMAGE', url: url, category: c as any, uploadDate: new Date().toISOString().split('T')[0], size: 'Unknown', status: 'PENDING' };
-                                          const updated = {...selectedStudent, documents: [...selectedStudent.documents.filter(d=>d.category!==c), newDoc]};
-                                          saveStudentToCloud(updated);
-                                          refreshData();
-                                      }
-                                  });
-                              }}
-                              onDelete={(id) => { const updated = {...selectedStudent, documents: selectedStudent.documents.filter(d=>d.id !== id)}; saveStudentToCloud(updated); refreshData(); }}
-                          />
-                      </div>
-                  </div>
-              );
-          default: return <Dashboard notifications={notifications} onNotificationClick={handleNotificationClick} userRole={userRole} students={studentsData} />;
-      }
+    switch (currentView) {
+      case 'dashboard':
+        return <Dashboard notifications={notifications} userRole={userRole || 'ADMIN'} students={students} />;
+      
+      // ADMIN VIEWS
+      case 'database':
+        return <DatabaseView students={students} onUpdateStudents={handleUpdateStudents} />;
+      case 'buku-induk':
+        return <BukuIndukView students={students} />;
+      case 'student-docs':
+        return <StudentDocsAdminView students={students} onUpdate={refreshData} />;
+      case 'verification':
+        return <VerificationView students={students} onUpdate={refreshData} currentUser={{name: 'Admin', role: 'ADMIN'}} />;
+      case 'ijazah-verification':
+        return <IjazahVerificationView students={students} onUpdate={refreshData} currentUser={{name: 'Admin', role: 'ADMIN'}} />;
+      case 'grade-verification':
+        return <GradeVerificationView students={students} onUpdate={refreshData} currentUser={{name: 'Admin', role: 'ADMIN'}} />;
+      case 'settings':
+        return <SettingsView />;
+      
+      // SHARED VIEWS (Different props based on role)
+      case 'grades':
+        return <GradesView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext} onUpdate={refreshData} />;
+      case 'recap':
+        return <RecapView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext} />;
+      case 'skl':
+        return <SKLView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext} />;
+      case 'data-ijazah':
+        return <IjazahView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext} />;
+      case 'history':
+        return <HistoryView students={userRole === 'STUDENT' && studentContext ? [studentContext] : students} />;
+      case 'monitoring':
+        return <MonitoringView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext} />;
+
+      // STUDENT SPECIFIC VIEWS
+      case 'dapodik': // Student Buku Induk (Read Only + Correction)
+        return studentContext ? (
+            <StudentDetail 
+                student={studentContext} 
+                onBack={() => setCurrentView('dashboard')} 
+                viewMode="student" 
+                readOnly={true} // Enable click-to-correct
+                onUpdate={refreshData}
+            />
+        ) : null;
+      
+      case 'documents': // Student Document Manager
+        return studentContext ? (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 h-full flex flex-col p-4 animate-fade-in">
+                <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    <FileInput className="w-5 h-5 text-blue-600" /> Dokumen Saya
+                </h2>
+                <div className="flex-1 overflow-hidden">
+                    <FileManager 
+                        documents={studentContext.documents} 
+                        onUpload={handleStudentUpload}
+                    />
+                </div>
+            </div>
+        ) : null;
+
+      case 'upload-rapor':
+        return studentContext ? (
+            <UploadRaporView student={studentContext} onUpdate={refreshData} />
+        ) : null;
+
+      default:
+        return <Dashboard notifications={notifications} userRole={userRole || 'ADMIN'} students={students} />;
+    }
   };
 
-  // IF NOT AUTHENTICATED, RENDER LOGIN SCREEN FULL PAGE
-  if (!isAuthenticated) {
-      return <Login onLogin={handleLogin} students={studentsData} />;
+  if (!isLoggedIn) {
+    return <Login onLogin={handleLogin} students={students} />;
   }
 
   return (
-    <div className="flex h-screen bg-gray-100 font-sans overflow-hidden">
-        {/* Mobile Menu Overlay */}
-        {isMobileMenuOpen && (<div className="fixed inset-0 bg-black/50 z-20 md:hidden" onClick={() => setIsMobileMenuOpen(false)}></div>)}
-        <div className={`fixed inset-y-0 left-0 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 transition duration-200 ease-in-out z-30 md:block md:w-64 flex-shrink-0 bg-gray-900 m-0 md:m-4 rounded-none md:rounded-2xl shadow-xl`}>
-             <Sidebar currentView={currentView} setView={(v) => { setCurrentView(v); setIsMobileMenuOpen(false); }} onLogout={handleLogout} isCollapsed={isSidebarCollapsed} toggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)} userRole={userRole} />
-        </div>
-        <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-            <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 h-16 flex items-center justify-between px-6 z-20">
-                <div className="flex items-center gap-4">
-                    <button className="md:hidden p-2 rounded-lg hover:bg-gray-100 text-gray-600" onClick={() => setIsMobileMenuOpen(true)}><Menu className="w-6 h-6" /></button>
-                    <div className="flex flex-col">
-                        <h1 className="text-lg font-bold text-gray-800 hidden sm:block">{currentView === 'dashboard' ? 'Dashboard' : 'Menu Aplikasi'}</h1>
-                        <span className="text-[10px] text-gray-500 font-medium hidden sm:block">Tahun Ajaran {activeAcademicYear}</span>
-                    </div>
-                </div>
-                <div className="flex items-center gap-4">
-                    {/* Status Cloud */}
-                    <div className={`hidden md:flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border ${isCloudConnected ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                        {isCloudConnected ? <Cloud className="w-3 h-3"/> : <CloudOff className="w-3 h-3"/>}
-                        {isCloudConnected ? 'Online' : 'Offline'}
-                    </div>
-                    {isLoading && <Loader2 className="w-5 h-5 animate-spin text-blue-600" />}
-                    <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-full text-xs font-bold border border-blue-100 cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => setIsProfileOpen(!isProfileOpen)}>
-                        <User className="w-3 h-3" /> {currentUser?.name || 'User'} ({currentUser?.role}) <ChevronDown className="w-3 h-3" />
-                    </div>
-                    {isProfileOpen && (
-                        <div className="absolute top-14 right-6 w-48 bg-white rounded-xl shadow-xl border border-gray-100 py-1 z-50">
-                            <button onClick={() => { refreshData(); setIsProfileOpen(false); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"><RefreshCw className="w-4 h-4" /> Refresh Data</button>
-                            <button onClick={handleLogout} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"><LogOut className="w-4 h-4" /> Keluar</button>
-                        </div>
-                    )}
-                </div>
-            </header>
-            
-            {initStatus && (
-                <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-50 bg-blue-600 text-white px-6 py-2 rounded-full shadow-lg font-bold text-sm animate-pulse flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" /> {initStatus}
-                </div>
-            )}
+    <div className="flex h-screen bg-mac-bg overflow-hidden font-sans text-mac-text">
+      {/* Mobile Sidebar Overlay */}
+      {!isSidebarCollapsed && (
+        <div 
+          className="fixed inset-0 bg-black/20 z-20 md:hidden backdrop-blur-sm"
+          onClick={() => setIsSidebarCollapsed(true)}
+        ></div>
+      )}
 
-            <main className="flex-1 overflow-hidden p-4 md:p-6 relative">{renderContent()}</main>
+      {/* Sidebar */}
+      <Sidebar
+        currentView={currentView}
+        setView={(view) => { setCurrentView(view); if(window.innerWidth < 768) setIsSidebarCollapsed(true); }}
+        onLogout={handleLogout}
+        isCollapsed={isSidebarCollapsed}
+        toggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        userRole={userRole || 'ADMIN'}
+      />
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative transition-all duration-300">
+        
+        {/* Mobile Header */}
+        <header className="md:hidden bg-white/80 backdrop-blur-md border-b border-gray-200 p-4 flex items-center justify-between z-10 sticky top-0">
+            <div className="flex items-center gap-3">
+                <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+                    <Menu className="w-6 h-6" />
+                </button>
+                <span className="font-bold text-gray-800">SiData SMPN 3 Pacet</span>
+            </div>
+            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold text-xs border border-blue-200">
+                {userRole === 'STUDENT' ? selectedStudent?.fullName.charAt(0) : 'A'}
+            </div>
+        </header>
+
+        {/* Scrollable Content Area */}
+        <div className="flex-1 overflow-auto p-4 md:p-6 scroll-smooth">
+            <div className="max-w-7xl mx-auto h-full flex flex-col">
+                {renderContent()}
+            </div>
         </div>
+      </main>
     </div>
   );
-};
+}
 
 export default App;

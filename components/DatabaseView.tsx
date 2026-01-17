@@ -142,7 +142,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
       setIsModalOpen(true);
   };
 
-  // --- EXCEL EXPORT (FULL DATA) ---
+  // --- EXCEL EXPORT (FULL DATA - 70+ Columns) ---
   const handleDownloadExcel = () => {
       try {
           // @ts-ignore
@@ -151,6 +151,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
 
           const dataToExport = filteredStudents.map((s, index) => ({
               'No': index + 1,
+              // Identitas
               'Nama Lengkap': s.fullName,
               'NIS': s.nis,
               'NISN': s.nisn,
@@ -158,38 +159,90 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
               'L/P': s.gender,
               'Tempat Lahir': s.birthPlace,
               'Tanggal Lahir': s.birthDate,
+              'NIK': s.dapodik.nik,
               'Agama': s.religion,
-              'Alamat': s.address,
+              'Kewarganegaraan': s.nationality,
+              'Status': s.status,
+              'Tahun Masuk': s.entryYear,
+              
+              // Alamat
+              'Alamat Jalan': s.address,
+              'RT': s.dapodik.rt,
+              'RW': s.dapodik.rw,
               'Dusun': s.dapodik.dusun,
               'Kelurahan': s.dapodik.kelurahan,
               'Kecamatan': s.subDistrict,
               'Kabupaten': s.district,
               'Kode Pos': s.postalCode,
-              'NIK Siswa': s.dapodik.nik,
+              'Lintang': s.dapodik.latitude,
+              'Bujur': s.dapodik.longitude,
+              'Jenis Tinggal': s.dapodik.livingStatus,
+              'Transportasi': s.dapodik.transportation,
               'No KK': s.dapodik.noKK,
+
+              // Data Periodik
+              'Anak ke': s.childOrder,
+              'Jml Saudara': s.siblingCount,
+              'Tinggi Badan (cm)': s.height,
+              'Berat Badan (kg)': s.weight,
+              'Lingkar Kepala (cm)': s.dapodik.headCircumference,
+              'Gol Darah': s.bloodType,
+              'Jarak Sekolah (km)': s.dapodik.distanceToSchool,
+              'Waktu Tempuh (menit)': s.dapodik.travelTimeMinutes,
+
+              // Data Ayah
               'Nama Ayah': s.father.name,
               'NIK Ayah': s.father.nik,
+              'Tahun Lahir Ayah': s.father.birthPlaceDate,
+              'Pendidikan Ayah': s.father.education,
               'Pekerjaan Ayah': s.father.job,
+              'Penghasilan Ayah': s.father.income,
+              'No HP Ayah': s.father.phone,
+
+              // Data Ibu
               'Nama Ibu': s.mother.name,
               'NIK Ibu': s.mother.nik,
+              'Tahun Lahir Ibu': s.mother.birthPlaceDate,
+              'Pendidikan Ibu': s.mother.education,
               'Pekerjaan Ibu': s.mother.job,
+              'Penghasilan Ibu': s.mother.income,
+              'No HP Ibu': s.mother.phone,
+
+              // Data Wali
               'Nama Wali': s.guardian?.name || '',
-              'No HP Ortu': s.father.phone || s.mother.phone,
+              'NIK Wali': s.guardian?.nik || '',
+              'Tahun Lahir Wali': s.guardian?.birthPlaceDate || '',
+              'Pendidikan Wali': s.guardian?.education || '',
+              'Pekerjaan Wali': s.guardian?.job || '',
+              'Penghasilan Wali': s.guardian?.income || '',
+              'No HP Wali': s.guardian?.phone || '',
+
+              // Data Rinci & Kesejahteraan
               'Sekolah Asal': s.previousSchool,
+              'No Seri Ijazah': s.diplomaNumber,
+              'No SKHUN': s.dapodik.skhun,
+              'No Peserta UN': s.dapodik.unExamNumber,
+              'No Reg Akta Lahir': s.dapodik.birthRegNumber,
+              'Berkebutuhan Khusus': s.dapodik.specialNeeds,
+              'Email': s.dapodik.email,
+              'Penerima KPS': s.dapodik.kpsReceiver,
+              'No KPS': s.dapodik.kpsNumber,
               'Penerima KIP': s.dapodik.kipReceiver,
               'No KIP': s.dapodik.kipNumber,
-              'Penerima PIP': s.dapodik.pipEligible,
+              'Nama di KIP': s.dapodik.kipName,
+              'No KKS': s.dapodik.kksNumber,
+              'Layak PIP': s.dapodik.pipEligible,
+              'Alasan Layak PIP': s.dapodik.pipReason,
               'Bank': s.dapodik.bank,
               'No Rekening': s.dapodik.bankAccount,
-              'Atas Nama Rekening': s.dapodik.bankAccountName,
-              'Status': s.status
+              'Atas Nama Rekening': s.dapodik.bankAccountName
           }));
 
           const ws = xlsx.utils.json_to_sheet(dataToExport);
           const wb = xlsx.utils.book_new();
-          xlsx.utils.book_append_sheet(wb, ws, "Database Siswa");
+          xlsx.utils.book_append_sheet(wb, ws, "Database Lengkap");
           xlsx.writeFile(wb, `Database_Siswa_Lengkap_${classFilter}.xlsx`);
-      } catch (e) { console.error(e); }
+      } catch (e) { console.error(e); alert("Gagal download excel: " + e); }
   };
 
   // --- EXCEL IMPORT (APPEND) ---
@@ -211,70 +264,118 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
               const data = xlsx.utils.sheet_to_json(ws);
 
               const newStudents: Student[] = data.map((row: any) => {
-                  // Basic mapping loosely matching export structure
                   return {
                       id: Math.random().toString(36).substr(2, 9),
-                      fullName: row['Nama Lengkap'] || row['Nama'] || row['Nama Siswa'] || '',
-                      nis: String(row['NIS'] || row['NIPD'] || ''),
+                      fullName: row['Nama Lengkap'] || row['Nama Siswa'] || '',
+                      nis: String(row['NIS'] || ''),
                       nisn: String(row['NISN'] || ''),
-                      gender: (row['L/P'] || row['JK'] || 'L') === 'P' ? 'P' : 'L',
+                      className: row['Kelas'] || classFilter || 'VII A',
+                      gender: (row['L/P'] || row['Gender'] || 'L') === 'P' ? 'P' : 'L',
                       birthPlace: row['Tempat Lahir'] || '',
-                      birthDate: row['Tanggal Lahir'] || '', // Assume YYYY-MM-DD or formatted string
+                      birthDate: row['Tanggal Lahir'] || '', 
                       religion: row['Agama'] || 'Islam',
-                      nationality: 'WNI',
-                      address: row['Alamat'] || '',
+                      nationality: row['Kewarganegaraan'] || 'WNI',
+                      status: row['Status'] || 'AKTIF',
+                      entryYear: Number(row['Tahun Masuk']) || new Date().getFullYear(),
+                      
+                      address: row['Alamat Jalan'] || '',
                       subDistrict: row['Kecamatan'] || '',
                       district: row['Kabupaten'] || '',
                       postalCode: String(row['Kode Pos'] || ''),
-                      className: row['Kelas'] || classFilter || 'VII A', // Default to filter if empty
-                      height: 0, weight: 0, bloodType: '-', siblingCount: 0, childOrder: 1,
+                      
+                      height: Number(row['Tinggi Badan (cm)']) || 0,
+                      weight: Number(row['Berat Badan (kg)']) || 0,
+                      bloodType: row['Gol Darah'] || '-',
+                      siblingCount: Number(row['Jml Saudara']) || 0,
+                      childOrder: Number(row['Anak ke']) || 1,
+                      
+                      previousSchool: row['Sekolah Asal'] || '',
+                      diplomaNumber: row['No Seri Ijazah'] || '',
+
                       father: { 
                           name: row['Nama Ayah'] || '', 
                           nik: String(row['NIK Ayah'] || ''), 
-                          birthPlaceDate: '', education: '', 
-                          job: row['Pekerjaan Ayah'] || '', income: '', 
-                          phone: String(row['No HP Ortu'] || '') 
+                          birthPlaceDate: String(row['Tahun Lahir Ayah'] || ''), 
+                          education: row['Pendidikan Ayah'] || '', 
+                          job: row['Pekerjaan Ayah'] || '', 
+                          income: row['Penghasilan Ayah'] || '', 
+                          phone: String(row['No HP Ayah'] || '') 
                       },
                       mother: { 
                           name: row['Nama Ibu'] || '', 
                           nik: String(row['NIK Ibu'] || ''), 
-                          birthPlaceDate: '', education: '', 
-                          job: row['Pekerjaan Ibu'] || '', income: '', phone: '' 
+                          birthPlaceDate: String(row['Tahun Lahir Ibu'] || ''), 
+                          education: row['Pendidikan Ibu'] || '', 
+                          job: row['Pekerjaan Ibu'] || '', 
+                          income: row['Penghasilan Ibu'] || '', 
+                          phone: String(row['No HP Ibu'] || '') 
                       },
-                      guardian: { name: row['Nama Wali'] || '', nik: '', birthPlaceDate: '', education: '', job: '', income: '', phone: '' },
-                      entryYear: new Date().getFullYear(),
-                      status: 'AKTIF',
-                      previousSchool: row['Sekolah Asal'] || '',
+                      guardian: { 
+                          name: row['Nama Wali'] || '', 
+                          nik: String(row['NIK Wali'] || ''), 
+                          birthPlaceDate: String(row['Tahun Lahir Wali'] || ''), 
+                          education: row['Pendidikan Wali'] || '', 
+                          job: row['Pekerjaan Wali'] || '', 
+                          income: row['Penghasilan Wali'] || '', 
+                          phone: String(row['No HP Wali'] || '') 
+                      },
+                      
                       dapodik: {
-                          nik: String(row['NIK Siswa'] || row['NIK'] || ''), 
+                          nik: String(row['NIK'] || ''), 
                           noKK: String(row['No KK'] || ''), 
-                          rt: '', rw: '', 
+                          rt: String(row['RT'] || ''), 
+                          rw: String(row['RW'] || ''), 
                           dusun: row['Dusun'] || '', 
                           kelurahan: row['Kelurahan'] || '', 
                           kecamatan: row['Kecamatan'] || '', 
                           kodePos: String(row['Kode Pos'] || ''),
-                          livingStatus: '', transportation: '', email: '', skhun: '', kpsReceiver: '', kpsNumber: '',
+                          livingStatus: row['Jenis Tinggal'] || '', 
+                          transportation: row['Transportasi'] || '', 
+                          email: row['Email'] || '', 
+                          skhun: String(row['No SKHUN'] || ''), 
+                          unExamNumber: String(row['No Peserta UN'] || ''),
+                          birthRegNumber: String(row['No Reg Akta Lahir'] || ''),
+                          
+                          kpsReceiver: row['Penerima KPS'] || 'Tidak', 
+                          kpsNumber: String(row['No KPS'] || ''), 
                           kipReceiver: row['Penerima KIP'] || 'Tidak', 
                           kipNumber: String(row['No KIP'] || ''), 
-                          kipName: '', kksNumber: '', birthRegNumber: '', 
+                          kipName: row['Nama di KIP'] || '', 
+                          kksNumber: String(row['No KKS'] || ''), 
+                          
+                          pipEligible: row['Layak PIP'] || 'Tidak',
+                          pipReason: row['Alasan Layak PIP'] || '',
                           bank: row['Bank'] || '', 
                           bankAccount: String(row['No Rekening'] || ''), 
                           bankAccountName: row['Atas Nama Rekening'] || '', 
-                          pipEligible: row['Penerima PIP'] || 'Tidak', 
-                          pipReason: '', specialNeeds: '',
-                          latitude: '', longitude: '', headCircumference: 0, distanceToSchool: '', unExamNumber: '',
-                          travelTimeMinutes: 0
+                          
+                          specialNeeds: row['Berkebutuhan Khusus'] || 'Tidak',
+                          latitude: String(row['Lintang'] || ''), 
+                          longitude: String(row['Bujur'] || ''), 
+                          headCircumference: Number(row['Lingkar Kepala (cm)']) || 0, 
+                          distanceToSchool: String(row['Jarak Sekolah (km)'] || ''), 
+                          travelTimeMinutes: Number(row['Waktu Tempuh (menit)']) || 0
                       },
                       documents: []
                   } as Student;
               });
 
               if (newStudents.length > 0) {
-                  // APPEND DATA
-                  const mergedStudents = [...students, ...newStudents];
-                  onUpdateStudents(mergedStudents);
-                  await api.syncInitialData(mergedStudents);
-                  alert(`Berhasil menambahkan ${newStudents.length} data siswa.`);
+                  // APPEND DATA LOGIC (Check for duplicates by NISN/Name first)
+                  const existingNisns = new Set(students.map(s => s.nisn));
+                  const nonDuplicateStudents = newStudents.filter(s => {
+                      if (s.nisn && existingNisns.has(s.nisn)) return false; 
+                      return true;
+                  });
+
+                  if (nonDuplicateStudents.length > 0) {
+                      const mergedStudents = [...students, ...nonDuplicateStudents];
+                      onUpdateStudents(mergedStudents);
+                      await api.syncInitialData(mergedStudents);
+                      alert(`Berhasil menambahkan ${nonDuplicateStudents.length} data siswa baru.`);
+                  } else {
+                      alert("Data terbaca, namun semua siswa sudah ada di database (NISN duplikat).");
+                  }
               } else {
                   alert("Tidak ada data valid yang ditemukan dalam file.");
               }
@@ -330,7 +431,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                     <UploadCloud className="w-4 h-4 mr-2" /> Import Excel
                 </button>
                 <button onClick={handleDownloadExcel} className="flex items-center px-4 py-2 bg-gray-800 text-white rounded-lg text-sm font-bold hover:bg-gray-900 whitespace-nowrap shadow-sm">
-                    <FileSpreadsheet className="w-4 h-4 mr-2" /> Export
+                    <FileSpreadsheet className="w-4 h-4 mr-2" /> Export Lengkap
                 </button>
                 <button onClick={openAddModal} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 whitespace-nowrap shadow-sm">
                     <Plus className="w-4 h-4 mr-2" /> Tambah
