@@ -50,6 +50,10 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
       entryYear: new Date().getFullYear(),
       status: 'AKTIF',
       previousSchool: '',
+      graduationYear: 0,
+      diplomaNumber: '',
+      averageScore: 0,
+      achievements: [],
       dapodik: {
           nik: '', noKK: '', rt: '', rw: '', dusun: '', kelurahan: '', kecamatan: '', kodePos: '',
           livingStatus: '', transportation: '', email: '', skhun: '', kpsReceiver: '', kpsNumber: '',
@@ -219,7 +223,10 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
 
               // Data Rinci & Kesejahteraan
               'Sekolah Asal': s.previousSchool,
+              'Tahun Lulus': s.graduationYear || '',
               'No Seri Ijazah': s.diplomaNumber,
+              'Nilai Rata-rata': s.averageScore || '',
+              'Prestasi': s.achievements ? s.achievements.join(', ') : '',
               'No SKHUN': s.dapodik.skhun,
               'No Peserta UN': s.dapodik.unExamNumber,
               'No Reg Akta Lahir': s.dapodik.birthRegNumber,
@@ -289,8 +296,12 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                       siblingCount: Number(row['Jml Saudara']) || 0,
                       childOrder: Number(row['Anak ke']) || 1,
                       
-                      previousSchool: row['Sekolah Asal'] || '',
-                      diplomaNumber: row['No Seri Ijazah'] || '',
+                      // Updated Mappings
+                      previousSchool: row['Sekolah Asal'] || row['Asal Sekolah'] || '',
+                      graduationYear: Number(row['Tahun Lulus']) || 0,
+                      diplomaNumber: row['No Seri Ijazah'] || row['No Ijazah'] || '',
+                      averageScore: Number(row['Nilai Rata-rata']) || 0,
+                      achievements: row['Prestasi'] ? String(row['Prestasi']).split(',').map(s => s.trim()) : [],
 
                       father: { 
                           name: row['Nama Ayah'] || '', 

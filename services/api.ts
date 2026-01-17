@@ -76,8 +76,14 @@ const normalizeStudentData = (rawData: any[]): Student[] => {
             // Critical Fixes
             birthPlace: findVal('birthplace', 'tempatlahir', 'tmplahir'),
             birthDate: cleanDate(findVal('birthdate', 'tanggallahir', 'tgllahir')), // Applied cleanDate here
-            previousSchool: findVal('previousschool', 'sekolahasal', 'sklasal', 'asalsekolah'), // Fix for missing previous school
             
+            // Fixed Missing fields
+            previousSchool: findVal('previousschool', 'sekolahasal', 'sklasal', 'asalsekolah'), 
+            graduationYear: Number(findVal('graduationyear', 'tahunlulus', 'lulusan')) || 0,
+            diplomaNumber: findVal('diplomanumber', 'noseriijazah', 'noijazah'),
+            averageScore: Number(findVal('averagescore', 'nilairatarata', 'rata2')) || 0,
+            achievements: findVal('achievements', 'prestasi') ? String(findVal('achievements', 'prestasi')).split(',') : [],
+
             religion: findVal('religion', 'agama'),
             nationality: findVal('nationality', 'kewarganegaraan') || 'WNI',
             address: findVal('address', 'alamat', 'alamatjalan'),
