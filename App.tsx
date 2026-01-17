@@ -1,8 +1,9 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, Database, Book, ClipboardList, Calculator, 
   FileBadge, Award, ClipboardCheck, ScrollText, FileCheck2, 
-  FileInput, History, LayoutTemplate, Settings, LogOut, Menu
+  FileInput, History, LayoutTemplate, Settings, LogOut, Menu,
+  User, Camera, Bell, Loader2
 } from 'lucide-react';
 
 // Components
@@ -19,12 +20,13 @@ import VerificationView from './components/VerificationView';
 import IjazahVerificationView from './components/IjazahVerificationView';
 import GradeVerificationView from './components/GradeVerificationView';
 import StudentDocsAdminView from './components/StudentDocsAdminView';
+import AccessDataView from './components/AccessDataView';
 import HistoryView from './components/HistoryView';
 import MonitoringView from './components/MonitoringView';
 import SettingsView from './components/SettingsView';
-import StudentDetail from './components/StudentDetail'; // For Student Profile View
-import UploadRaporView from './components/UploadRaporView'; // For Student Rapor View
-import FileManager from './components/FileManager'; // For Student Docs View
+import StudentDetail from './components/StudentDetail'; 
+import UploadRaporView from './components/UploadRaporView'; 
+import FileManager from './components/FileManager'; 
 
 // Services & Types
 import { api } from './services/api';
@@ -34,12 +36,70 @@ import { MOCK_STUDENTS } from './services/mockData';
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState<'ADMIN' | 'GURU' | 'STUDENT' | null>(null);
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null); // For Student Login Context
+  const [currentUser, setCurrentUser] = useState<{id: string, name: string, photoUrl?: string} | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null); 
   
   const [currentView, setCurrentView] = useState('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+
+  // Profile State
+  const [adminProfile, setAdminProfile] = useState({ name: 'Administrator', photo: '' });
+  const [guruPhoto, setGuruPhoto] = useState('');
+  const profileInputRef = useRef<HTMLInputElement>(null);
+
+  // INITIAL LOAD: Fetch Admin Profile from Cloud Settings
+  useEffect(() => {
+      const fetchProfile = async () => {
+          try {
+              const settings = await api.getAppSettings();
+              if (settings) {
+                  // Prioritize Cloud Settings
+                  setAdminProfile({
+                      name: settings.adminName || 'Administrator',
+                      photo: settings.adminPhotoUrl || '' // Use Cloud URL
+                  });
+              } else {
+                  // Fallback to LocalStorage if offline/fail
+                  const savedAdminName = localStorage.getItem('admin_name');
+                  const savedAdminPhoto = localStorage.getItem('admin_photo');
+                  setAdminProfile({
+                      name: savedAdminName || 'Administrator',
+                      photo: savedAdminPhoto || ''
+                  });
+              }
+          } catch (e) {
+              console.warn("Failed to load admin profile from cloud");
+          }
+      };
+      
+      fetchProfile();
+  }, []);
+
+  // Update Guru Data when user changes (Fetch latest from User DB)
+  useEffect(() => {
+      const fetchGuruProfile = async () => {
+          if (userRole === 'GURU' && currentUser) {
+              try {
+                  const users = await api.getUsers();
+                  const me = users.find((u: any) => u.id === currentUser.id);
+                  if (me && me.photoUrl) {
+                      setGuruPhoto(me.photoUrl);
+                  } else {
+                      // Fallback
+                      const savedPhoto = localStorage.getItem(`guru_photo_${currentUser.id}`);
+                      setGuruPhoto(savedPhoto || '');
+                  }
+              } catch (e) {
+                  console.error("Failed to fetch guru profile");
+              }
+          }
+      };
+      
+      if (userRole === 'GURU') fetchGuruProfile();
+  }, [userRole, currentUser]);
 
   // --- DATA FETCHING ---
   const fetchStudents = async () => {
@@ -49,7 +109,6 @@ function App() {
       if (data && data.length > 0) {
         setStudents(data);
       } else {
-        // Fallback if API empty (first run)
         setStudents(MOCK_STUDENTS); 
       }
     } catch (error) {
@@ -71,22 +130,16 @@ function App() {
     const list: DashboardNotification[] = [];
 
     if (userRole === 'ADMIN' || userRole === 'GURU') {
-      // ADMIN/GURU VIEW: Show PENDING items
       students.forEach(s => {
-        // 1. Pending Documents
         s.documents.forEach(d => {
           if (d.status === 'PENDING') {
-            // ROUTING LOGIC BASED ON DOCUMENT CATEGORY
-            let type: any = 'ADMIN_BIO_VERIFY'; // Default to Buku Induk (Upload Dokumen Saya)
+            let type: any = 'ADMIN_BIO_VERIFY'; 
             let title = 'Verifikasi Dokumen';
             
             if (d.category === 'RAPOR') {
-                type = 'ADMIN_GRADE_VERIFY'; // Upload Rapor -> Verifikasi Nilai
+                type = 'ADMIN_GRADE_VERIFY'; 
                 title = 'Verifikasi Rapor';
             } 
-            // Note: If you want specific Ijazah docs to go to Ijazah Verify, check category here.
-            // Example: if (['IJAZAH', 'SKL'].includes(d.category)) type = 'ADMIN_IJAZAH_VERIFY';
-            // Currently keeping "Dokumen Saya" general uploads to Bio Verify as requested.
 
             list.push({
               id: `doc-${d.id}`,
@@ -95,28 +148,23 @@ function App() {
               description: `${s.fullName} mengupload ${d.category} (${d.name})`,
               date: d.uploadDate,
               priority: 'HIGH',
-              data: { studentId: s.id, category: d.category } // Meta for navigation
+              data: { studentId: s.id, category: d.category } 
             });
           }
         });
 
-        // 2. Pending Correction Requests
         s.correctionRequests?.forEach(r => {
           if (r.status === 'PENDING') {
             let type: any = 'ADMIN_BIO_VERIFY';
-            let title = 'Verifikasi Data Diri'; // Default: Edit Data Buku Induk -> Verifikasi Buku Induk
+            let title = 'Verifikasi Data Diri'; 
             
-            // ROUTING LOGIC BASED ON FIELD KEY
             if (r.fieldKey.startsWith('grade-')) {
-               // Edit Nilai Saya -> Verifikasi Nilai
                type = 'ADMIN_GRADE_VERIFY';
                title = 'Verifikasi Nilai';
             } else if (r.fieldKey === 'diplomaNumber' || r.fieldKey.startsWith('ijazah-')) {
-               // Edit Data Ijazah (Specifics) -> Verifikasi Data Ijazah
                type = 'ADMIN_IJAZAH_VERIFY';
                title = 'Verifikasi Data Ijazah';
             } else if (r.fieldKey === 'class-' || r.fieldKey === 'className') {
-                // Class change is ambiguous, usually academic/bio. Let's put in Bio/Buku Induk
                 type = 'ADMIN_BIO_VERIFY';
                 title = 'Verifikasi Kelas';
             }
@@ -135,11 +183,8 @@ function App() {
       });
 
     } else if (userRole === 'STUDENT' && selectedStudent) {
-      // STUDENT VIEW: Show APPROVED / REJECTED items for *this* student
-      // IMPORTANT: Get latest data from students array, not stale selectedStudent state
       const currentData = students.find(s => s.id === selectedStudent.id) || selectedStudent;
 
-      // 1. Documents (Approved or Revision)
       currentData.documents.forEach(d => {
         if (d.status === 'APPROVED') {
            list.push({
@@ -164,7 +209,6 @@ function App() {
         }
       });
 
-      // 2. Correction Requests (Approved or Rejected)
       currentData.correctionRequests?.forEach(r => {
          if (r.status === 'APPROVED') {
             list.push({
@@ -189,11 +233,10 @@ function App() {
          }
       });
       
-      // 3. Admin Messages
       currentData.adminMessages?.forEach(msg => {
           list.push({
               id: `msg-${msg.id}`,
-              type: 'STUDENT_REVISION', // Use generic alert style
+              type: 'STUDENT_REVISION',
               title: 'Pesan Admin',
               description: msg.content,
               date: msg.date.split('T')[0],
@@ -202,7 +245,6 @@ function App() {
       });
     }
 
-    // Sort by date (newest first)
     return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [students, userRole, selectedStudent]);
 
@@ -212,6 +254,12 @@ function App() {
     setUserRole(role);
     if (role === 'STUDENT' && studentData) {
       setSelectedStudent(studentData);
+      setCurrentUser({ id: studentData.id, name: studentData.fullName });
+    } else if (role === 'GURU') {
+        // Typically name is passed from Login component, simplified here
+        setCurrentUser({ id: 'guru-1', name: 'Bapak/Ibu Guru' });
+    } else {
+        setCurrentUser({ id: 'admin', name: adminProfile.name });
     }
     setCurrentView('dashboard');
   };
@@ -220,6 +268,7 @@ function App() {
     setIsLoggedIn(false);
     setUserRole(null);
     setSelectedStudent(null);
+    setCurrentUser(null);
     setCurrentView('dashboard');
   };
 
@@ -234,8 +283,6 @@ function App() {
   // --- STUDENT UPLOAD HANDLER ---
   const handleStudentUpload = async (file: File, category: string) => {
       if (!selectedStudent) return;
-      
-      // We must upload to API then update state
       try {
           const driveUrl = await api.uploadFile(file, selectedStudent.id, category);
           if (driveUrl) {
@@ -250,16 +297,14 @@ function App() {
                   status: 'PENDING'
               };
               
-              // Update local state immediately for UI response
               const updatedStudent = { ...selectedStudent };
-              // Remove old doc of same category if exists (except Rapor which allows multiple)
               if (category !== 'RAPOR') {
                   updatedStudent.documents = updatedStudent.documents.filter(d => d.category !== category);
               }
               updatedStudent.documents.push(newDoc);
               
               await api.updateStudent(updatedStudent);
-              refreshData(); // Sync full list
+              refreshData();
               alert("File berhasil diupload!");
           } else {
               alert("Gagal upload file.");
@@ -270,9 +315,100 @@ function App() {
       }
   };
 
+  // --- ONLINE PROFILE UPLOAD HANDLER ---
+  const handleProfileClick = () => {
+      if (userRole === 'ADMIN' || userRole === 'GURU') {
+          profileInputRef.current?.click();
+      }
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file || !currentUser) return;
+
+      setIsUploadingPhoto(true);
+      try {
+          // 1. Upload to Drive using 'PROFILE_PHOTO' category
+          // Note: 'PROFILE_PHOTO' is a logical category, the API handles it
+          const driveUrl = await api.uploadFile(file, currentUser.id, 'PROFILE_PHOTO');
+          
+          if (driveUrl) {
+              if (userRole === 'ADMIN') {
+                  // A. Admin: Save to App Settings
+                  setAdminProfile(prev => ({ ...prev, photo: driveUrl }));
+                  
+                  // Get current settings to prevent overwrite, then update photo
+                  const currentSettings = await api.getAppSettings() || {};
+                  await api.saveAppSettings({
+                      ...currentSettings,
+                      adminPhotoUrl: driveUrl
+                  });
+                  
+                  // Also save local for offline fallback
+                  localStorage.setItem('admin_photo', driveUrl);
+
+              } else if (userRole === 'GURU') {
+                  // B. Guru: Save to Users List
+                  setGuruPhoto(driveUrl);
+                  
+                  const allUsers = await api.getUsers();
+                  const updatedUsers = allUsers.map((u: any) => {
+                      if (u.id === currentUser.id) {
+                          return { ...u, photoUrl: driveUrl };
+                      }
+                      return u;
+                  });
+                  
+                  await api.updateUsers(updatedUsers);
+                  // Local fallback
+                  localStorage.setItem(`guru_photo_${currentUser.id}`, driveUrl);
+              }
+              alert("Foto profil berhasil diperbarui!");
+          } else {
+              alert("Gagal mengupload foto ke Cloud.");
+          }
+      } catch (e) {
+          console.error("Profile Upload Error:", e);
+          alert("Terjadi kesalahan saat upload.");
+      } finally {
+          setIsUploadingPhoto(false);
+          // Clear input
+          if (profileInputRef.current) profileInputRef.current.value = '';
+      }
+  };
+
+  // --- TOP BAR DISPLAY INFO ---
+  const getProfileInfo = () => {
+      if (userRole === 'STUDENT' && selectedStudent) {
+          // Find FOTO document
+          const photoDoc = selectedStudent.documents.find(d => d.category === 'FOTO');
+          // Helper to format google drive url for direct image view if needed
+          const photoUrl = photoDoc ? (photoDoc.url.includes('drive.google.com') ? `https://drive.google.com/uc?export=view&id=${photoDoc.url.match(/\/d\/([a-zA-Z0-9_-]+)/)?.[1]}` : photoDoc.url) : null;
+          
+          return {
+              name: selectedStudent.fullName,
+              role: `Siswa - Kelas ${selectedStudent.className}`,
+              photo: photoUrl
+          };
+      } else if (userRole === 'GURU') {
+          return {
+              name: currentUser?.name || 'Guru Pengajar',
+              role: 'Guru Wali Kelas',
+              photo: guruPhoto
+          };
+      } else {
+          return {
+              name: adminProfile.name,
+              role: 'Administrator',
+              photo: adminProfile.photo
+          };
+      }
+  };
+
+  const profile = getProfileInfo();
+
   // --- RENDER CONTENT SWITCHER ---
   const renderContent = () => {
-    // Helper to get fresh student object
     const studentContext = userRole === 'STUDENT' && selectedStudent 
         ? students.find(s => s.id === selectedStudent.id) || selectedStudent 
         : undefined;
@@ -289,13 +425,15 @@ function App() {
       case 'student-docs':
         return <StudentDocsAdminView students={students} onUpdate={refreshData} />;
       case 'verification':
-        return <VerificationView students={students} onUpdate={refreshData} currentUser={{name: 'Admin', role: 'ADMIN'}} />;
+        return <VerificationView students={students} onUpdate={refreshData} currentUser={{name: profile.name, role: 'ADMIN'}} />;
       case 'ijazah-verification':
-        return <IjazahVerificationView students={students} onUpdate={refreshData} currentUser={{name: 'Admin', role: 'ADMIN'}} />;
+        return <IjazahVerificationView students={students} onUpdate={refreshData} currentUser={{name: profile.name, role: 'ADMIN'}} />;
       case 'grade-verification':
-        return <GradeVerificationView students={students} onUpdate={refreshData} currentUser={{name: 'Admin', role: 'ADMIN'}} />;
+        return <GradeVerificationView students={students} onUpdate={refreshData} currentUser={{name: profile.name, role: 'ADMIN'}} />;
       case 'settings':
         return <SettingsView />;
+      case 'access-data': 
+        return <AccessDataView students={students} />;
       
       // SHARED VIEWS (Different props based on role)
       case 'grades':
@@ -312,18 +450,18 @@ function App() {
         return <MonitoringView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext} />;
 
       // STUDENT SPECIFIC VIEWS
-      case 'dapodik': // Student Buku Induk (Read Only + Correction)
+      case 'dapodik': 
         return studentContext ? (
             <StudentDetail 
                 student={studentContext} 
                 onBack={() => setCurrentView('dashboard')} 
                 viewMode="student" 
-                readOnly={true} // Enable click-to-correct
+                readOnly={true}
                 onUpdate={refreshData}
             />
         ) : null;
       
-      case 'documents': // Student Document Manager
+      case 'documents':
         return studentContext ? (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 h-full flex flex-col p-4 animate-fade-in">
                 <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
@@ -354,7 +492,15 @@ function App() {
 
   return (
     <div className="flex h-screen bg-mac-bg overflow-hidden font-sans text-mac-text">
-      {/* Mobile Sidebar Overlay */}
+      {/* Hidden Input for Profile Photo Upload */}
+      <input 
+          type="file" 
+          ref={profileInputRef} 
+          className="hidden" 
+          accept="image/*" 
+          onChange={handlePhotoUpload} 
+      />
+
       {!isSidebarCollapsed && (
         <div 
           className="fixed inset-0 bg-black/20 z-20 md:hidden backdrop-blur-sm"
@@ -362,7 +508,6 @@ function App() {
         ></div>
       )}
 
-      {/* Sidebar */}
       <Sidebar
         currentView={currentView}
         setView={(view) => { setCurrentView(view); if(window.innerWidth < 768) setIsSidebarCollapsed(true); }}
@@ -372,10 +517,9 @@ function App() {
         userRole={userRole || 'ADMIN'}
       />
 
-      {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative transition-all duration-300">
         
-        {/* Mobile Header */}
+        {/* MOBILE HEADER (Legacy) */}
         <header className="md:hidden bg-white/80 backdrop-blur-md border-b border-gray-200 p-4 flex items-center justify-between z-10 sticky top-0">
             <div className="flex items-center gap-3">
                 <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg">
@@ -383,14 +527,77 @@ function App() {
                 </button>
                 <span className="font-bold text-gray-800">SiData SMPN 3 Pacet</span>
             </div>
-            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold text-xs border border-blue-200">
-                {userRole === 'STUDENT' ? selectedStudent?.fullName.charAt(0) : 'A'}
+            {/* Mobile Profile Icon */}
+            <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-300">
+                {profile.photo ? (
+                    <img src={profile.photo} className="w-full h-full object-cover" alt="Profile" />
+                ) : (
+                    <div className="w-full h-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs">
+                        {profile.name.charAt(0)}
+                    </div>
+                )}
             </div>
         </header>
 
-        {/* Scrollable Content Area */}
-        <div className="flex-1 overflow-auto p-4 md:p-6 scroll-smooth">
-            <div className="max-w-7xl mx-auto h-full flex flex-col">
+        {/* DESKTOP TOP BAR */}
+        <header className="hidden md:flex bg-white/80 backdrop-blur-md border-b border-gray-200 h-16 items-center justify-between px-6 sticky top-0 z-20 shadow-sm">
+             {/* Page Title */}
+             <div className="flex items-center">
+                 <h2 className="text-lg font-bold text-gray-700 capitalize tracking-tight">
+                    {currentView.replace(/-/g, ' ')}
+                 </h2>
+             </div>
+
+             {/* Right Section */}
+             <div className="flex items-center gap-6">
+                {/* Notification Bell */}
+                <div className="relative cursor-pointer group">
+                   <div className="p-2 rounded-full hover:bg-gray-100 transition-colors">
+                       <Bell className="w-5 h-5 text-gray-500 group-hover:text-blue-600" />
+                   </div>
+                   {notifications.length > 0 && (
+                       <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
+                   )}
+                </div>
+
+                <div className="h-8 w-px bg-gray-300"></div>
+
+                {/* Profile Section */}
+                <div 
+                    className="flex items-center gap-3 cursor-pointer group" 
+                    onClick={handleProfileClick}
+                    title={userRole !== 'STUDENT' ? "Klik untuk ganti foto profil (Online)" : ""}
+                >
+                    <div className="text-right">
+                        <p className="text-sm font-bold text-gray-800 leading-none mb-1">{profile.name}</p>
+                        <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">{profile.role}</p>
+                    </div>
+                    <div className="w-10 h-10 rounded-full bg-gray-100 overflow-hidden border-2 border-white shadow-sm ring-1 ring-gray-200 relative group-hover:ring-blue-300 transition-all">
+                        {isUploadingPhoto ? (
+                            <div className="w-full h-full flex items-center justify-center bg-gray-200">
+                                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                            </div>
+                        ) : profile.photo ? (
+                            <img src={profile.photo} className="w-full h-full object-cover" alt="Profile" />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-50">
+                                <User className="w-5 h-5" />
+                            </div>
+                        )}
+                        
+                        {/* Hover Overlay for Upload (Admin/Guru) */}
+                        {(userRole === 'ADMIN' || userRole === 'GURU') && !isUploadingPhoto && (
+                           <div className="absolute inset-0 bg-black/40 hidden group-hover:flex items-center justify-center transition-opacity backdrop-blur-[1px]">
+                              <Camera className="w-4 h-4 text-white" />
+                           </div>
+                        )}
+                    </div>
+                </div>
+             </div>
+        </header>
+
+        <div className="flex-1 overflow-auto p-4 md:p-6 scroll-smooth bg-mac-bg">
+            <div className="max-w-[1600px] mx-auto h-full flex flex-col">
                 {renderContent()}
             </div>
         </div>

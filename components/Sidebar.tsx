@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, FileText, Settings, LogOut, GraduationCap, Database, ClipboardCheck, PanelLeftClose, PanelLeft, UserCircle, History, Book, ClipboardList, FolderOpen, Upload, FileCheck2, Calculator, Award, FileInput, LayoutTemplate, ScrollText, FileBadge } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Settings, LogOut, GraduationCap, Database, ClipboardCheck, PanelLeftClose, PanelLeft, UserCircle, History, Book, ClipboardList, FolderOpen, Upload, FileCheck2, Calculator, Award, FileInput, LayoutTemplate, ScrollText, FileBadge, KeyRound } from 'lucide-react';
 
 interface SidebarProps {
   currentView: string;
@@ -33,6 +33,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, onLogout, isCol
     { id: 'ijazah-verification', label: 'Verifikasi Data Ijazah', icon: ScrollText, visible: true },
     { id: 'grade-verification', label: 'Verifikasi Nilai', icon: FileCheck2, visible: true },
     { id: 'student-docs', label: 'Dokumen Siswa', icon: FileInput, visible: true },
+    
+    // NEW: Access Data Menu
+    { id: 'access-data', label: 'Data Akses & Kartu', icon: KeyRound, visible: showDatabase },
+
     { id: 'history', label: 'Riwayat Verifikasi', icon: History, visible: true },
     { id: 'monitoring', label: 'Monitoring', icon: LayoutTemplate, visible: true }, 
   ];
