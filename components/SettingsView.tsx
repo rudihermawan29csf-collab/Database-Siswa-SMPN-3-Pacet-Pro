@@ -40,6 +40,21 @@ const DEFAULT_DOCS = [
     { id: 'FOTO', label: 'Pas Foto Siswa', desc: '3x4 Warna' },
 ];
 
+// Helper to convert Drive URLs
+const getPhotoUrl = (url: string | undefined | null) => {
+    if (!url) return '';
+    if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+    if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
+        let id = '';
+        const matchId = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        const matchIdParam = new URLSearchParams(new URL(url).search).get('id');
+        if (matchId && matchId[1]) id = matchId[1];
+        else if (matchIdParam) id = matchIdParam;
+        if (id) return `https://drive.google.com/uc?export=view&id=${id}`;
+    }
+    return url;
+};
+
 const SettingsView = () => {
   const [activeTab, setActiveTab] = useState<'GENERAL' | 'ACADEMIC' | 'USERS' | 'DOCS'>('GENERAL');
   const [loading, setLoading] = useState(false);
@@ -122,9 +137,11 @@ const SettingsView = () => {
               // Upload to Cloud directly
               const url = await api.uploadFile(file, 'ADMIN', 'PROFILE_PHOTO');
               if (url) {
-                  setAdminPhoto(url);
+                  // Add timestamp to force update
+                  const uniqueUrl = `${url}&t=${new Date().getTime()}`;
+                  setAdminPhoto(uniqueUrl);
                   // Auto save URL to settings immediately for better UX
-                  await handleSaveSettings(true, url); 
+                  await handleSaveSettings(true, uniqueUrl); 
               } else {
                   alert("Gagal upload foto");
               }
@@ -273,7 +290,7 @@ const SettingsView = () => {
                                 <div className="relative w-32 h-32 mb-4 group">
                                     <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-lg bg-gray-200">
                                         {adminPhoto ? (
-                                            <img src={adminPhoto} alt="Admin" className="w-full h-full object-cover" />
+                                            <img src={getPhotoUrl(adminPhoto)} alt="Admin" className="w-full h-full object-cover" />
                                         ) : (
                                             <div className="w-full h-full flex items-center justify-center text-gray-400">
                                                 <UserCircle className="w-16 h-16" />

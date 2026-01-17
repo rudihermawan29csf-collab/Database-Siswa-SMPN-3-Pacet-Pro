@@ -33,6 +33,29 @@ import { api } from './services/api';
 import { Student, DocumentFile } from './types';
 import { MOCK_STUDENTS } from './services/mockData';
 
+// --- HELPER TO CONVERT DRIVE URLs TO VIEWABLE IMAGE URLs ---
+const getPhotoUrl = (url: string | undefined | null) => {
+    if (!url) return '';
+    if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+    
+    // If it's a Drive URL, convert to direct view
+    if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
+        let id = '';
+        const matchId = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        const matchIdParam = new URLSearchParams(new URL(url).search).get('id');
+
+        if (matchId && matchId[1]) id = matchId[1];
+        else if (matchIdParam) id = matchIdParam;
+
+        if (id) {
+            // Add a cache-buster based on current minute to prevent aggressive caching during session
+            // But we will use the URL string itself for stability if not changed
+            return `https://drive.google.com/uc?export=view&id=${id}`;
+        }
+    }
+    return url;
+};
+
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState<'ADMIN' | 'GURU' | 'STUDENT' | null>(null);
@@ -333,35 +356,38 @@ function App() {
           const driveUrl = await api.uploadFile(file, currentUser.id, 'PROFILE_PHOTO');
           
           if (driveUrl) {
+              // Add timestamp to force refresh
+              const uniqueUrl = `${driveUrl}&t=${new Date().getTime()}`;
+
               if (userRole === 'ADMIN') {
                   // A. Admin: Save to App Settings
-                  setAdminProfile(prev => ({ ...prev, photo: driveUrl }));
+                  setAdminProfile(prev => ({ ...prev, photo: uniqueUrl }));
                   
                   // Get current settings to prevent overwrite, then update photo
                   const currentSettings = await api.getAppSettings() || {};
                   await api.saveAppSettings({
                       ...currentSettings,
-                      adminPhotoUrl: driveUrl
+                      adminPhotoUrl: uniqueUrl
                   });
                   
                   // Also save local for offline fallback
-                  localStorage.setItem('admin_photo', driveUrl);
+                  localStorage.setItem('admin_photo', uniqueUrl);
 
               } else if (userRole === 'GURU') {
                   // B. Guru: Save to Users List
-                  setGuruPhoto(driveUrl);
+                  setGuruPhoto(uniqueUrl);
                   
                   const allUsers = await api.getUsers();
                   const updatedUsers = allUsers.map((u: any) => {
                       if (u.id === currentUser.id) {
-                          return { ...u, photoUrl: driveUrl };
+                          return { ...u, photoUrl: uniqueUrl };
                       }
                       return u;
                   });
                   
                   await api.updateUsers(updatedUsers);
                   // Local fallback
-                  localStorage.setItem(`guru_photo_${currentUser.id}`, driveUrl);
+                  localStorage.setItem(`guru_photo_${currentUser.id}`, uniqueUrl);
               }
               alert("Foto profil berhasil diperbarui!");
           } else {
@@ -382,8 +408,7 @@ function App() {
       if (userRole === 'STUDENT' && selectedStudent) {
           // Find FOTO document
           const photoDoc = selectedStudent.documents.find(d => d.category === 'FOTO');
-          // Helper to format google drive url for direct image view if needed
-          const photoUrl = photoDoc ? (photoDoc.url.includes('drive.google.com') ? `https://drive.google.com/uc?export=view&id=${photoDoc.url.match(/\/d\/([a-zA-Z0-9_-]+)/)?.[1]}` : photoDoc.url) : null;
+          const photoUrl = photoDoc ? getPhotoUrl(photoDoc.url) : null;
           
           return {
               name: selectedStudent.fullName,
@@ -394,13 +419,13 @@ function App() {
           return {
               name: currentUser?.name || 'Guru Pengajar',
               role: 'Guru Wali Kelas',
-              photo: guruPhoto
+              photo: getPhotoUrl(guruPhoto)
           };
       } else {
           return {
               name: adminProfile.name,
               role: 'Administrator',
-              photo: adminProfile.photo
+              photo: getPhotoUrl(adminProfile.photo)
           };
       }
   };
