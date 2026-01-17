@@ -5,8 +5,8 @@ const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyLeUDR_iMNcb
 
 // Helper for fetch with timeout
 const fetchWithTimeout = async (resource: string, options: RequestInit = {}) => {
-  // Increased default timeout to 15s because Google Apps Script can be slow (cold start)
-  const { timeout = 15000 } = options as any; 
+  // Increased default timeout to 60s because Google Apps Script can be slow (cold start/high load)
+  const { timeout = 60000 } = options as any; 
   
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
@@ -22,7 +22,7 @@ const fetchWithTimeout = async (resource: string, options: RequestInit = {}) => 
     clearTimeout(id);
     // Handle AbortError specifically to give a clearer message
     if (error.name === 'AbortError') {
-        throw new Error(`Request timed out after ${timeout}ms`);
+        throw new Error(`Request timed out after ${timeout}ms. Koneksi lambat atau server sibuk.`);
     }
     throw error;
   }
@@ -159,7 +159,7 @@ export const api = {
           const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
             method: 'POST',
             body: JSON.stringify(payload),
-            timeout: 60000 // 60s timeout for upload to allow Drive processing
+            timeout: 90000 // 90s timeout for upload to allow Drive processing
           } as any);
           
           const result = await response.json();
@@ -187,11 +187,11 @@ export const api = {
             action: 'updateStudent',
             student: student
           };
-          // Increased timeout to 45s for writes to ensure GAS has enough time
+          // Increased timeout significantly to ensure large objects save correctly
           const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
             method: 'POST',
             body: JSON.stringify(payload),
-            timeout: 45000 
+            timeout: 60000 
           } as any);
           
           if (!response.ok) throw new Error(`HTTP error ${response.status}`);
@@ -202,7 +202,7 @@ export const api = {
           console.error(`Update attempt ${retryCount + 1} failed:`, e);
           // Retry logic: up to 2 retries (3 attempts total)
           if (retryCount < 2) {
-              const delay = (retryCount + 1) * 2000; // 2s, then 4s
+              const delay = (retryCount + 1) * 3000; // Increased delay
               await new Promise(res => setTimeout(res, delay)); 
               return attemptUpdate(retryCount + 1);
           }
@@ -227,7 +227,7 @@ export const api = {
         const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
             method: 'POST',
             body: JSON.stringify(payload),
-            timeout: 90000
+            timeout: 120000 // 120s
         } as any);
 
         const result = await response.json();
@@ -255,7 +255,7 @@ export const api = {
       const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
         method: 'POST',
         body: JSON.stringify(payload),
-        timeout: 120000 // 120s timeout for full sync (very slow)
+        timeout: 180000 // 180s timeout for full sync (very slow)
       } as any);
 
       const result = await response.json();
