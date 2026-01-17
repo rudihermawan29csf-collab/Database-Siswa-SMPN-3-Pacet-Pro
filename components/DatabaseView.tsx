@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Search, Plus, Pencil, Trash2, Save, X, Loader2, Download, UploadCloud, RotateCcw, User, MapPin, Users, Heart, Wallet, FileDown, FileSpreadsheet, AlertTriangle, Ruler, Home } from 'lucide-react';
+import { Search, Plus, Pencil, Trash2, Save, X, Loader2, Download, UploadCloud, RotateCcw, User, MapPin, Users, Heart, Wallet, FileDown, FileSpreadsheet, AlertTriangle, Ruler, Home, RefreshCw } from 'lucide-react';
 import { Student } from '../types';
 import { api } from '../services/api';
 
@@ -87,6 +87,29 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
           const newStudents = students.filter(s => s.id !== id);
           onUpdateStudents(newStudents);
           await api.syncInitialData(newStudents); 
+      }
+  };
+
+  // --- FEATURE: SYNC CLOUD (Manual Force) ---
+  const handleSyncCloud = async () => {
+      if(!window.confirm("Tindakan ini akan memaksa aplikasi mengambil data terbaru dari Google Cloud dan menimpa tampilan saat ini. Lanjutkan?")) return;
+      setIsLoading(true);
+      try {
+          const onlineStudents = await api.getStudents();
+          // Ensure we format the data correctly
+          const sanitizedOnline = onlineStudents.map(s => ({
+              ...s,
+              className: s.className ? s.className.replace(/kelas/gi, '').trim() : '-'
+          }));
+          
+          onUpdateStudents(sanitizedOnline);
+          localStorage.setItem('sidata_students_cache', JSON.stringify(sanitizedOnline));
+          alert(`Berhasil sinkronisasi. Total: ${sanitizedOnline.length} Siswa dari Cloud.`);
+      } catch (e) {
+          console.error(e);
+          alert("Gagal sinkronisasi dengan cloud. Periksa koneksi internet.");
+      } finally {
+          setIsLoading(false);
       }
   };
 
@@ -465,7 +488,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                     </div>
 
                     <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 bg-gray-50">
-                        
+                        {/* ... Existing Tab Content ... */}
                         {activeTab === 'PROFILE' && (
                             <div className="space-y-4">
                                 <h4 className="text-sm font-bold text-blue-600 border-b pb-1 mb-3">Identitas Utama</h4>
@@ -660,6 +683,9 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                 </div>
                 <button onClick={() => { setFormData(initialFormState); setIsEditing(false); setIsModalOpen(true); setActiveTab('PROFILE'); }} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-bold shadow-sm">
                     <Plus className="w-4 h-4 mr-2" /> Tambah
+                </button>
+                <button onClick={handleSyncCloud} disabled={isLoading} className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-bold shadow-sm disabled:opacity-50">
+                    {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />} Sync Cloud
                 </button>
                 <button onClick={handleDownloadData} className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold shadow-sm">
                     <Download className="w-4 h-4 mr-2" /> Export

@@ -20,12 +20,14 @@ import ReportsView from './components/ReportsView';
 import StudentDocsAdminView from './components/StudentDocsAdminView'; 
 import IjazahVerificationView from './components/IjazahVerificationView';
 import Login from './components/Login';
-import { MOCK_STUDENTS } from './services/mockData'; 
 import { api } from './services/api'; 
 import { Student, DocumentFile } from './types';
-import { Search, Bell, ChevronDown, LogOut, User, Loader2, Cloud, CloudOff, RefreshCw, Menu, FolderOpen } from 'lucide-react';
+import { Search, Bell, ChevronDown, LogOut, User, Loader2, Cloud, CloudOff, RefreshCw, Menu, FolderOpen, WifiOff } from 'lucide-react';
 
 type UserRole = 'ADMIN' | 'STUDENT' | 'GURU';
+
+// CACHE KEY VERSIONING - Change this to force clear old data on all clients
+const CACHE_KEY = 'sidata_students_cache_v3';
 
 const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -37,6 +39,7 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<{name: string, role: string} | null>(null);
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [connectionError, setConnectionError] = useState(false);
   
   const [dataVersion, setDataVersion] = useState(0); 
   
@@ -53,24 +56,23 @@ const App: React.FC = () => {
   useEffect(() => {
     const initData = async () => {
         if (studentsData.length === 0) setIsLoading(true);
+        setConnectionError(false);
 
-        const cached = localStorage.getItem('sidata_students_cache');
+        // 1. Try Load from Fresh Cache
+        const cached = localStorage.getItem(CACHE_KEY);
         let localData: Student[] = [];
         
         if (cached) {
             try {
                 localData = JSON.parse(cached);
-                if (localData.length > 0) {
-                    setStudentsData(localData);
-                    setIsLoading(false);
-                }
             } catch (e) {
                 console.error("Cache corrupted, clearing", e);
-                localStorage.removeItem('sidata_students_cache');
+                localStorage.removeItem(CACHE_KEY);
             }
         }
 
         try {
+            // 2. Fetch from Cloud
             const [onlineData, settings] = await Promise.all([
                 api.getStudents(),
                 api.getAppSettings()
@@ -78,30 +80,9 @@ const App: React.FC = () => {
             
             const sanitizedOnline = sanitizeStudents(onlineData);
             
-            let mergedData = sanitizedOnline.map(onlineStudent => {
-                const cachedStudent = localData.find(c => c.id === onlineStudent.id);
-                if (cachedStudent) {
-                    if (!onlineStudent.previousSchool && cachedStudent.previousSchool) {
-                        onlineStudent = { ...onlineStudent, previousSchool: cachedStudent.previousSchool };
-                    }
-                    if (!onlineStudent.documents || onlineStudent.documents.length === 0) {
-                        if (cachedStudent.documents && cachedStudent.documents.length > 0) {
-                             onlineStudent = { ...onlineStudent, documents: cachedStudent.documents };
-                        }
-                    }
-                }
-                return onlineStudent;
-            });
-
-            const onlineIds = new Set(mergedData.map(s => s.id));
-            const offlineCreatedStudents = localData.filter(l => !onlineIds.has(l.id));
-            
-            if (offlineCreatedStudents.length > 0) {
-                mergedData = [...mergedData, ...offlineCreatedStudents];
-            }
-
-            setStudentsData(mergedData);
-            localStorage.setItem('sidata_students_cache', JSON.stringify(mergedData));
+            // STRICT SYNC: Cloud replaces local completely for the list
+            setStudentsData(sanitizedOnline);
+            localStorage.setItem(CACHE_KEY, JSON.stringify(sanitizedOnline));
             
             if (settings && settings.academicData && settings.academicData.year) {
                 setActiveAcademicYear(settings.academicData.year);
@@ -111,9 +92,16 @@ const App: React.FC = () => {
         } catch (error) {
             console.error("Failed to connect to Cloud", error);
             setIsCloudConnected(false);
-            if (localData.length === 0) {
-                console.warn("Using MOCK data as fallback");
-                setStudentsData(sanitizeStudents(MOCK_STUDENTS));
+            setConnectionError(true);
+            
+            // 3. Fallback ONLY to existing local cache if available
+            if (localData.length > 0) {
+                setStudentsData(localData);
+                console.warn("Using Local Cache as fallback due to connection error");
+            } else {
+                // 4. STOP: Do NOT load MOCK data. Show empty state.
+                // This prevents "Old Data" confusion.
+                setStudentsData([]);
             }
         } finally {
             setIsLoading(false);
@@ -133,7 +121,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
       if (studentsData.length > 0) {
-          localStorage.setItem('sidata_students_cache', JSON.stringify(studentsData));
+          localStorage.setItem(CACHE_KEY, JSON.stringify(studentsData));
       }
   }, [studentsData]);
 
@@ -149,7 +137,7 @@ const App: React.FC = () => {
 
       setStudentsData(prevStudents => {
           const newData = prevStudents.map(s => s.id === sanitizedStudent.id ? sanitizedStudent : s);
-          localStorage.setItem('sidata_students_cache', JSON.stringify(newData)); 
+          localStorage.setItem(CACHE_KEY, JSON.stringify(newData)); 
           return newData;
       });
 
@@ -213,6 +201,21 @@ const App: React.FC = () => {
   };
 
   const renderContent = () => {
+      if (connectionError && studentsData.length === 0) {
+          return (
+              <div className="flex flex-col items-center justify-center h-full text-center p-8 bg-white rounded-xl border border-red-200 shadow-sm">
+                  <WifiOff className="w-16 h-16 text-red-400 mb-4" />
+                  <h3 className="text-xl font-bold text-gray-800 mb-2">Gagal Terhubung ke Cloud</h3>
+                  <p className="text-gray-500 mb-6 max-w-md">
+                      Aplikasi tidak dapat mengambil data dari Google Spreadsheet dan tidak ada data tersimpan di perangkat ini.
+                  </p>
+                  <button onClick={refreshData} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4" /> Coba Lagi
+                  </button>
+              </div>
+          );
+      }
+
       switch (currentView) {
           case 'dashboard': return <Dashboard students={studentsData} userRole={userRole} />;
           case 'database': return <DatabaseView students={studentsData} onUpdateStudents={setStudentsData} />;
@@ -246,7 +249,7 @@ const App: React.FC = () => {
       return (
           <div className="flex items-center justify-center h-screen bg-gray-50 flex-col">
               <Loader2 className="w-10 h-10 animate-spin text-blue-600 mb-4" />
-              <p className="text-gray-600 font-medium animate-pulse">Memuat Data Sistem...</p>
+              <p className="text-gray-600 font-medium animate-pulse">Menghubungkan ke Database Cloud...</p>
           </div>
       );
   }
