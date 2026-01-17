@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, School, Calendar, Users, Lock, Check, UploadCloud, Loader2, BookOpen, Plus, Trash2, LayoutList, Calculator, Pencil, X, Eye, EyeOff, RefreshCw, Cloud, FileText, FolderOpen } from 'lucide-react';
+import { Save, School, Calendar, Users, Lock, Check, UploadCloud, Loader2, BookOpen, Plus, Trash2, LayoutList, Calculator, Pencil, X, Eye, EyeOff, RefreshCw, Cloud, FileText, FolderOpen, FileBadge } from 'lucide-react';
 import { api } from '../services/api';
 import { MOCK_STUDENTS } from '../services/mockData';
 
@@ -43,7 +43,7 @@ const MASTER_DOC_LIST = [
 ];
 
 const SettingsView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'IDENTITY' | 'ACADEMIC' | 'USERS' | 'KELAS' | 'P5' | 'REKAP' | 'DOCS'>('IDENTITY');
+  const [activeTab, setActiveTab] = useState<'IDENTITY' | 'ACADEMIC' | 'USERS' | 'KELAS' | 'P5' | 'REKAP' | 'DOCS' | 'SKL'>('IDENTITY');
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSavingUsers, setIsSavingUsers] = useState(false);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
@@ -108,6 +108,15 @@ const SettingsView: React.FC = () => {
   const [docConfig, setDocConfig] = useState<string[]>(['IJAZAH', 'AKTA', 'KK', 'KTP_AYAH', 'KTP_IBU', 'FOTO']);
   const [raporPageCount, setRaporPageCount] = useState<number>(3);
 
+  // --- SKL SETTINGS ---
+  const [sklConfig, setSklConfig] = useState({
+      nomorSurat: '421.3/ 1457 /416-101.64/2025',
+      nomorSK: '421.3/1456/416-101.64/2025',
+      tanggalKeputusan: '2 Juni 2025',
+      tanggalSurat: '2 Juni 2025',
+      titimangsa: 'Mojokerto'
+  });
+
   // INITIAL LOAD FROM CLOUD
   useEffect(() => {
       const initSettings = async () => {
@@ -132,6 +141,9 @@ const SettingsView: React.FC = () => {
                   // Load Doc Config
                   if (cloudSettings.docConfig) setDocConfig(cloudSettings.docConfig);
                   if (cloudSettings.raporPageCount) setRaporPageCount(Number(cloudSettings.raporPageCount));
+
+                  // Load SKL Config
+                  if (cloudSettings.sklConfig) setSklConfig(cloudSettings.sklConfig);
               }
 
               // 2. Fetch Users
@@ -163,13 +175,15 @@ const SettingsView: React.FC = () => {
           p5Config,
           recapSubjects,
           docConfig,
-          raporPageCount
+          raporPageCount,
+          sklConfig // Add SKL config to payload
       };
 
       // Also save to LocalStorage for immediate access in other components without refetching
       localStorage.setItem('sys_recap_config', JSON.stringify(recapSubjects));
       localStorage.setItem('sys_doc_config', JSON.stringify(docConfig));
       localStorage.setItem('sys_rapor_config', String(raporPageCount));
+      localStorage.setItem('skl_config', JSON.stringify(sklConfig)); // Fallback for SKL
 
       const success = await api.saveAppSettings(settingsPayload);
       setIsSavingSettings(false);
@@ -352,6 +366,7 @@ const SettingsView: React.FC = () => {
             <div className="flex border-b border-gray-200 overflow-x-auto">
                 <TabButton id="IDENTITY" label="Identitas Sekolah" icon={School} />
                 <TabButton id="ACADEMIC" label="Tahun Ajaran" icon={Calendar} />
+                <TabButton id="SKL" label="Pengaturan SKL" icon={FileBadge} />
                 <TabButton id="KELAS" label="Data Kelas & Wali" icon={BookOpen} />
                 <TabButton id="DOCS" label="Dokumen & Rapor" icon={FolderOpen} />
                 <TabButton id="P5" label="Setting P5" icon={LayoutList} />
@@ -388,6 +403,70 @@ const SettingsView: React.FC = () => {
                                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">NIP</label>
                                     <input type="text" className="w-full p-2 border rounded-lg text-sm" value={schoolData.nip} onChange={e => setSchoolData({...schoolData, nip: e.target.value})} />
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'SKL' && (
+                    <div className="max-w-2xl space-y-4 bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+                        <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
+                            <FileBadge className="w-5 h-5 text-blue-600" />
+                            Konfigurasi Surat Keterangan Lulus
+                        </h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Nomor Surat (Header)</label>
+                                <input 
+                                    type="text" 
+                                    className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                    value={sklConfig.nomorSurat}
+                                    onChange={(e) => setSklConfig({...sklConfig, nomorSurat: e.target.value})}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Nomor Surat Keputusan (Isi)</label>
+                                <input 
+                                    type="text" 
+                                    className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                    value={sklConfig.nomorSK}
+                                    onChange={(e) => setSklConfig({...sklConfig, nomorSK: e.target.value})}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Tanggal Keputusan/Kelulusan</label>
+                                <input 
+                                    type="text" 
+                                    className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                    value={sklConfig.tanggalKeputusan}
+                                    onChange={(e) => setSklConfig({...sklConfig, tanggalKeputusan: e.target.value})}
+                                    placeholder="Contoh: 2 Juni 2025"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Titimangsa (Tempat)</label>
+                                    <input 
+                                        type="text" 
+                                        className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                        value={sklConfig.titimangsa}
+                                        onChange={(e) => setSklConfig({...sklConfig, titimangsa: e.target.value})}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Tanggal Surat (TTD)</label>
+                                    <input 
+                                        type="text" 
+                                        className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                        value={sklConfig.tanggalSurat}
+                                        onChange={(e) => setSklConfig({...sklConfig, tanggalSurat: e.target.value})}
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div className="bg-yellow-50 p-3 rounded border border-yellow-200 text-xs text-yellow-800 mt-4">
+                                <p className="font-bold mb-1">Info:</p>
+                                <p>Pastikan klik tombol <strong>"Simpan Config"</strong> di pojok kanan atas setelah melakukan perubahan agar data tersimpan di server.</p>
                             </div>
                         </div>
                     </div>
@@ -474,6 +553,8 @@ const SettingsView: React.FC = () => {
                     </div>
                 )}
 
+                {/* Other tabs remain similar... (KELAS, DOCS, P5, REKAP, USERS) */}
+                
                 {activeTab === 'KELAS' && (
                     <div className="space-y-4">
                         <div className="flex flex-col md:flex-row items-center gap-3 bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
@@ -597,7 +678,6 @@ const SettingsView: React.FC = () => {
 
                 {activeTab === 'P5' && (
                     <div className="space-y-4">
-                        {/* P5 Logic kept same as before */}
                         <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm flex flex-col md:flex-row gap-4 items-center">
                             <div className="flex flex-col gap-1 w-full md:w-auto">
                                 <span className="text-xs font-bold text-gray-500 uppercase">Tahun Pelajaran (Manual)</span>
@@ -619,7 +699,6 @@ const SettingsView: React.FC = () => {
                                         setP5Filter(prev => ({
                                             ...prev, 
                                             level: newLevel,
-                                            // Reset semester to first valid option for new level
                                             semester: getSemestersForLevel(newLevel)[0]
                                         }));
                                     }}

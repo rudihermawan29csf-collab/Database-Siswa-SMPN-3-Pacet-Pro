@@ -318,24 +318,55 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
       // 3. CRITICAL: If Approved, Apply Data Changes to the ACTUAL field in Student Object
       if (action === 'APPROVED') {
-          const keys = selectedRequest.fieldKey.split('.');
-          let current: any = updatedStudent;
-          
-          // Traverse path (e.g. 'father.name')
-          for (let i = 0; i < keys.length - 1; i++) {
-               if (!current[keys[i]]) current[keys[i]] = {};
-               current = current[keys[i]];
-          }
-          
-          // Set Value
-          const lastKey = keys[keys.length - 1];
-          const newValue = selectedRequest.proposedValue;
+          const { fieldKey, proposedValue } = selectedRequest;
 
-          // Handle numeric conversions if existing value is number
-          if (typeof current[lastKey] === 'number') {
-              current[lastKey] = Number(newValue);
+          // Check if specific logic needed (Legacy compatibility for Grade/Class)
+          if (fieldKey === 'className') {
+                updatedStudent.className = proposedValue;
+          } else if (fieldKey.startsWith('class-')) {
+                // ... (Existing logic for class overrides) ...
+                const sem = parseInt(fieldKey.split('-')[1]);
+                if (!isNaN(sem)) {
+                    if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
+                    if (!updatedStudent.academicRecords[sem]) {
+                        const level = (sem <= 2) ? 'VII' : (sem <= 4) ? 'VIII' : 'IX';
+                        updatedStudent.academicRecords[sem] = { semester: sem, classLevel: level, className: proposedValue, phase: 'D', year: '2024', subjects: [], p5Projects: [], extracurriculars: [], teacherNote: '', attendance: {sick:0, permitted:0, noReason:0} };
+                    }
+                    updatedStudent.academicRecords[sem].className = proposedValue;
+                }
+          } else if (fieldKey.startsWith('grade-')) {
+                // ... (Existing logic for grades) ...
+                const parts = fieldKey.split('-');
+                if (parts.length >= 3) {
+                    const sem = parseInt(parts[1]);
+                    const subjectName = parts.slice(2).join('-');
+                    if (updatedStudent.academicRecords && updatedStudent.academicRecords[sem]) {
+                        const subjectRecord = updatedStudent.academicRecords[sem].subjects.find((s: any) => s.subject === subjectName);
+                        if (subjectRecord) {
+                            subjectRecord.score = Number(proposedValue);
+                        }
+                    }
+                }
           } else {
-              current[lastKey] = newValue;
+              // --- FIXED: GENERIC BIO DATA HANDLER ---
+              const keys = fieldKey.split('.');
+              let current: any = updatedStudent;
+              
+              // Traverse path (e.g. 'father.name' or 'dapodik.nik')
+              for (let i = 0; i < keys.length - 1; i++) {
+                   if (!current[keys[i]]) current[keys[i]] = {};
+                   current = current[keys[i]];
+              }
+              
+              // Set Value
+              const lastKey = keys[keys.length - 1];
+              
+              // Handle numeric conversions if existing value is number
+              if (current[lastKey] !== undefined && current[lastKey] !== null && typeof current[lastKey] === 'number') {
+                  current[lastKey] = Number(proposedValue);
+              } else {
+                  current[lastKey] = proposedValue;
+              }
           }
       }
 

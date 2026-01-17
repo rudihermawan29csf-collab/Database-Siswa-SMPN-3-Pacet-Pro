@@ -113,8 +113,10 @@ const App: React.FC = () => {
       setDataVersion(prev => prev + 1);
   };
 
-  // UPDATED: Save Logic to update LOCAL STATE immediately
+  // UPDATED: Save Logic with Revert Capability
   const saveStudentToCloud = async (student: Student) => {
+      const originalStudents = [...studentsData];
+      
       // Ensure we sanitize outgoing student class name as well just in case
       const sanitizedStudent = {
           ...student,
@@ -126,8 +128,19 @@ const App: React.FC = () => {
           prevStudents.map(s => s.id === sanitizedStudent.id ? sanitizedStudent : s)
       );
 
-      // 2. Send to Cloud
-      await api.updateStudent(sanitizedStudent);
+      // 2. Send to Cloud with Error Handling
+      try {
+          const success = await api.updateStudent(sanitizedStudent);
+          if (!success) {
+              throw new Error("Gagal menyimpan ke server database.");
+          }
+      } catch (error) {
+          console.error("Save failed, reverting:", error);
+          // 3. Revert Local State on Failure
+          setStudentsData(originalStudents);
+          alert("Gagal menyimpan perubahan. Koneksi tidak stabil atau server sibuk. Perubahan dikembalikan.");
+          throw error; // Re-throw so component can handle UI state (e.g. stop spinner)
+      }
   };
 
   const handleLogin = (role: UserRole, studentData?: Student) => {
@@ -349,7 +362,7 @@ const App: React.FC = () => {
                         viewMode="dapodik" 
                         highlightFieldKey={targetHighlightField}
                         onUpdate={refreshData}
-                        onSave={saveStudentToCloud} // PASSED HERE
+                        onSave={saveStudentToCloud} 
                         currentUser={currentUser || undefined}
                      />;
           case 'student-docs': // Admin view of student docs
@@ -366,7 +379,7 @@ const App: React.FC = () => {
                         students={studentsData} 
                         userRole={userRole}
                         onUpdate={refreshData}
-                        onSave={saveStudentToCloud} // ADDED HERE
+                        onSave={saveStudentToCloud} 
                         currentUser={currentUser || undefined}
                      />;
           case 'recap':
@@ -383,7 +396,7 @@ const App: React.FC = () => {
               return <IjazahVerificationView 
                         students={studentsData} 
                         onUpdate={refreshData} 
-                        onSave={saveStudentToCloud} // ADDED HERE
+                        onSave={saveStudentToCloud} 
                         currentUser={currentUser || undefined} 
                      />;
           case 'settings':
@@ -407,7 +420,7 @@ const App: React.FC = () => {
                         viewMode="student" 
                         readOnly={true} // Student can edit via modal inside component
                         onUpdate={refreshData}
-                        onSave={saveStudentToCloud} // PASSED HERE
+                        onSave={saveStudentToCloud} 
                         currentUser={currentUser || undefined}
                      />;
           case 'documents':

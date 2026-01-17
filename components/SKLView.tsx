@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Student } from '../types';
-import { Search, FileDown, FileBadge, Filter, Settings, Save, X, RotateCcw, Loader2 } from 'lucide-react';
+import { Search, FileDown, FileBadge, Filter, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
 
 interface SKLViewProps {
@@ -33,8 +33,7 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
   const [appSettings, setAppSettings] = useState<any>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // --- EDIT CONFIG STATE ---
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  // Default SKL Config (Fallback)
   const [sklConfig, setSklConfig] = useState({
       nomorSurat: '421.3/ 1457 /416-101.64/2025',
       nomorSK: '421.3/1456/416-101.64/2025',
@@ -47,12 +46,11 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
       const fetchData = async () => {
           try {
               const settings = await api.getAppSettings();
-              if (settings) setAppSettings(settings);
-              
-              // Load saved SKL config from localStorage
-              const savedConfig = localStorage.getItem('skl_config');
-              if (savedConfig) {
-                  setSklConfig(JSON.parse(savedConfig));
+              if (settings) {
+                  setAppSettings(settings);
+                  if (settings.sklConfig) {
+                      setSklConfig(settings.sklConfig);
+                  }
               }
           } catch (e) {
               console.error("Failed to load settings for SKL", e);
@@ -173,22 +171,6 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
       }, 500);
   };
 
-  const handleSaveConfig = () => {
-      localStorage.setItem('skl_config', JSON.stringify(sklConfig));
-      setIsEditModalOpen(false);
-  };
-
-  const handleResetConfig = () => {
-      const defaults = {
-          nomorSurat: '421.3/ 1457 /416-101.64/2025',
-          nomorSK: '421.3/1456/416-101.64/2025',
-          tanggalKeputusan: '2 Juni 2025',
-          tanggalSurat: '2 Juni 2025',
-          titimangsa: 'Mojokerto'
-      };
-      setSklConfig(defaults);
-  };
-
   // Dynamic Data Sources
   const activeYear = appSettings?.academicData?.year || new Date().getFullYear();
   const headmasterName = appSettings?.schoolData?.headmaster || 'DIDIK SULISTYO, M.M.Pd';
@@ -197,91 +179,6 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
   return (
     <div className="flex flex-col h-full animate-fade-in space-y-4">
         
-        {/* EDIT MODAL */}
-        {isEditModalOpen && (
-            <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 transform scale-100 transition-all">
-                    <div className="flex justify-between items-center mb-4 border-b pb-2">
-                        <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                            <Settings className="w-5 h-5 text-gray-600" />
-                            Edit Kop & Konten SKL
-                        </h3>
-                        <button onClick={() => setIsEditModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>
-                    </div>
-                    
-                    <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-                        <div>
-                            <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Nomor Surat (Header)</label>
-                            <input 
-                                type="text" 
-                                className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                value={sklConfig.nomorSurat}
-                                onChange={(e) => setSklConfig({...sklConfig, nomorSurat: e.target.value})}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Nomor Surat Keputusan (Isi)</label>
-                            <input 
-                                type="text" 
-                                className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                value={sklConfig.nomorSK}
-                                onChange={(e) => setSklConfig({...sklConfig, nomorSK: e.target.value})}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Tanggal Keputusan/Kelulusan</label>
-                            <input 
-                                type="text" 
-                                className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                value={sklConfig.tanggalKeputusan}
-                                onChange={(e) => setSklConfig({...sklConfig, tanggalKeputusan: e.target.value})}
-                                placeholder="Contoh: 2 Juni 2025"
-                            />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Titimangsa (Tempat)</label>
-                                <input 
-                                    type="text" 
-                                    className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                    value={sklConfig.titimangsa}
-                                    onChange={(e) => setSklConfig({...sklConfig, titimangsa: e.target.value})}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Tanggal Surat (TTD)</label>
-                                <input 
-                                    type="text" 
-                                    className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                    value={sklConfig.tanggalSurat}
-                                    onChange={(e) => setSklConfig({...sklConfig, tanggalSurat: e.target.value})}
-                                />
-                            </div>
-                        </div>
-                        
-                        <div className="bg-yellow-50 p-3 rounded border border-yellow-200 text-xs text-yellow-800">
-                            <p className="font-bold mb-1">Info Data Dinamis:</p>
-                            <ul className="list-disc pl-4 space-y-1">
-                                <li>Tahun Pelajaran: {activeYear} (dari Pengaturan Admin)</li>
-                                <li>Kepala Sekolah: {headmasterName} (dari Pengaturan Admin)</li>
-                            </ul>
-                        </div>
-                    </div>
-
-                    <div className="flex gap-2 mt-6 pt-4 border-t">
-                        <button onClick={handleResetConfig} className="px-4 py-2 bg-gray-100 text-gray-600 font-bold rounded-lg text-sm hover:bg-gray-200 flex items-center gap-1">
-                            <RotateCcw className="w-4 h-4" /> Reset
-                        </button>
-                        <div className="flex-1"></div>
-                        <button onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 bg-white border border-gray-300 text-gray-700 font-bold rounded-lg text-sm hover:bg-gray-50">Batal</button>
-                        <button onClick={handleSaveConfig} className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg text-sm hover:bg-blue-700 flex items-center gap-2">
-                            <Save className="w-4 h-4" /> Simpan
-                        </button>
-                    </div>
-                </div>
-            </div>
-        )}
-
         {/* Toolbar */}
         <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-3 w-full md:w-auto">
@@ -289,26 +186,17 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
                     <FileBadge className="w-4 h-4" /> Surat Keterangan Lulus
                 </div>
                 {userRole === 'ADMIN' && (
-                    <>
-                        <div className="flex items-center gap-2 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200">
-                            <Filter className="w-4 h-4 text-gray-500" />
-                            <select 
-                                className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer"
-                                value={selectedClass}
-                                onChange={(e) => setSelectedClass(e.target.value)}
-                            >
-                                <option value="ALL">Semua Kelas</option>
-                                {CLASS_LIST.map(c => <option key={c} value={c}>Kelas {c}</option>)}
-                            </select>
-                        </div>
-                        <button 
-                            onClick={() => setIsEditModalOpen(true)}
-                            className="flex items-center gap-2 bg-gray-800 text-white px-3 py-2 rounded-lg text-sm font-bold hover:bg-gray-900 transition-colors"
-                            title="Edit Header & Konten SKL"
+                    <div className="flex items-center gap-2 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200">
+                        <Filter className="w-4 h-4 text-gray-500" />
+                        <select 
+                            className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer"
+                            value={selectedClass}
+                            onChange={(e) => setSelectedClass(e.target.value)}
                         >
-                            <Settings className="w-4 h-4" /> Edit SKL
-                        </button>
-                    </>
+                            <option value="ALL">Semua Kelas</option>
+                            {CLASS_LIST.map(c => <option key={c} value={c}>Kelas {c}</option>)}
+                        </select>
+                    </div>
                 )}
             </div>
 

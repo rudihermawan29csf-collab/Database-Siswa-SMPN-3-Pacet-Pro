@@ -177,26 +177,40 @@ export const api = {
     });
   },
 
-  // Update Single Student Data
+  // Update Single Student Data with Retry Logic
   updateStudent: async (student: Student): Promise<boolean> => {
     if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('YOUR_GOOGLE_SCRIPT_URL')) return true;
 
-    try {
-      const payload = {
-        action: 'updateStudent',
-        student: student
-      };
-      const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
-      
-      const result = await response.json();
-      return result.status === 'success';
-    } catch (e) {
-      console.error("Update student error:", e);
-      return false;
-    }
+    const attemptUpdate = async (retryCount = 0): Promise<boolean> => {
+        try {
+          const payload = {
+            action: 'updateStudent',
+            student: student
+          };
+          // Increased timeout to 45s for writes to ensure GAS has enough time
+          const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+            timeout: 45000 
+          } as any);
+          
+          if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+
+          const result = await response.json();
+          return result.status === 'success';
+        } catch (e) {
+          console.error(`Update attempt ${retryCount + 1} failed:`, e);
+          // Retry logic: up to 2 retries (3 attempts total)
+          if (retryCount < 2) {
+              const delay = (retryCount + 1) * 2000; // 2s, then 4s
+              await new Promise(res => setTimeout(res, delay)); 
+              return attemptUpdate(retryCount + 1);
+          }
+          return false;
+        }
+    };
+
+    return attemptUpdate();
   },
 
   // Update Multiple Students at once (Bulk)
@@ -212,8 +226,9 @@ export const api = {
         
         const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
             method: 'POST',
-            body: JSON.stringify(payload)
-        });
+            body: JSON.stringify(payload),
+            timeout: 90000
+        } as any);
 
         const result = await response.json();
         return result.status === 'success';
@@ -240,7 +255,7 @@ export const api = {
       const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
         method: 'POST',
         body: JSON.stringify(payload),
-        timeout: 90000 // 90s timeout for full sync
+        timeout: 120000 // 120s timeout for full sync (very slow)
       } as any);
 
       const result = await response.json();
