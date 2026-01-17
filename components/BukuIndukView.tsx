@@ -1,31 +1,248 @@
 import React, { useState, useMemo } from 'react';
 import { Student } from '../types';
-import { Search, Printer, User, ArrowLeft, ChevronRight, School, FileDown, Loader2, Filter } from 'lucide-react';
+import { Search, Printer, User, ArrowLeft, ChevronRight, School, FileDown, Loader2, Filter, Files } from 'lucide-react';
 
 interface BukuIndukViewProps {
   students: Student[];
 }
 
+// --- HELPER COMPONENTS & FUNCTIONS ---
+
+const formatClassName = (name: string) => {
+    if (!name) return '-';
+    return name.toLowerCase().startsWith('kelas') ? name : `Kelas ${name}`;
+};
+
+const formatDateIndo = (dateStr: string) => {
+    if (!dateStr) return '-';
+    try {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return dateStr; 
+        return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    } catch { return dateStr; }
+};
+
+const FormField = ({ label, value, labelCol = "w-1/3", valueCol = "flex-1", className = "" }: any) => (
+    <div className={`flex border-b border-gray-300 min-h-[20px] ${className}`}>
+        <div className={`${labelCol} px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center`}>
+            {label}
+        </div>
+        <div className={`${valueCol} px-1.5 py-0.5 text-[9px] font-medium flex items-center uppercase leading-tight`}>
+            {value || '-'}
+        </div>
+    </div>
+);
+
+const SubHeader = ({ children }: { children?: React.ReactNode }) => (
+    <div className="bg-gray-300 px-2 py-0.5 text-[9px] font-bold border-y border-gray-400 text-center uppercase">
+        {children}
+    </div>
+);
+
+// --- REUSABLE TEMPLATE ---
+const BukuIndukTemplate = ({ student }: { student: Student }) => {
+    return (
+        <div className="w-[190mm] bg-white p-5 flex flex-col font-serif shadow-xl text-[9px] leading-tight box-border relative page-break-inside-avoid">
+            {/* HEADER */}
+            <div className="border-2 border-black p-0.5 mb-1 bg-black">
+                <h1 className="text-lg font-black text-white text-center tracking-widest uppercase">
+                    FORMULIR PESERTA DIDIK
+                </h1>
+            </div>
+
+            <div className="flex justify-between border-b border-gray-800 mb-0.5">
+                <div className="flex-1 flex">
+                    <div className="w-24 text-[9px] font-bold">Tanggal</div>
+                    <div className="flex-1 text-[9px]">: {new Date().toLocaleDateString('id-ID')}</div>
+                </div>
+                <div className="flex-1 flex border-l border-gray-800 pl-4">
+                    <div className="w-24 text-[9px] font-bold">REG :</div>
+                    <div className="flex-1 text-[9px]">: -</div>
+                </div>
+            </div>
+            <div className="flex justify-between border-b border-gray-800 mb-1">
+                <div className="flex-1 flex">
+                    <div className="w-24 text-[9px] font-bold"> - Tingkat</div>
+                    <div className="flex-1 text-[9px]">: {formatClassName(student.className)}</div>
+                </div>
+                <div className="flex-1 flex border-l border-gray-800 pl-4">
+                    <div className="w-24 text-[9px] font-bold">Program :</div>
+                    <div className="flex-1 text-[9px]">: -</div>
+                </div>
+            </div>
+
+            {/* SECTION 1: IDENTITAS */}
+            <SubHeader>IDENTITAS PESERTA DIDIK (WAJIB DIISI)</SubHeader>
+            <div className="border-x border-t border-gray-800">
+                <FormField label="1. Nama Lengkap" value={student.fullName} />
+                <FormField label="2. Jenis Kelamin" value={student.gender === 'L' ? 'Laki-Laki' : 'Perempuan'} />
+                <div className="flex border-b border-gray-300 min-h-[20px]">
+                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">3. NISN</div>
+                    <div className="w-1/3 px-1.5 py-0.5 text-[9px] font-medium uppercase">{student.nisn}</div>
+                    <div className="w-12 px-1.5 py-0.5 bg-gray-100 border-x border-gray-300 text-[9px] font-bold">NIS :</div>
+                    <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-gray-200">{student.nis}</div>
+                </div>
+                <FormField label="4. No Seri Ijazah" value={student.diplomaNumber} />
+                <FormField label="5. No Seri SKHUN" value={student.dapodik.skhun} />
+                <FormField label="6. No. Ujian Nasional" value={student.dapodik.unExamNumber} />
+                <FormField label="7. NIK" value={student.dapodik.nik} />
+                <FormField label="NPSN Sekolah Asal" value={student.previousSchool ? "20502873" : "-"} />
+                <FormField label="Nama Sekolah Asal" value={student.previousSchool} />
+                <FormField label="8. Tempat, Tgl Lahir" value={`${student.birthPlace}, ${formatDateIndo(student.birthDate)}`} />
+                <FormField label="9. Agama" value={student.religion} />
+                <FormField label="10. Berkebutuhan Khusus" value={student.dapodik.specialNeeds} />
+                <FormField label="11. Alamat Tempat Tinggal" value={student.address} />
+                <div className="flex border-b border-gray-300 min-h-[20px]">
+                    <div className="w-1/3 flex flex-col">
+                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic"> - Dusun</div>
+                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic"> - Kelurahan / Desa</div>
+                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic"> - Kecamatan</div>
+                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic"> - Kabupaten / Kota</div>
+                        <div className="flex-1 px-1.5 py-0.5 text-[8px] italic"> - Propinsi</div>
+                    </div>
+                    <div className="w-1/3 flex flex-col border-x border-gray-300">
+                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{student.dapodik.dusun}</div>
+                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{student.dapodik.kelurahan}</div>
+                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{student.subDistrict}</div>
+                        <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{student.district}</div>
+                        <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase">Jawa Timur</div>
+                    </div>
+                    <div className="flex-1 flex flex-col">
+                        <div className="flex border-b border-gray-200 h-1/3">
+                            <div className="w-10 px-1 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] font-bold">RT:</div>
+                            <div className="flex-1 px-1 py-0.5 text-[9px]">{student.dapodik.rt}</div>
+                            <div className="w-10 px-1 py-0.5 bg-gray-50 border-x border-gray-300 text-[8px] font-bold">RW:</div>
+                            <div className="flex-1 px-1 py-0.5 text-[9px]">{student.dapodik.rw}</div>
+                        </div>
+                        <div className="flex border-b border-gray-200 h-1/3">
+                            <div className="w-20 px-1 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] font-bold">Kode Pos</div>
+                            <div className="flex-1 px-1 py-0.5 text-[9px]">{student.postalCode}</div>
+                        </div>
+                        <div className="flex-1 bg-gray-100"></div>
+                    </div>
+                </div>
+                <FormField label="12. Transportasi" value={student.dapodik.transportation} />
+                <FormField label="13. Jenis Tinggal" value={student.dapodik.livingStatus} />
+                <div className="flex border-b border-gray-300 min-h-[20px]">
+                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">14. No. Telp Rumah</div>
+                    <div className="w-1/3 px-1.5 py-0.5 text-[9px] font-medium uppercase">-</div>
+                    <div className="w-12 px-1.5 py-0.5 bg-gray-100 border-x border-gray-300 text-[9px] font-bold">HP :</div>
+                    <div className="flex-1 px-1.5 py-0.5 text-[9px] bg-gray-100">{student.father.phone || student.mother.phone || '0'}</div>
+                </div>
+                <FormField label="15. Email" value={student.dapodik.email} />
+                <FormField label="16. No. KKS" value={student.dapodik.kksNumber} />
+                <div className="flex border-b border-gray-300 min-h-[20px]">
+                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">17. Penerima KPS/KPH</div>
+                    <div className="w-1/6 px-1.5 py-0.5 text-[9px] border-r border-gray-200 uppercase">{student.dapodik.kpsReceiver}</div>
+                    <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">No. KPS</div>
+                    <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase">{student.dapodik.kpsNumber}</div>
+                </div>
+                <div className="flex border-b border-gray-300 min-h-[20px]">
+                    <div className="w-1/3 px-1.5 py-0.5 text-[8px] italic"> - Usulan PIP</div>
+                    <div className="w-1/6 px-1.5 py-0.5 text-[9px] border-x border-gray-300 uppercase">{student.dapodik.pipEligible}</div>
+                    <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">Alasan</div>
+                    <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase">{student.dapodik.pipReason}</div>
+                </div>
+                <div className="flex border-b border-gray-300 min-h-[20px]">
+                    <div className="w-1/3 px-1.5 py-0.5 text-[8px] italic"> - Penerima PIP</div>
+                    <div className="w-1/6 px-1.5 py-0.5 text-[9px] border-x border-gray-300 uppercase">{student.dapodik.kipReceiver}</div>
+                    <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">No. KIP</div>
+                    <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase">{student.dapodik.kipNumber}</div>
+                </div>
+                <FormField label=" - Nama di KIP" value={student.dapodik.kipName} />
+                <FormField label=" - No Reg Akta Lahir" value={student.dapodik.birthRegNumber} />
+                <FormField label=" - Lintang / Bujur" value={`${student.dapodik.latitude} / ${student.dapodik.longitude}`} />
+            </div>
+
+            {/* SECTION 2: DATA AYAH */}
+            <SubHeader>DATA AYAH KANDUNG (WAJIB DIISI)</SubHeader>
+            <div className="border-x border-t border-gray-800">
+                <div className="flex border-b border-gray-300 min-h-[20px]">
+                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">18. Nama Ayah</div>
+                    <div className="w-1/2 px-1.5 py-0.5 text-[9px] font-bold uppercase">{student.father.name}</div>
+                    <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-x border-gray-300 text-[9px]">Tahun:</div>
+                    <div className="flex-1 px-1.5 py-0.5 text-[9px] bg-gray-100 font-bold">{student.father.birthPlaceDate}</div>
+                </div>
+                <FormField label=" - Pekerjaan" value={student.father.job} />
+                <FormField label=" - Pendidikan" value={student.father.education} />
+                <FormField label=" - Penghasilan" value={student.father.income} />
+            </div>
+
+            {/* SECTION 3: DATA IBU */}
+            <SubHeader>DATA IBU KANDUNG (WAJIB DIISI)</SubHeader>
+            <div className="border-x border-t border-gray-800">
+                <div className="flex border-b border-gray-300 min-h-[20px]">
+                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">19. Nama Ibu</div>
+                    <div className="w-1/2 px-1.5 py-0.5 text-[9px] font-bold uppercase">{student.mother.name}</div>
+                    <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-x border-gray-300 text-[9px]">Tahun:</div>
+                    <div className="flex-1 px-1.5 py-0.5 text-[9px] bg-gray-100 font-bold">{student.mother.birthPlaceDate}</div>
+                </div>
+                <FormField label=" - Pekerjaan" value={student.mother.job} />
+                <FormField label=" - Pendidikan" value={student.mother.education} />
+                <FormField label=" - Penghasilan" value={student.mother.income} />
+            </div>
+
+            {/* SECTION 4: DATA WALI */}
+            <SubHeader>DATA WALI</SubHeader>
+            <div className="border-x border-t border-gray-800">
+                <div className="flex border-b border-gray-300 min-h-[20px]">
+                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">20. Nama Wali</div>
+                    <div className="w-1/2 px-1.5 py-0.5 text-[9px] uppercase">{student.guardian?.name || '-'}</div>
+                    <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-x border-gray-300 text-[9px]">Tahun:</div>
+                    <div className="flex-1 px-1.5 py-0.5 text-[9px] bg-gray-100 font-bold">{student.guardian?.birthPlaceDate || '-'}</div>
+                </div>
+                <FormField label=" - Pekerjaan" value={student.guardian?.job || '-'} />
+                <FormField label=" - Pendidikan" value={student.guardian?.education || '-'} />
+                <FormField label=" - Penghasilan" value={student.guardian?.income || '-'} />
+            </div>
+
+            {/* SECTION 5: PERIODIK */}
+            <div className="border border-gray-800 mt-1">
+                <div className="flex border-b border-gray-300 h-6">
+                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">21. Tinggi Badan</div>
+                    <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-gray-200">{student.height}</div>
+                    <div className="w-10 px-1.5 py-0.5 border-r border-gray-300 text-[9px] flex items-center">cm</div>
+                    <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">Berat Badan:</div>
+                    <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-gray-200">{student.weight}</div>
+                    <div className="flex-1 px-1.5 py-0.5 text-[9px] flex items-center">Kg</div>
+                </div>
+                <div className="flex border-b border-gray-300 h-6">
+                    <div className="w-1/2 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] flex items-center">22. Jarak Ke Sekolah</div>
+                    <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-gray-200">{student.dapodik.distanceToSchool}</div>
+                    <div className="w-10 px-1.5 py-0.5 border-r border-gray-300 text-[9px] flex items-center">km</div>
+                    <div className="flex-1 px-1.5 py-0.5 text-[8px] italic flex items-center leading-tight">2) &gt; 1km sebutkan: {Number(student.dapodik.distanceToSchool) > 1 ? student.dapodik.distanceToSchool : '-'} Km</div>
+                </div>
+                <div className="flex border-b border-gray-300 h-6">
+                    <div className="w-1/2 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] flex items-center">23. Waktu Tempuh</div>
+                    <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-gray-200">{student.dapodik.travelTimeMinutes}</div>
+                    <div className="w-12 px-1.5 py-0.5 border-r border-gray-300 text-[9px] flex items-center">menit</div>
+                    <div className="flex-1 px-1.5 py-0.5 text-[8px] italic flex items-center leading-tight">2) &gt; 60 menit: - Menit</div>
+                </div>
+                <div className="flex h-5">
+                    <div className="w-1/2 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">24. Jml Saudara Kandung</div>
+                    <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-gray-200">{student.siblingCount}</div>
+                    <div className="flex-1 bg-gray-100"></div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- MAIN VIEW COMPONENT ---
 const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isBatchGenerating, setIsBatchGenerating] = useState(false);
   
-  // NEW FILTERS
+  // FILTERS
   const [classFilter, setClassFilter] = useState('ALL');
   const [studentFilter, setStudentFilter] = useState('ALL');
-
-  // Helper to format class name consistently
-  const formatClassName = (name: string) => {
-      if (!name) return '-';
-      return name.toLowerCase().startsWith('kelas') ? name : `Kelas ${name}`;
-  };
 
   // Derive unique classes
   const uniqueClasses = useMemo(() => {
       const classes = new Set(students.map(s => s.className));
       return Array.from(classes).sort((a: string, b: string) => {
-          // Try to sort numerically if possible, otherwise alphabetical
           const aNum = parseInt(a.replace(/\D/g, '')) || 0;
           const bNum = parseInt(b.replace(/\D/g, '')) || 0;
           if (aNum !== bNum) return aNum - bNum;
@@ -79,12 +296,9 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
           margin: [5, 10, 5, 10], // Top, Left, Bottom, Right (mm)
           filename: filename,
           image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { 
-            scale: 2, 
-            useCORS: true, 
-            scrollY: 0
-          },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+          html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: 'avoid-all' }
         };
 
         // @ts-ignore
@@ -98,35 +312,56 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
                 setIsGenerating(false);
             });
         } else {
-            console.error("html2pdf library not loaded");
             setIsGenerating(false);
-            alert("Library PDF belum siap. Silakan refresh halaman.");
+            alert("Library PDF belum siap.");
         }
     }, 100);
   };
 
-  // Compact Form Field
-  const FormField = ({ label, value, labelCol = "w-1/3", valueCol = "flex-1", className = "" }: any) => (
-    <div className={`flex border-b border-gray-300 min-h-[20px] ${className}`}>
-        <div className={`${labelCol} px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center`}>
-            {label}
-        </div>
-        <div className={`${valueCol} px-1.5 py-0.5 text-[9px] font-medium flex items-center uppercase leading-tight`}>
-            {value || '-'}
-        </div>
-    </div>
-  );
+  const handleDownloadAll = () => {
+      if (filteredStudents.length === 0) {
+          alert("Tidak ada siswa untuk didownload.");
+          return;
+      }
+      if (filteredStudents.length > 50 && !window.confirm(`Anda akan mendownload ${filteredStudents.length} Buku Induk sekaligus. Proses ini mungkin memakan waktu. Lanjutkan?`)) {
+          return;
+      }
 
-  const SubHeader = ({ children }: { children?: React.ReactNode }) => (
-    <div className="bg-gray-300 px-2 py-0.5 text-[9px] font-bold border-y border-gray-400 text-center uppercase">
-        {children}
-    </div>
-  );
+      setIsBatchGenerating(true);
+
+      setTimeout(() => {
+          const element = document.getElementById('batch-buku-induk-container');
+          const className = classFilter === 'ALL' ? 'Semua_Kelas' : classFilter.replace(/\s+/g, '_');
+          const filename = `Buku_Induk_Batch_${className}.pdf`;
+
+          const opt = {
+            margin: [5, 10, 5, 10],
+            filename: filename,
+            image: { type: 'jpeg', quality: 0.95 },
+            html2canvas: { scale: 1.5, useCORS: true, scrollY: 0 },
+            pagebreak: { mode: ['css', 'legacy'] },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+          };
+
+          // @ts-ignore
+          const html2pdf = window.html2pdf;
+
+          if (html2pdf) {
+              html2pdf().set(opt).from(element).save().then(() => {
+                  setIsBatchGenerating(false);
+              }).catch((err: any) => {
+                  console.error(err);
+                  setIsBatchGenerating(false);
+                  alert("Gagal melakukan batch download.");
+              });
+          }
+      }, 3000); // 3 seconds wait for rendering
+  };
 
   if (selectedStudent) {
       return (
           <div className="flex flex-col h-full space-y-4 animate-fade-in">
-              {/* Toolbar */}
+              {/* Toolbar Single View */}
               <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center">
                   <button 
                     onClick={() => setSelectedStudent(null)}
@@ -148,192 +383,8 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
 
               {/* Wrapper Scrollable (Layar) */}
               <div className="bg-white p-4 md:p-8 rounded-xl border border-gray-200 shadow-sm flex-1 overflow-auto flex justify-center bg-gray-50/50 pb-32">
-                  
-                  {/* === DOCUMENT CONTENT === */}
-                  {/* Reduced width to 190mm to ensure proper margins in A4 PDF (210mm) */}
-                  <div id="buku-induk-content" className="w-[190mm] bg-white p-5 flex flex-col font-serif shadow-xl text-[9px] leading-tight box-border relative">
-                      
-                      {/* HEADER */}
-                      <div className="border-2 border-black p-0.5 mb-1 bg-black">
-                          <h1 className="text-lg font-black text-white text-center tracking-widest uppercase">
-                              FORMULIR PESERTA DIDIK
-                          </h1>
-                      </div>
-
-                      <div className="flex justify-between border-b border-gray-800 mb-0.5">
-                          <div className="flex-1 flex">
-                              <div className="w-24 text-[9px] font-bold">Tanggal</div>
-                              <div className="flex-1 text-[9px]">: {new Date().toLocaleDateString('id-ID')}</div>
-                          </div>
-                          <div className="flex-1 flex border-l border-gray-800 pl-4">
-                              <div className="w-24 text-[9px] font-bold">REG :</div>
-                              <div className="flex-1 text-[9px]">: -</div>
-                          </div>
-                      </div>
-                      <div className="flex justify-between border-b border-gray-800 mb-1">
-                          <div className="flex-1 flex">
-                              <div className="w-24 text-[9px] font-bold"> - Tingkat</div>
-                              <div className="flex-1 text-[9px]">: {formatClassName(selectedStudent.className)}</div>
-                          </div>
-                          <div className="flex-1 flex border-l border-gray-800 pl-4">
-                              <div className="w-24 text-[9px] font-bold">Program :</div>
-                              <div className="flex-1 text-[9px]">: -</div>
-                          </div>
-                      </div>
-
-                      {/* SECTION 1: IDENTITAS */}
-                      <SubHeader>IDENTITAS PESERTA DIDIK (WAJIB DIISI)</SubHeader>
-                      <div className="border-x border-t border-gray-800">
-                          <FormField label="1. Nama Lengkap" value={selectedStudent.fullName} />
-                          <FormField label="2. Jenis Kelamin" value={selectedStudent.gender === 'L' ? 'Laki-Laki' : 'Perempuan'} />
-                          <div className="flex border-b border-gray-300 min-h-[20px]">
-                              <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">3. NISN</div>
-                              <div className="w-1/3 px-1.5 py-0.5 text-[9px] font-medium uppercase">{selectedStudent.nisn}</div>
-                              <div className="w-12 px-1.5 py-0.5 bg-gray-100 border-x border-gray-300 text-[9px] font-bold">NIS :</div>
-                              <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-gray-200">{selectedStudent.nis}</div>
-                          </div>
-                          <FormField label="4. No Seri Ijazah" value={selectedStudent.diplomaNumber} />
-                          <FormField label="5. No Seri SKHUN" value={selectedStudent.dapodik.skhun} />
-                          <FormField label="6. No. Ujian Nasional" value={selectedStudent.dapodik.unExamNumber} />
-                          <FormField label="7. NIK" value={selectedStudent.dapodik.nik} />
-                          <FormField label="NPSN Sekolah Asal" value={selectedStudent.previousSchool ? "20502873" : "-"} />
-                          <FormField label="Nama Sekolah Asal" value={selectedStudent.previousSchool} />
-                          <FormField label="8. Tempat, Tgl Lahir" value={`${selectedStudent.birthPlace}, ${selectedStudent.birthDate}`} />
-                          <FormField label="9. Agama" value={selectedStudent.religion} />
-                          <FormField label="10. Berkebutuhan Khusus" value={selectedStudent.dapodik.specialNeeds} />
-                          <FormField label="11. Alamat Tempat Tinggal" value={selectedStudent.address} />
-                          <div className="flex border-b border-gray-300 min-h-[20px]">
-                               <div className="w-1/3 flex flex-col">
-                                   <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic"> - Dusun</div>
-                                   <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic"> - Kelurahan / Desa</div>
-                                   <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic"> - Kecamatan</div>
-                                   <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic"> - Kabupaten / Kota</div>
-                                   <div className="flex-1 px-1.5 py-0.5 text-[8px] italic"> - Propinsi</div>
-                               </div>
-                               <div className="w-1/3 flex flex-col border-x border-gray-300">
-                                   <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{selectedStudent.dapodik.dusun}</div>
-                                   <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{selectedStudent.dapodik.kelurahan}</div>
-                                   <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{selectedStudent.subDistrict}</div>
-                                   <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{selectedStudent.district}</div>
-                                   <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase">Jawa Timur</div>
-                               </div>
-                               <div className="flex-1 flex flex-col">
-                                   <div className="flex border-b border-gray-200 h-1/3">
-                                        <div className="w-10 px-1 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] font-bold">RT:</div>
-                                        <div className="flex-1 px-1 py-0.5 text-[9px]">{selectedStudent.dapodik.rt}</div>
-                                        <div className="w-10 px-1 py-0.5 bg-gray-50 border-x border-gray-300 text-[8px] font-bold">RW:</div>
-                                        <div className="flex-1 px-1 py-0.5 text-[9px]">{selectedStudent.dapodik.rw}</div>
-                                   </div>
-                                   <div className="flex border-b border-gray-200 h-1/3">
-                                        <div className="w-20 px-1 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] font-bold">Kode Pos</div>
-                                        <div className="flex-1 px-1 py-0.5 text-[9px]">{selectedStudent.postalCode}</div>
-                                   </div>
-                                   <div className="flex-1 bg-gray-100"></div>
-                               </div>
-                          </div>
-                          <FormField label="12. Transportasi" value={selectedStudent.dapodik.transportation} />
-                          <FormField label="13. Jenis Tinggal" value={selectedStudent.dapodik.livingStatus} />
-                          <div className="flex border-b border-gray-300 min-h-[20px]">
-                              <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">14. No. Telp Rumah</div>
-                              <div className="w-1/3 px-1.5 py-0.5 text-[9px] font-medium uppercase">-</div>
-                              <div className="w-12 px-1.5 py-0.5 bg-gray-100 border-x border-gray-300 text-[9px] font-bold">HP :</div>
-                              <div className="flex-1 px-1.5 py-0.5 text-[9px] bg-gray-100">{selectedStudent.father.phone || selectedStudent.mother.phone || '0'}</div>
-                          </div>
-                          <FormField label="15. Email" value={selectedStudent.dapodik.email} />
-                          <FormField label="16. No. KKS" value={selectedStudent.dapodik.kksNumber} />
-                          <div className="flex border-b border-gray-300 min-h-[20px]">
-                              <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">17. Penerima KPS/KPH</div>
-                              <div className="w-1/6 px-1.5 py-0.5 text-[9px] border-r border-gray-200 uppercase">{selectedStudent.dapodik.kpsReceiver}</div>
-                              <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">No. KPS</div>
-                              <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase">{selectedStudent.dapodik.kpsNumber}</div>
-                          </div>
-                          <div className="flex border-b border-gray-300 min-h-[20px]">
-                              <div className="w-1/3 px-1.5 py-0.5 text-[8px] italic"> - Usulan PIP</div>
-                              <div className="w-1/6 px-1.5 py-0.5 text-[9px] border-x border-gray-300 uppercase">{selectedStudent.dapodik.pipEligible}</div>
-                              <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">Alasan</div>
-                              <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase">{selectedStudent.dapodik.pipReason}</div>
-                          </div>
-                          <div className="flex border-b border-gray-300 min-h-[20px]">
-                              <div className="w-1/3 px-1.5 py-0.5 text-[8px] italic"> - Penerima PIP</div>
-                              <div className="w-1/6 px-1.5 py-0.5 text-[9px] border-x border-gray-300 uppercase">{selectedStudent.dapodik.kipReceiver}</div>
-                              <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">No. KIP</div>
-                              <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase">{selectedStudent.dapodik.kipNumber}</div>
-                          </div>
-                          <FormField label=" - Nama di KIP" value={selectedStudent.dapodik.kipName} />
-                          <FormField label=" - No Reg Akta Lahir" value={selectedStudent.dapodik.birthRegNumber} />
-                          <FormField label=" - Lintang / Bujur" value={`${selectedStudent.dapodik.latitude} / ${selectedStudent.dapodik.longitude}`} />
-                      </div>
-
-                      {/* SECTION 2: DATA AYAH */}
-                      <SubHeader>DATA AYAH KANDUNG (WAJIB DIISI)</SubHeader>
-                      <div className="border-x border-t border-gray-800">
-                          <div className="flex border-b border-gray-300 min-h-[20px]">
-                              <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">18. Nama Ayah</div>
-                              <div className="w-1/2 px-1.5 py-0.5 text-[9px] font-bold uppercase">{selectedStudent.father.name}</div>
-                              <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-x border-gray-300 text-[9px]">Tahun:</div>
-                              <div className="flex-1 px-1.5 py-0.5 text-[9px] bg-gray-100 font-bold">{selectedStudent.father.birthPlaceDate}</div>
-                          </div>
-                          <FormField label=" - Pekerjaan" value={selectedStudent.father.job} />
-                          <FormField label=" - Pendidikan" value={selectedStudent.father.education} />
-                          <FormField label=" - Penghasilan" value={selectedStudent.father.income} />
-                      </div>
-
-                      {/* SECTION 3: DATA IBU */}
-                      <SubHeader>DATA IBU KANDUNG (WAJIB DIISI)</SubHeader>
-                      <div className="border-x border-t border-gray-800">
-                          <div className="flex border-b border-gray-300 min-h-[20px]">
-                              <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">19. Nama Ibu</div>
-                              <div className="w-1/2 px-1.5 py-0.5 text-[9px] font-bold uppercase">{selectedStudent.mother.name}</div>
-                              <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-x border-gray-300 text-[9px]">Tahun:</div>
-                              <div className="flex-1 px-1.5 py-0.5 text-[9px] bg-gray-100 font-bold">{selectedStudent.mother.birthPlaceDate}</div>
-                          </div>
-                          <FormField label=" - Pekerjaan" value={selectedStudent.mother.job} />
-                          <FormField label=" - Pendidikan" value={selectedStudent.mother.education} />
-                          <FormField label=" - Penghasilan" value={selectedStudent.mother.income} />
-                      </div>
-
-                      {/* SECTION 4: DATA WALI */}
-                      <SubHeader>DATA WALI</SubHeader>
-                      <div className="border-x border-t border-gray-800">
-                          <div className="flex border-b border-gray-300 min-h-[20px]">
-                              <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">20. Nama Wali</div>
-                              <div className="w-1/2 px-1.5 py-0.5 text-[9px] uppercase">{selectedStudent.guardian?.name || '-'}</div>
-                              <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-x border-gray-300 text-[9px]">Tahun:</div>
-                              <div className="flex-1 px-1.5 py-0.5 text-[9px] bg-gray-100 font-bold">{selectedStudent.guardian?.birthPlaceDate || '-'}</div>
-                          </div>
-                          <FormField label=" - Pekerjaan" value={selectedStudent.guardian?.job || '-'} />
-                          <FormField label=" - Pendidikan" value={selectedStudent.guardian?.education || '-'} />
-                          <FormField label=" - Penghasilan" value={selectedStudent.guardian?.income || '-'} />
-                      </div>
-
-                      {/* SECTION 5: PERIODIK */}
-                      <div className="border border-gray-800 mt-1">
-                          <div className="flex border-b border-gray-300 h-6">
-                              <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">21. Tinggi Badan</div>
-                              <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-gray-200">{selectedStudent.height}</div>
-                              <div className="w-10 px-1.5 py-0.5 border-r border-gray-300 text-[9px] flex items-center">cm</div>
-                              <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">Berat Badan:</div>
-                              <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-gray-200">{selectedStudent.weight}</div>
-                              <div className="flex-1 px-1.5 py-0.5 text-[9px] flex items-center">Kg</div>
-                          </div>
-                          <div className="flex border-b border-gray-300 h-6">
-                              <div className="w-1/2 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] flex items-center">22. Jarak Ke Sekolah</div>
-                              <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-gray-200">{selectedStudent.dapodik.distanceToSchool}</div>
-                              <div className="w-10 px-1.5 py-0.5 border-r border-gray-300 text-[9px] flex items-center">km</div>
-                              <div className="flex-1 px-1.5 py-0.5 text-[8px] italic flex items-center leading-tight">2) &gt; 1km sebutkan: {Number(selectedStudent.dapodik.distanceToSchool) > 1 ? selectedStudent.dapodik.distanceToSchool : '-'} Km</div>
-                          </div>
-                          <div className="flex border-b border-gray-300 h-6">
-                              <div className="w-1/2 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] flex items-center">23. Waktu Tempuh</div>
-                              <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-gray-200">{selectedStudent.dapodik.travelTimeMinutes}</div>
-                              <div className="w-12 px-1.5 py-0.5 border-r border-gray-300 text-[9px] flex items-center">menit</div>
-                              <div className="flex-1 px-1.5 py-0.5 text-[8px] italic flex items-center leading-tight">2) &gt; 60 menit: - Menit</div>
-                          </div>
-                          <div className="flex h-5">
-                              <div className="w-1/2 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">24. Jml Saudara Kandung</div>
-                              <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-gray-200">{selectedStudent.siblingCount}</div>
-                              <div className="flex-1 bg-gray-100"></div>
-                          </div>
-                      </div>
+                  <div id="buku-induk-content">
+                      <BukuIndukTemplate student={selectedStudent} />
                   </div>
               </div>
           </div>
@@ -341,8 +392,9 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
   }
 
   return (
-    <div className="flex flex-col h-full space-y-4 animate-fade-in">
-        {/* Toolbar Buku Induk */}
+    <div className="flex flex-col h-full space-y-4 animate-fade-in relative">
+        
+        {/* Toolbar Buku Induk List View */}
         <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
              <div className="flex items-center gap-2">
                 <School className="w-6 h-6 text-blue-600" />
@@ -389,6 +441,16 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
+
+                <button 
+                    onClick={handleDownloadAll} 
+                    disabled={isBatchGenerating}
+                    className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-black flex items-center gap-2 shadow-lg disabled:opacity-50 whitespace-nowrap"
+                    title="Download semua siswa terfilter dalam satu PDF"
+                >
+                    {isBatchGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Files className="w-4 h-4" />}
+                    {isBatchGenerating ? 'Memproses...' : 'Download Semua'}
+                </button>
              </div>
         </div>
 
@@ -448,6 +510,29 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
                 </div>
             )}
         </div>
+
+        {/* VISIBLE OVERLAY FOR BATCH DOWNLOAD */}
+        {isBatchGenerating && (
+            <div className="fixed inset-0 z-[9999] bg-gray-900/90 flex flex-col items-center justify-start overflow-auto pt-20 pb-20">
+                <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center animate-bounce-in">
+                    <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
+                    <h3 className="text-xl font-bold text-gray-900">Memproses PDF...</h3>
+                    <p className="text-gray-500 text-sm mt-2">Sedang menggabungkan {filteredStudents.length} dokumen buku induk.</p>
+                    <p className="text-xs text-gray-400 mt-1">Mohon tunggu, jangan tutup halaman ini.</p>
+                </div>
+
+                <div id="batch-buku-induk-container" className="bg-white w-[190mm]">
+                    {filteredStudents.map((student, index) => (
+                        <div key={student.id} className="relative">
+                            <BukuIndukTemplate student={student} />
+                            {index < filteredStudents.length - 1 && (
+                                <div className="html2pdf__page-break" style={{ pageBreakAfter: 'always', height: 0, display: 'block' }}></div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )}
     </div>
   );
 };

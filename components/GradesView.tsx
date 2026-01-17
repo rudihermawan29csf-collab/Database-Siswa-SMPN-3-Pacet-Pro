@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Student, AcademicRecord, CorrectionRequest } from '../types';
-import { Search, FileSpreadsheet, Download, UploadCloud, Trash2, Save, Pencil, X, CheckCircle2, Loader2, LayoutList, ArrowLeft, Printer, FileDown, AlertTriangle, Eye, Activity, School, Send } from 'lucide-react';
+import { Search, FileSpreadsheet, Download, UploadCloud, Trash2, Save, Pencil, X, CheckCircle2, Loader2, LayoutList, ArrowLeft, Printer, FileDown, AlertTriangle, Eye, Activity, School, Send, Files } from 'lucide-react';
 import { api } from '../services/api';
 
 interface GradesViewProps {
@@ -12,6 +13,317 @@ interface GradesViewProps {
 
 const CLASS_LIST = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
 
+const SUBJECT_MAP = [
+    { key: 'PAI', label: 'PAI', full: 'Pendidikan Agama dan Budi Pekerti' },
+    { key: 'Pendidikan Pancasila', label: 'PPKn', full: 'Pendidikan Pancasila' },
+    { key: 'Bahasa Indonesia', label: 'BIN', full: 'Bahasa Indonesia' },
+    { key: 'Matematika', label: 'MTK', full: 'Matematika' },
+    { key: 'IPA', label: 'IPA', full: 'Ilmu Pengetahuan Alam' },
+    { key: 'IPS', label: 'IPS', full: 'Ilmu Pengetahuan Sosial' },
+    { key: 'Bahasa Inggris', label: 'BIG', full: 'Bahasa Inggris' },
+    { key: 'PJOK', label: 'PJOK', full: 'PJOK' },
+    { key: 'Informatika', label: 'INF', full: 'Informatika' },
+    { key: 'Seni dan Prakarya', label: 'SENI', full: 'Seni dan Prakarya' },
+    { key: 'Bahasa Jawa', label: 'B.JAWA', full: 'Bahasa Jawa' },
+];
+
+// --- HELPER FUNCTIONS ---
+
+const getCompetencyDescription = (score: number, subjectName: string) => {
+    if (!score) return '-';
+    let predikat = '';
+    if (score >= 91) predikat = 'Sangat baik';
+    else if (score >= 81) predikat = 'Baik';
+    else if (score >= 75) predikat = 'Cukup';
+    else predikat = 'Perlu bimbingan';
+
+    return `${predikat} dalam memahami materi ${subjectName}.`;
+};
+
+const getScore = (s: Student, subjKey: string, semesterOverride: number) => {
+    const record = s.academicRecords?.[semesterOverride];
+    if (!record) return 0;
+    
+    const mapItem = SUBJECT_MAP.find(m => m.key === subjKey);
+    const subj = record.subjects.find(sub => {
+         // Robust matching
+         if (mapItem) {
+             return sub.subject === mapItem.full || 
+                    sub.subject === mapItem.key ||
+                    sub.subject.startsWith(mapItem.key) || 
+                    (mapItem.key === 'PAI' && sub.subject.includes('Agama'));
+         }
+         return sub.subject.startsWith(subjKey);
+    });
+    return subj ? subj.score : 0;
+};
+
+// --- REPORT TEMPLATE COMPONENT ---
+interface ReportTemplateProps {
+    student: Student;
+    semester: number;
+    appSettings: any;
+    userRole: string;
+    onCorrectionRequest?: (type: 'CLASS' | 'GRADE', data?: any) => void;
+    isBatch?: boolean;
+}
+
+const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appSettings, userRole, onCorrectionRequest, isBatch = false }) => {
+    // 1. Get Base Data
+    const schoolName = appSettings?.schoolData?.name || 'SMP Negeri 3 Pacet';
+    const academicYear = appSettings?.academicData?.semesterYears?.[semester] || '2024/2025';
+    const reportDate = appSettings?.academicData?.semesterDates?.[semester] || new Date().toLocaleDateString('id-ID');
+    
+    // 2. Headmaster Data
+    const headmaster = appSettings?.schoolData?.headmaster || 'Didik Sulistyo, M.M.Pd';
+    const headmasterNip = appSettings?.schoolData?.nip || '19660518 198901 1 002';
+    
+    // PREPARE DATA
+    let record = student.academicRecords?.[semester];
+    
+    if (!record) {
+        // Create dummy record structure
+        const level = (semester <= 2) ? 'VII' : (semester <= 4) ? 'VIII' : 'IX';
+        record = {
+            semester: semester,
+            classLevel: level,
+            className: student.className,
+            phase: 'D',
+            year: academicYear,
+            subjects: SUBJECT_MAP.map((s, i) => ({
+                no: i + 1,
+                subject: s.full,
+                score: 0,
+                competency: '-'
+            })),
+            p5Projects: [],
+            extracurriculars: [],
+            teacherNote: '-',
+            attendance: { sick: 0, permitted: 0, noReason: 0 }
+        };
+    } else {
+        // Ensure all subjects from SUBJECT_MAP are present
+        const filledSubjects = SUBJECT_MAP.map((mapItem, idx) => {
+            const existingSub = record!.subjects.find(s => 
+                s.subject === mapItem.full || s.subject.startsWith(mapItem.key) || (mapItem.key === 'PAI' && s.subject.includes('Agama'))
+            );
+            
+            const score = existingSub ? existingSub.score : 0;
+            const competency = getCompetencyDescription(score, mapItem.full);
+
+            return {
+                no: idx + 1,
+                subject: mapItem.full,
+                score: score,
+                competency: competency
+            };
+        });
+        
+        record = { ...record, subjects: filledSubjects };
+    }
+
+    // Check pending class correction
+    const classCorrectionKey = `class-${semester}`;
+    const pendingClassReq = student.correctionRequests?.find(r => r.fieldKey === classCorrectionKey && r.status === 'PENDING');
+    const displayClass = pendingClassReq ? pendingClassReq.proposedValue : (record.className || student.className);
+
+    // 3. Homeroom Teacher (Wali Kelas) Data
+    const waliKey = `${academicYear}-${semester}-${displayClass}`;
+    const waliData = appSettings?.classConfig?.[waliKey];
+    
+    const waliName = waliData?.teacher || '..................................';
+    const waliNip = waliData?.nip || '..................................';
+
+    return (
+        <div className={`bg-white ${isBatch ? '' : 'shadow-xl'} min-h-[297mm] w-[210mm] mx-auto p-[10mm] text-black font-sans relative print:shadow-none print:w-full print:m-0 print:p-0 box-border page-break-inside-avoid`}>
+            {/* Header Identity */}
+            <div className="text-xs mb-4">
+                <table className="w-full">
+                    <tbody>
+                        <tr>
+                            <td className="w-32 py-0.5">Nama Peserta Didik</td>
+                            <td>: {student.fullName}</td>
+                            <td className="w-24">Kelas</td>
+                            <td 
+                              className={`
+                                  py-0.5 px-1 transition-all rounded relative
+                                  ${userRole === 'STUDENT' ? 'bg-yellow-100 cursor-pointer hover:bg-yellow-200 text-blue-800 font-bold border border-yellow-300 border-dashed' : ''}
+                              `}
+                              onClick={() => userRole === 'STUDENT' && !pendingClassReq && onCorrectionRequest?.('CLASS')}
+                              title={userRole === 'STUDENT' ? "Klik untuk mengajukan Revisi Kelas Semester Ini" : ""}
+                            >
+                                <div className="flex items-center gap-1">
+                                  : {displayClass}
+                                  {userRole === 'STUDENT' && (
+                                      pendingClassReq 
+                                      ? <span className="text-[9px] bg-gray-800 text-white px-1 rounded ml-1 font-normal animate-pulse">(Revisi: {pendingClassReq.proposedValue})</span>
+                                      : <Pencil className="w-3 h-3 opacity-50" />
+                                  )}
+                                </div>
+                            </td>
+                        </tr>
+                        <tr><td className="py-0.5">NISN / NIS</td><td>: {student.nisn} / {student.nis}</td><td>Fase</td><td>: D</td></tr>
+                        <tr><td className="py-0.5">Sekolah</td><td>: {schoolName.toUpperCase()}</td><td>Semester</td><td>: {semester} ({academicYear})</td></tr>
+                        <tr><td className="py-0.5" valign="top">Alamat</td><td colSpan={3}>: {student.address}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            {/* A. INTRAKURIKULER */}
+            <div className="mb-4">
+                <h3 className="font-bold text-sm mb-1">A. INTRAKURIKULER</h3>
+                <table className="w-full border-collapse border border-black text-xs">
+                    <thead className="bg-black text-white text-center">
+                        <tr>
+                            <th className="border border-black p-1 w-8">NO</th>
+                            <th className="border border-black p-1">MATA PELAJARAN</th>
+                            <th className="border border-black p-1 w-16">NILAI AKHIR</th>
+                            <th className="border border-black p-1">CAPAIAN KOMPETENSI</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {record.subjects.map((sub, idx) => {
+                            const gradeKey = `grade-${semester}-${sub.subject}`;
+                            const pendingGradeReq = student.correctionRequests?.find(r => r.fieldKey === gradeKey && r.status === 'PENDING');
+
+                            return (
+                                <tr key={idx} className={idx % 2 !== 0 ? 'bg-gray-100' : ''}>
+                                    <td className="border border-black p-1 text-center">{idx + 1}</td>
+                                    <td className="border border-black p-1">{sub.subject}</td>
+                                    <td 
+                                      className={`border border-black p-1 text-center font-bold relative group
+                                          ${userRole === 'STUDENT' ? 'cursor-pointer hover:bg-yellow-100' : ''}
+                                          ${pendingGradeReq ? 'bg-yellow-100 text-yellow-800' : ''}
+                                      `}
+                                      onClick={() => userRole === 'STUDENT' && !pendingGradeReq && onCorrectionRequest?.('GRADE', { subject: sub.subject, score: sub.score })}
+                                      title={userRole === 'STUDENT' ? "Klik untuk mengajukan perbaikan nilai" : ""}
+                                    >
+                                        {pendingGradeReq ? pendingGradeReq.proposedValue : sub.score}
+                                        {pendingGradeReq && <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}
+                                        {userRole === 'STUDENT' && !pendingGradeReq && (
+                                            <Pencil className="w-2 h-2 text-gray-400 absolute top-1 right-1 opacity-0 group-hover:opacity-100" />
+                                        )}
+                                    </td>
+                                    <td className="border border-black p-1 text-[10px] italic text-gray-700">
+                                        {sub.competency || '-'}
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* B. P5 */}
+            <div className="mb-4">
+                <h3 className="font-bold text-sm mb-1">B. DESKRIPSI NILAI P5</h3>
+                <table className="w-full border-collapse border border-black text-xs">
+                    <thead className="bg-black text-white text-center">
+                        <tr>
+                            <th className="border border-black p-1 w-8">NO</th>
+                            <th className="border border-black p-1 w-1/3">TEMA</th>
+                            <th className="border border-black p-1">DESKRIPSI</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {record.p5Projects && record.p5Projects.length > 0 ? record.p5Projects.map((p, idx) => (
+                            <tr key={idx} className={idx % 2 !== 0 ? 'bg-gray-100' : ''}>
+                                <td className="border border-black p-1 text-center">{idx + 1}</td>
+                                <td className="border border-black p-1">{p.theme}</td>
+                                <td className="border border-black p-1 text-[10px]">{p.description}</td>
+                            </tr>
+                        )) : (
+                            <>
+                                <tr className="bg-gray-100"><td className="border border-black p-1 text-center">1</td><td className="border border-black p-1">Suara Demokrasi</td><td className="border border-black p-1">Berkembang sesuai harapan</td></tr>
+                                <tr><td className="border border-black p-1 text-center">2</td><td className="border border-black p-1">-</td><td className="border border-black p-1">-</td></tr>
+                            </>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* C. EKSTRAKURIKULER */}
+            <div className="mb-4 w-1/2">
+                <h3 className="font-bold text-sm mb-1">C. EKSTRAKURIKULER</h3>
+                <table className="w-full border-collapse border border-black text-xs">
+                    <thead className="bg-black text-white text-left">
+                        <tr>
+                            <th className="border border-black p-1 w-8 text-center">NO</th>
+                            <th className="border border-black p-1">KEGIATAN EKSTRAKURIKULER</th>
+                            <th className="border border-black p-1 w-16 text-center">PREDIKAT</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {record.extracurriculars && record.extracurriculars.length > 0 ? (
+                            record.extracurriculars.map((ex, idx) => (
+                                <tr key={idx} className={idx % 2 !== 0 ? 'bg-gray-100' : ''}>
+                                    <td className="border border-black p-1 text-center">{idx + 1}</td>
+                                    <td className="border border-black p-1">{ex.name}</td>
+                                    <td className="border border-black p-1 text-center">{ex.score}</td>
+                                </tr>
+                            ))
+                        ) : (
+                            <>
+                              <tr className="bg-gray-100"><td className="border border-black p-1 text-center">1</td><td className="border border-black p-1">Pramuka</td><td className="border border-black p-1 text-center">-</td></tr>
+                              <tr><td className="border border-black p-1 text-center">2</td><td className="border border-black p-1">-</td><td className="border border-black p-1 text-center">-</td></tr>
+                            </>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* D. CATATAN WALI KELAS */}
+            <div className="mb-4">
+                <h3 className="font-bold text-sm mb-1 pl-1 border-l-4 border-green-600">D. CATATAN WALI KELAS</h3>
+                <div className="border border-black bg-gray-200 p-2 text-xs min-h-[40px]">
+                    {record.teacherNote || 'Pertahankan Prestasimu belajarmu!'}
+                </div>
+            </div>
+
+            {/* E. KENAIKAN KELAS & F. KETIDAKHADIRAN */}
+            <div className="grid grid-cols-2 gap-4 mb-8">
+                <div>
+                    <h3 className="font-bold text-sm mb-1">KENAIKAN KELAS</h3>
+                    <div className="border border-black p-2 bg-gray-100 text-xs h-full">
+                        {[2, 4, 6].includes(semester) ? (
+                            <>
+                              <p>Naik Kelas : {record.promotionStatus === 'NAIK' ? `YA (Ke Kelas ${student.className.includes('VII') ? 'VIII' : 'IX'})` : '-'}</p>
+                              <p>Tanggal : {reportDate}</p>
+                            </>
+                        ) : (
+                            <p className="text-gray-400 italic">Hanya muncul di semester genap</p>
+                        )}
+                    </div>
+                </div>
+                <div>
+                    <h3 className="font-bold text-sm mb-1">KETIDAKHADIRAN</h3>
+                    <table className="w-full border-collapse border border-black text-xs">
+                        <tbody>
+                            <tr><td className="border border-black p-1 w-8 text-center">1.</td><td className="border border-black p-1">Sakit</td><td className="border border-black p-1 w-10 text-center">{record.attendance.sick}</td><td className="border border-black p-1 w-10">Hari</td></tr>
+                            <tr><td className="border border-black p-1 w-8 text-center">2.</td><td className="border border-black p-1">Ijin</td><td className="border border-black p-1 w-10 text-center">{record.attendance.permitted}</td><td className="border border-black p-1 w-10">Hari</td></tr>
+                            <tr><td className="border border-black p-1 w-8 text-center">3.</td><td className="border border-black p-1">Tanpa Keterangan</td><td className="border border-black p-1 w-10 text-center">{record.attendance.noReason}</td><td className="border border-black p-1 w-10">Hari</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {/* Footer Signatures */}
+            <div className="flex justify-between items-start text-xs font-bold mt-8 bg-gray-200 p-4 border border-gray-300">
+                <div className="text-center w-1/3">
+                    <p className="mb-16 uppercase">Kepala Sekolah</p>
+                    <p className="underline uppercase">{headmaster}</p>
+                    <p>NIP. {headmasterNip}</p>
+                </div>
+                <div className="text-center w-1/3">
+                    <p className="mb-16">Wali Kelas</p>
+                    <p className="underline uppercase">{waliName}</p>
+                    <p>NIP. {waliNip}</p>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', loggedInStudent, onUpdate }) => {
   const [viewMode, setViewMode] = useState<'REPORT' | 'DATABASE'>('DATABASE');
   const [searchTerm, setSearchTerm] = useState('');
@@ -20,6 +332,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [renderKey, setRenderKey] = useState(0); 
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isBatchGenerating, setIsBatchGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
   // Settings State
@@ -32,7 +345,6 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
   // Editing State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editScores, setEditScores] = useState<Record<string, number>>({});
-  // New States for Extras/Attendance/Promotion
   const [editAttendance, setEditAttendance] = useState({ sick: 0, permitted: 0, noReason: 0 });
   const [editExtra, setEditExtra] = useState('');
   const [editPromotion, setEditPromotion] = useState('');
@@ -40,41 +352,10 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
   // --- CORRECTION MODAL STATE (STUDENT ONLY) ---
   const [isCorrectionModalOpen, setIsCorrectionModalOpen] = useState(false);
   const [correctionType, setCorrectionType] = useState<'CLASS' | 'GRADE'>('CLASS');
-  
-  // States for Class Correction
   const [proposedClass, setProposedClass] = useState('');
-  
-  // States for Grade Correction
   const [targetSubject, setTargetSubject] = useState('');
   const [proposedScore, setProposedScore] = useState('');
-
   const [correctionReason, setCorrectionReason] = useState('');
-
-  const SUBJECT_MAP = [
-      { key: 'PAI', label: 'PAI', full: 'Pendidikan Agama dan Budi Pekerti' },
-      { key: 'Pendidikan Pancasila', label: 'PPKn', full: 'Pendidikan Pancasila' },
-      { key: 'Bahasa Indonesia', label: 'BIN', full: 'Bahasa Indonesia' },
-      { key: 'Matematika', label: 'MTK', full: 'Matematika' },
-      { key: 'IPA', label: 'IPA', full: 'Ilmu Pengetahuan Alam' },
-      { key: 'IPS', label: 'IPS', full: 'Ilmu Pengetahuan Sosial' },
-      { key: 'Bahasa Inggris', label: 'BIG', full: 'Bahasa Inggris' },
-      { key: 'PJOK', label: 'PJOK', full: 'PJOK' },
-      { key: 'Informatika', label: 'INF', full: 'Informatika' },
-      { key: 'Seni dan Prakarya', label: 'SENI', full: 'Seni dan Prakarya' },
-      { key: 'Bahasa Jawa', label: 'B.JAWA', full: 'Bahasa Jawa' },
-  ];
-
-  // Helper: Generate Competency Description Automatically
-  const getCompetencyDescription = (score: number, subjectName: string) => {
-      if (!score) return '-';
-      let predikat = '';
-      if (score >= 91) predikat = 'Sangat baik';
-      else if (score >= 81) predikat = 'Baik';
-      else if (score >= 75) predikat = 'Cukup';
-      else predikat = 'Perlu bimbingan';
-
-      return `${predikat} dalam memahami materi ${subjectName}.`;
-  };
 
   // Fetch Settings on Mount
   useEffect(() => {
@@ -105,25 +386,6 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       return matchSearch && matchClass;
   });
 
-  const getScore = (s: Student, subjKey: string, semesterOverride?: number) => {
-      const sem = semesterOverride || dbSemester;
-      const record = s.academicRecords?.[sem];
-      if (!record) return 0;
-      
-      const mapItem = SUBJECT_MAP.find(m => m.key === subjKey);
-      const subj = record.subjects.find(sub => {
-           // Robust matching
-           if (mapItem) {
-               return sub.subject === mapItem.full || 
-                      sub.subject === mapItem.key ||
-                      sub.subject.startsWith(mapItem.key) || 
-                      (mapItem.key === 'PAI' && sub.subject.includes('Agama'));
-           }
-           return sub.subject.startsWith(subjKey);
-      });
-      return subj ? subj.score : 0;
-  };
-
   const getRecord = (s: Student): AcademicRecord | undefined => {
       return s.academicRecords?.[dbSemester];
   };
@@ -136,7 +398,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       // Populate Edit State
       const currentScores: Record<string, number> = {};
       SUBJECT_MAP.forEach(sub => {
-          currentScores[sub.key] = getScore(s, sub.key);
+          currentScores[sub.key] = getScore(s, sub.key, dbSemester);
       });
       setEditScores(currentScores);
       
@@ -295,268 +557,6 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       if (onUpdate) onUpdate();
   };
 
-  // --- REPORT VIEW ---
-  const ReportView = ({ student }: { student: Student }) => {
-      // 1. Get Base Data
-      const schoolName = appSettings?.schoolData?.name || 'SMP Negeri 3 Pacet';
-      const academicYear = appSettings?.academicData?.semesterYears?.[dbSemester] || '2024/2025';
-      const reportDate = appSettings?.academicData?.semesterDates?.[dbSemester] || new Date().toLocaleDateString('id-ID');
-      
-      // 2. Headmaster Data (From Settings)
-      const headmaster = appSettings?.schoolData?.headmaster || 'Didik Sulistyo, M.M.Pd';
-      const headmasterNip = appSettings?.schoolData?.nip || '19660518 198901 1 002';
-      
-      // PREPARE DATA: If record doesn't exist, create a dummy one for display
-      let record = student.academicRecords?.[dbSemester];
-      
-      if (!record) {
-          // Create dummy record structure so table renders
-          const level = (dbSemester <= 2) ? 'VII' : (dbSemester <= 4) ? 'VIII' : 'IX';
-          record = {
-              semester: dbSemester,
-              classLevel: level,
-              className: student.className, // Fallback to current class
-              phase: 'D',
-              year: academicYear,
-              subjects: SUBJECT_MAP.map((s, i) => ({
-                  no: i + 1,
-                  subject: s.full,
-                  score: 0,
-                  competency: '-'
-              })),
-              p5Projects: [],
-              extracurriculars: [],
-              teacherNote: '-',
-              attendance: { sick: 0, permitted: 0, noReason: 0 }
-          };
-      } else {
-          // Even if record exists, ensure all subjects from SUBJECT_MAP are present for display
-          const filledSubjects = SUBJECT_MAP.map((mapItem, idx) => {
-              const existingSub = record!.subjects.find(s => 
-                  s.subject === mapItem.full || s.subject.startsWith(mapItem.key) || (mapItem.key === 'PAI' && s.subject.includes('Agama'))
-              );
-              
-              const score = existingSub ? existingSub.score : 0;
-              const competency = getCompetencyDescription(score, mapItem.full);
-
-              return {
-                  no: idx + 1,
-                  subject: mapItem.full,
-                  score: score,
-                  competency: competency
-              };
-          });
-          
-          record = { ...record, subjects: filledSubjects };
-      }
-
-      // Check pending class correction
-      const classCorrectionKey = `class-${dbSemester}`;
-      const pendingClassReq = student.correctionRequests?.find(r => r.fieldKey === classCorrectionKey && r.status === 'PENDING');
-      const displayClass = pendingClassReq ? pendingClassReq.proposedValue : (record.className || student.className);
-
-      // 3. Homeroom Teacher (Wali Kelas) Data - Dynamic Lookup
-      // Key Format matches SettingsView: YEAR-SEMESTER-CLASSNAME (e.g., 2024/2025-1-VII A)
-      const waliKey = `${academicYear}-${dbSemester}-${displayClass}`;
-      const waliData = appSettings?.classConfig?.[waliKey];
-      
-      const waliName = waliData?.teacher || '..................................';
-      const waliNip = waliData?.nip || '..................................';
-
-      return (
-          <div id="report-content" className="bg-white shadow-xl min-h-[297mm] w-[210mm] mx-auto p-[10mm] text-black font-sans relative print:shadow-none print:w-full print:m-0 print:p-0 box-border">
-              {/* Header Identity */}
-              <div className="text-xs mb-4">
-                  <table className="w-full">
-                      <tbody>
-                          <tr>
-                              <td className="w-32 py-0.5">Nama Peserta Didik</td>
-                              <td>: {student.fullName}</td>
-                              <td className="w-24">Kelas</td>
-                              <td 
-                                className={`
-                                    py-0.5 px-1 transition-all rounded relative
-                                    ${userRole === 'STUDENT' ? 'bg-yellow-100 cursor-pointer hover:bg-yellow-200 text-blue-800 font-bold border border-yellow-300 border-dashed' : ''}
-                                `}
-                                onClick={() => userRole === 'STUDENT' && !pendingClassReq && handleOpenClassCorrection()}
-                                title={userRole === 'STUDENT' ? "Klik untuk mengajukan Revisi Kelas Semester Ini" : ""}
-                              >
-                                  <div className="flex items-center gap-1">
-                                    : {displayClass}
-                                    {userRole === 'STUDENT' && (
-                                        pendingClassReq 
-                                        ? <span className="text-[9px] bg-gray-800 text-white px-1 rounded ml-1 font-normal animate-pulse">(Revisi: {pendingClassReq.proposedValue})</span>
-                                        : <Pencil className="w-3 h-3 opacity-50" />
-                                    )}
-                                  </div>
-                              </td>
-                          </tr>
-                          <tr><td className="py-0.5">NISN / NIS</td><td>: {student.nisn} / {student.nis}</td><td>Fase</td><td>: D</td></tr>
-                          <tr><td className="py-0.5">Sekolah</td><td>: {schoolName.toUpperCase()}</td><td>Semester</td><td>: {dbSemester} ({academicYear})</td></tr>
-                          <tr><td className="py-0.5" valign="top">Alamat</td><td colSpan={3}>: {student.address}</td></tr>
-                      </tbody>
-                  </table>
-              </div>
-
-              {/* A. INTRAKURIKULER */}
-              <div className="mb-4">
-                  <h3 className="font-bold text-sm mb-1">A. INTRAKURIKULER</h3>
-                  <table className="w-full border-collapse border border-black text-xs">
-                      <thead className="bg-black text-white text-center">
-                          <tr>
-                              <th className="border border-black p-1 w-8">NO</th>
-                              <th className="border border-black p-1">MATA PELAJARAN</th>
-                              <th className="border border-black p-1 w-16">NILAI AKHIR</th>
-                              <th className="border border-black p-1">CAPAIAN KOMPETENSI</th>
-                          </tr>
-                      </thead>
-                      <tbody>
-                          {record.subjects.map((sub, idx) => {
-                              // Check pending grade correction
-                              const gradeKey = `grade-${dbSemester}-${sub.subject}`;
-                              const pendingGradeReq = student.correctionRequests?.find(r => r.fieldKey === gradeKey && r.status === 'PENDING');
-
-                              return (
-                                  <tr key={idx} className={idx % 2 !== 0 ? 'bg-gray-100' : ''}>
-                                      <td className="border border-black p-1 text-center">{idx + 1}</td>
-                                      <td className="border border-black p-1">{sub.subject}</td>
-                                      <td 
-                                        className={`border border-black p-1 text-center font-bold relative group
-                                            ${userRole === 'STUDENT' ? 'cursor-pointer hover:bg-yellow-100' : ''}
-                                            ${pendingGradeReq ? 'bg-yellow-100 text-yellow-800' : ''}
-                                        `}
-                                        onClick={() => userRole === 'STUDENT' && !pendingGradeReq && handleOpenGradeCorrection(sub.subject, sub.score)}
-                                        title={userRole === 'STUDENT' ? "Klik untuk mengajukan perbaikan nilai" : ""}
-                                      >
-                                          {pendingGradeReq ? pendingGradeReq.proposedValue : sub.score}
-                                          {pendingGradeReq && <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}
-                                          {userRole === 'STUDENT' && !pendingGradeReq && (
-                                              <Pencil className="w-2 h-2 text-gray-400 absolute top-1 right-1 opacity-0 group-hover:opacity-100" />
-                                          )}
-                                      </td>
-                                      <td className="border border-black p-1 text-[10px] italic text-gray-700">
-                                          {sub.competency || '-'}
-                                      </td>
-                                  </tr>
-                              );
-                          })}
-                      </tbody>
-                  </table>
-                  {userRole === 'STUDENT' && (
-                      <p className="text-[10px] text-gray-500 mt-1 italic">* Klik pada Kelas atau Nilai untuk mengajukan perbaikan data ke Admin.</p>
-                  )}
-              </div>
-
-              {/* B. P5 */}
-              <div className="mb-4">
-                  <h3 className="font-bold text-sm mb-1">B. DESKRIPSI NILAI P5</h3>
-                  <table className="w-full border-collapse border border-black text-xs">
-                      <thead className="bg-black text-white text-center">
-                          <tr>
-                              <th className="border border-black p-1 w-8">NO</th>
-                              <th className="border border-black p-1 w-1/3">TEMA</th>
-                              <th className="border border-black p-1">DESKRIPSI</th>
-                          </tr>
-                      </thead>
-                      <tbody>
-                          {record.p5Projects && record.p5Projects.length > 0 ? record.p5Projects.map((p, idx) => (
-                              <tr key={idx} className={idx % 2 !== 0 ? 'bg-gray-100' : ''}>
-                                  <td className="border border-black p-1 text-center">{idx + 1}</td>
-                                  <td className="border border-black p-1">{p.theme}</td>
-                                  <td className="border border-black p-1 text-[10px]">{p.description}</td>
-                              </tr>
-                          )) : (
-                              <>
-                                  <tr className="bg-gray-100"><td className="border border-black p-1 text-center">1</td><td className="border border-black p-1">Suara Demokrasi</td><td className="border border-black p-1">Berkembang sesuai harapan</td></tr>
-                                  <tr><td className="border border-black p-1 text-center">2</td><td className="border border-black p-1">-</td><td className="border border-black p-1">-</td></tr>
-                              </>
-                          )}
-                      </tbody>
-                  </table>
-              </div>
-
-              {/* C. EKSTRAKURIKULER */}
-              <div className="mb-4 w-1/2">
-                  <h3 className="font-bold text-sm mb-1">C. EKSTRAKURIKULER</h3>
-                  <table className="w-full border-collapse border border-black text-xs">
-                      <thead className="bg-black text-white text-left">
-                          <tr>
-                              <th className="border border-black p-1 w-8 text-center">NO</th>
-                              <th className="border border-black p-1">KEGIATAN EKSTRAKURIKULER</th>
-                              <th className="border border-black p-1 w-16 text-center">PREDIKAT</th>
-                          </tr>
-                      </thead>
-                      <tbody>
-                          {record.extracurriculars && record.extracurriculars.length > 0 ? (
-                              record.extracurriculars.map((ex, idx) => (
-                                  <tr key={idx} className={idx % 2 !== 0 ? 'bg-gray-100' : ''}>
-                                      <td className="border border-black p-1 text-center">{idx + 1}</td>
-                                      <td className="border border-black p-1">{ex.name}</td>
-                                      <td className="border border-black p-1 text-center">{ex.score}</td>
-                                  </tr>
-                              ))
-                          ) : (
-                              <>
-                                <tr className="bg-gray-100"><td className="border border-black p-1 text-center">1</td><td className="border border-black p-1">Pramuka</td><td className="border border-black p-1 text-center">-</td></tr>
-                                <tr><td className="border border-black p-1 text-center">2</td><td className="border border-black p-1">-</td><td className="border border-black p-1 text-center">-</td></tr>
-                              </>
-                          )}
-                      </tbody>
-                  </table>
-              </div>
-
-              {/* D. CATATAN WALI KELAS */}
-              <div className="mb-4">
-                  <h3 className="font-bold text-sm mb-1 pl-1 border-l-4 border-green-600">D. CATATAN WALI KELAS</h3>
-                  <div className="border border-black bg-gray-200 p-2 text-xs min-h-[40px]">
-                      {record.teacherNote || 'Pertahankan Prestasimu belajarmu!'}
-                  </div>
-              </div>
-
-              {/* E. KENAIKAN KELAS & F. KETIDAKHADIRAN */}
-              <div className="grid grid-cols-2 gap-4 mb-8">
-                  <div>
-                      <h3 className="font-bold text-sm mb-1">KENAIKAN KELAS</h3>
-                      <div className="border border-black p-2 bg-gray-100 text-xs h-full">
-                          {[2, 4, 6].includes(dbSemester) ? (
-                              <>
-                                <p>Naik Kelas : {record.promotionStatus === 'NAIK' ? `YA (Ke Kelas ${student.className.includes('VII') ? 'VIII' : 'IX'})` : '-'}</p>
-                                <p>Tanggal : {reportDate}</p>
-                              </>
-                          ) : (
-                              <p className="text-gray-400 italic">Hanya muncul di semester genap</p>
-                          )}
-                      </div>
-                  </div>
-                  <div>
-                      <h3 className="font-bold text-sm mb-1">KETIDAKHADIRAN</h3>
-                      <table className="w-full border-collapse border border-black text-xs">
-                          <tbody>
-                              <tr><td className="border border-black p-1 w-8 text-center">1.</td><td className="border border-black p-1">Sakit</td><td className="border border-black p-1 w-10 text-center">{record.attendance.sick}</td><td className="border border-black p-1 w-10">Hari</td></tr>
-                              <tr><td className="border border-black p-1 w-8 text-center">2.</td><td className="border border-black p-1">Ijin</td><td className="border border-black p-1 w-10 text-center">{record.attendance.permitted}</td><td className="border border-black p-1 w-10">Hari</td></tr>
-                              <tr><td className="border border-black p-1 w-8 text-center">3.</td><td className="border border-black p-1">Tanpa Keterangan</td><td className="border border-black p-1 w-10 text-center">{record.attendance.noReason}</td><td className="border border-black p-1 w-10">Hari</td></tr>
-                          </tbody>
-                      </table>
-                  </div>
-              </div>
-
-              {/* Footer Signatures */}
-              <div className="flex justify-between items-start text-xs font-bold mt-8 bg-gray-200 p-4 border border-gray-300">
-                  <div className="text-center w-1/3">
-                      <p className="mb-16 uppercase">Kepala Sekolah</p>
-                      <p className="underline uppercase">{headmaster}</p>
-                      <p>NIP. {headmasterNip}</p>
-                  </div>
-                  <div className="text-center w-1/3">
-                      <p className="mb-16">Wali Kelas</p>
-                      <p className="underline uppercase">{waliName}</p>
-                      <p>NIP. {waliNip}</p>
-                  </div>
-              </div>
-          </div>
-      );
-  };
-
   // --- EXCEL & OTHER HANDLERS ---
   const handleDownloadTemplate = () => {
       try {
@@ -564,7 +564,6 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
           const xlsx = window.XLSX;
           if (!xlsx || !xlsx.utils) { alert("Library Excel belum siap. Silakan refresh halaman."); return; }
 
-          // Prepare data with student names for easy input
           const templateData = filteredStudents.map((s, index) => {
               const row: any = {
                   'No': index + 1,
@@ -573,12 +572,10 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                   'Kelas': s.className,
               };
               
-              // Add empty columns for subjects
               SUBJECT_MAP.forEach(sub => {
                   row[sub.label] = '';
               });
               
-              // Add extras
               row['Ekstrakurikuler'] = '';
               row['Sakit'] = '';
               row['Ijin'] = '';
@@ -587,7 +584,6 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
               return row;
           });
 
-          // If no students, create at least one dummy row for header structure
           if (templateData.length === 0) {
               const dummyRow: any = { 'No': 1, 'Nama Siswa': 'Contoh Siswa', 'NISN': '1234567890', 'Kelas': 'VII A' };
               SUBJECT_MAP.forEach(sub => dummyRow[sub.label] = '');
@@ -615,21 +611,15 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       if (!selectedStudent) return;
       setIsGeneratingPdf(true);
 
-      // Allow DOM to update if needed
       setTimeout(() => {
           const element = document.getElementById('report-content');
           const filename = `Rapor_${selectedStudent.fullName.replace(/[^a-zA-Z0-9]/g, '_')}_S${dbSemester}.pdf`;
 
-          // Options for single page A4
           const opt = {
-              margin: 0, // No margin because the component has padding
+              margin: 0,
               filename: filename,
               image: { type: 'jpeg', quality: 0.98 },
-              html2canvas: { 
-                  scale: 2, // Higher scale for better quality
-                  useCORS: true,
-                  scrollY: 0
-              },
+              html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
               jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
           };
 
@@ -649,6 +639,46 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
               setIsGeneratingPdf(false);
           }
       }, 500);
+  };
+
+  const handleDownloadAll = () => {
+      if (filteredStudents.length === 0) {
+          alert("Tidak ada data untuk didownload.");
+          return;
+      }
+      if (filteredStudents.length > 50 && !window.confirm(`Anda akan mendownload ${filteredStudents.length} Rapor sekaligus. Proses ini mungkin memakan waktu. Lanjutkan?`)) {
+          return;
+      }
+
+      setIsBatchGenerating(true);
+
+      setTimeout(() => {
+          const element = document.getElementById('batch-rapor-container');
+          const className = dbClassFilter === 'ALL' ? 'Semua_Kelas' : dbClassFilter.replace(/\s+/g, '_');
+          const filename = `Rapor_Batch_Sem${dbSemester}_${className}.pdf`;
+
+          const opt = {
+            margin: 0,
+            filename: filename,
+            image: { type: 'jpeg', quality: 0.95 },
+            html2canvas: { scale: 1.5, useCORS: true, scrollY: 0 },
+            pagebreak: { mode: ['css', 'legacy'] },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+          };
+
+          // @ts-ignore
+          const html2pdf = window.html2pdf;
+
+          if (html2pdf) {
+              html2pdf().set(opt).from(element).save().then(() => {
+                  setIsBatchGenerating(false);
+              }).catch((err: any) => {
+                  console.error(err);
+                  setIsBatchGenerating(false);
+                  alert("Gagal melakukan batch download.");
+              });
+          }
+      }, 4000); // 4 seconds
   };
 
   return (
@@ -732,6 +762,9 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                         <button onClick={handleDownloadTemplate} className="flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-sm border bg-white text-gray-600 hover:bg-gray-50">
                             <Download className="w-4 h-4" /> Template
                         </button>
+                        <button onClick={handleDownloadAll} disabled={isBatchGenerating} className="flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-sm border bg-gray-800 text-white border-gray-900 hover:bg-black disabled:opacity-50">
+                            {isBatchGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Files className="w-4 h-4" />} Download Semua
+                        </button>
                         <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-sm border bg-white text-blue-600 border-blue-200 hover:bg-blue-50">
                             {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />} Import Excel
                         </button>
@@ -795,7 +828,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                                           )}
                                       </td>
                                       <td className="px-4 py-2 font-medium text-gray-900 sticky left-[64px] bg-white z-10 group-hover:bg-blue-50"><div>{student.fullName}</div><div className="text-xs text-gray-400 font-mono">{student.className}</div></td>
-                                      {SUBJECT_MAP.map(sub => { const score = isEditingRow ? (editScores[sub.key] || 0) : getScore(student, sub.key); return <td key={sub.key} className="px-2 py-2 text-center">{isEditingRow ? <input type="number" className="w-10 text-center border rounded p-1 text-xs" value={editScores[sub.key] || 0} onChange={(e) => setEditScores({...editScores, [sub.key]: Number(e.target.value)})} /> : <span className={`font-semibold ${score < 75 && score > 0 ? 'text-red-500' : 'text-gray-700'}`}>{score || '-'}</span>}</td>; })}
+                                      {SUBJECT_MAP.map(sub => { const score = isEditingRow ? (editScores[sub.key] || 0) : getScore(student, sub.key, dbSemester); return <td key={sub.key} className="px-2 py-2 text-center">{isEditingRow ? <input type="number" className="w-10 text-center border rounded p-1 text-xs" value={editScores[sub.key] || 0} onChange={(e) => setEditScores({...editScores, [sub.key]: Number(e.target.value)})} /> : <span className={`font-semibold ${score < 75 && score > 0 ? 'text-red-500' : 'text-gray-700'}`}>{score || '-'}</span>}</td>; })}
                                       <td className="px-2 py-2 text-center">{isEditingRow ? <input type="text" className="w-full text-xs border rounded p-1" value={editExtra} onChange={(e)=>setEditExtra(e.target.value)} /> : <span className="text-xs">{record?.extracurriculars?.[0]?.name || '-'}</span>}</td>
                                       <td className="px-2 py-2 text-center">{isEditingRow ? <input type="number" className="w-8 text-center text-xs border rounded" value={editAttendance.sick} onChange={(e)=>setEditAttendance({...editAttendance, sick: Number(e.target.value)})} /> : record?.attendance?.sick || 0}</td>
                                       <td className="px-2 py-2 text-center">{isEditingRow ? <input type="number" className="w-8 text-center text-xs border rounded" value={editAttendance.permitted} onChange={(e)=>setEditAttendance({...editAttendance, permitted: Number(e.target.value)})} /> : record?.attendance?.permitted || 0}</td>
@@ -809,10 +842,56 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
               </div>
           ) : (
               <div className="overflow-auto flex-1 bg-gray-500/10 p-4 md:p-8 flex justify-center pb-32">
-                  {selectedStudent && <ReportView student={selectedStudent} />}
+                  {selectedStudent && (
+                      <div id="report-content" className="shadow-xl">
+                          <ReportTemplate 
+                              student={selectedStudent} 
+                              semester={dbSemester}
+                              appSettings={appSettings}
+                              userRole={userRole}
+                              onCorrectionRequest={(type, data) => {
+                                  if (type === 'CLASS') handleOpenClassCorrection();
+                                  if (type === 'GRADE' && data) handleOpenGradeCorrection(data.subject, data.score);
+                              }}
+                          />
+                      </div>
+                  )}
               </div>
           )}
       </div>
+
+        {/* VISIBLE OVERLAY FOR BATCH DOWNLOAD - USING PORTAL FOR ROBUSTNESS */}
+        {isBatchGenerating && createPortal(
+            <div className="fixed inset-0 z-[9999] bg-gray-900/95 flex flex-col items-center justify-start overflow-auto">
+                <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center animate-bounce-in">
+                    <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
+                    <h3 className="text-xl font-bold text-gray-900">Memproses PDF...</h3>
+                    <p className="text-gray-500 text-sm mt-2">Sedang menggabungkan {filteredStudents.length} rapor siswa.</p>
+                    <p className="text-xs text-gray-400 mt-1">Mohon tunggu, jangan tutup halaman ini.</p>
+                </div>
+
+                {/* The Container for html2pdf - Absolutely positioned to ensure full rendering */}
+                <div className="absolute top-0 left-0 w-full flex flex-col items-center pt-20 pb-20 pointer-events-none">
+                    <div id="batch-rapor-container" className="bg-white w-[210mm]">
+                        {filteredStudents.map((student, index) => (
+                            <div key={student.id} className="relative">
+                                <ReportTemplate 
+                                    student={student} 
+                                    semester={dbSemester}
+                                    appSettings={appSettings}
+                                    userRole={userRole}
+                                    isBatch={true} 
+                                />
+                                {index < filteredStudents.length - 1 && (
+                                    <div className="html2pdf__page-break" style={{ pageBreakAfter: 'always', height: 0, display: 'block' }}></div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>,
+            document.body
+        )}
     </div>
   );
 };
