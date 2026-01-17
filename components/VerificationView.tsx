@@ -80,11 +80,11 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
       setIsSaving(true);
 
-      // 1. Clone Student Data
+      // 1. Clone Student Data agar tidak mutasi state langsung
       const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
       
       if (selectedRequest) {
-          // Handle Correction Request
+          // A. Handle Correction Request (Data Text)
           if (updatedStudent.correctionRequests) {
               updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((req: CorrectionRequest) => {
                   if (req.id === selectedRequest.id) {
@@ -100,28 +100,30 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               });
           }
 
-          // Apply Data Change if Approved
+          // PERBAIKAN UTAMA: Jika Approved, ganti data di Database Dapodik Siswa
           if (action === 'APPROVED') {
               const { fieldKey, proposedValue } = selectedRequest;
               const keys = fieldKey.split('.');
               let current: any = updatedStudent;
               
-              // Traverse to parent
+              // Traverse objek (misal: student.father.name)
               for (let i = 0; i < keys.length - 1; i++) {
                    if (!current[keys[i]]) current[keys[i]] = {};
                    current = current[keys[i]];
               }
               
-              // Set value
+              // Set value baru ke field asli
               const lastKey = keys[keys.length - 1];
-              if (current[lastKey] !== undefined && typeof current[lastKey] === 'number') {
+              
+              // Cek tipe data (pertahankan number jika aslinya number)
+              if (current[lastKey] !== undefined && current[lastKey] !== null && typeof current[lastKey] === 'number') {
                   current[lastKey] = Number(proposedValue);
               } else {
                   current[lastKey] = proposedValue;
               }
           }
       } else if (selectedDoc) {
-          // Handle Document Verification
+          // B. Handle Document Verification (File)
           updatedStudent.documents = updatedStudent.documents.map((doc: DocumentFile) => {
               if (doc.id === selectedDoc.id) {
                   return {
@@ -136,7 +138,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           });
       }
 
-      // 4. Save Updated Student to API
+      // 2. Simpan ke Database
       try {
           if (onSave) {
               await onSave(updatedStudent);

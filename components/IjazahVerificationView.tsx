@@ -52,6 +52,7 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
 
       const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
       
+      // Update status riwayat
       if (updatedStudent.correctionRequests) {
           updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((req: CorrectionRequest) => {
               if (req.id === selectedRequest.id) {
@@ -67,6 +68,7 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
           });
       }
 
+      // PERBAIKAN UTAMA: Update data fisik ijazah jika APPROVED
       if (action === 'APPROVED') {
           const { fieldKey, proposedValue } = selectedRequest;
           const keys = fieldKey.split('.');

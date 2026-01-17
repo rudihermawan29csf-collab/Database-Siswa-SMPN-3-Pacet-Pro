@@ -79,11 +79,11 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
       setIsSaving(true);
 
-      // 1. Clone Student
+      // 1. Clone Student agar aman
       const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
       
       if (selectedRequest) {
-          // Handle Request
+          // A. Handle Request Approval/Rejection status update
           if (updatedStudent.correctionRequests) {
               updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((req: CorrectionRequest) => {
                   if (req.id === selectedRequest.id) {
@@ -99,7 +99,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
               });
           }
 
-          // Apply Data Change
+          // PERBAIKAN UTAMA: Terapkan perubahan ke database Nilai/Kelas jika APPROVED
           if (action === 'APPROVED') {
               const { fieldKey, proposedValue } = selectedRequest;
               
@@ -107,10 +107,12 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                   updatedStudent.className = proposedValue;
               } 
               else if (fieldKey.startsWith('class-')) {
+                  // Format: class-[semester] -> e.g. class-1
                   const sem = parseInt(fieldKey.split('-')[1]);
                   if (!isNaN(sem)) {
                       if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
                       if (!updatedStudent.academicRecords[sem]) {
+                          // Buat record baru jika belum ada
                           const level = (sem <= 2) ? 'VII' : (sem <= 4) ? 'VIII' : 'IX';
                           updatedStudent.academicRecords[sem] = { 
                               semester: sem, classLevel: level, className: proposedValue, phase: 'D', year: '2024', 
@@ -121,14 +123,17 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                   }
               } 
               else if (fieldKey.startsWith('grade-')) {
+                  // Format: grade-[sem]-[subjectName] -> e.g. grade-1-Matematika
                   const parts = fieldKey.split('-');
                   if (parts.length >= 3) {
                       const sem = parseInt(parts[1]);
+                      // Join sisa parts karena nama mapel mungkin mengandung dash
                       const subjectName = parts.slice(2).join('-');
                       
                       if (updatedStudent.academicRecords && updatedStudent.academicRecords[sem]) {
                           const subjectRecord = updatedStudent.academicRecords[sem].subjects.find((s: any) => s.subject === subjectName);
                           if (subjectRecord) {
+                              // Update Nilai
                               subjectRecord.score = Number(proposedValue);
                           }
                       }
@@ -136,7 +141,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
               }
           }
       } else if (selectedDoc) {
-          // Handle Doc
+          // B. Handle Doc Verification
           updatedStudent.documents = updatedStudent.documents.map((doc: DocumentFile) => {
               if (doc.id === selectedDoc.id) {
                   return {
@@ -151,7 +156,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           });
       }
 
-      // Save
+      // 2. Simpan
       try {
           if (onSave) {
               await onSave(updatedStudent);
