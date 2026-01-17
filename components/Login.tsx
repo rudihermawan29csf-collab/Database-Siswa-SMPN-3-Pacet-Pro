@@ -58,7 +58,19 @@ const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
 
   // Derived Data for Student Selection
   const uniqueClasses = useMemo(() => {
-    return Array.from(new Set(students.map(s => s.className))).sort();
+    const classSet = new Set(students.map(s => s.className));
+    return Array.from(classSet).sort((a: string, b: string) => {
+        // Sort logic: VII < VIII < IX, then alphabetically
+        const levelA = a.split(' ')[0];
+        const levelB = b.split(' ')[0];
+        const romanMap: Record<string, number> = { 'VII': 7, 'VIII': 8, 'IX': 9 };
+        
+        const numA = romanMap[levelA] || 0;
+        const numB = romanMap[levelB] || 0;
+
+        if (numA !== numB) return numA - numB;
+        return a.localeCompare(b);
+    });
   }, [students]);
 
   const studentsInClass = useMemo(() => {
@@ -78,7 +90,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
     });
 
     return Array.from(uniqueStudents.values())
-        .sort((a, b) => a.fullName.localeCompare(b.fullName));
+        .sort((a: any, b: any) => a.fullName.localeCompare(b.fullName));
   }, [selectedClass, students]);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -232,7 +244,9 @@ const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
                             <School className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                             <select value={selectedClass} onChange={(e) => { setSelectedClass(e.target.value); setSelectedStudentId(''); }} className="w-full pl-10 pr-4 py-3 appearance-none rounded-xl bg-white/50 border border-gray-200 focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all text-sm font-medium cursor-pointer">
                                 <option value="" disabled>-- Pilih Kelas --</option>
-                                {uniqueClasses.map(c => <option key={c} value={c}>Kelas {c}</option>)}
+                                {uniqueClasses.map(c => (
+                                    <option key={c} value={c}>Kelas {c}</option>
+                                ))}
                             </select>
                             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                         </div>
@@ -243,7 +257,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
                             <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                             <select value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)} disabled={!selectedClass} className={`w-full pl-10 pr-4 py-3 appearance-none rounded-xl border focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all text-sm font-medium cursor-pointer ${!selectedClass ? 'bg-gray-100 border-transparent text-gray-400 cursor-not-allowed' : 'bg-white/50 border-gray-200 focus:bg-white text-gray-800'}`}>
                                 <option value="" disabled>{!selectedClass ? 'Pilih Kelas Dulu' : '-- Cari Nama Anda --'}</option>
-                                {studentsInClass.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}
+                                {studentsInClass.map(s => <option key={s.id as string} value={s.id as string}>{s.fullName}</option>)}
                             </select>
                             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                         </div>

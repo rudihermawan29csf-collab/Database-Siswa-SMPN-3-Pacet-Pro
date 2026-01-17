@@ -142,9 +142,10 @@ export const MOCK_STUDENTS: Student[] = (() => {
     // Safety check
     if (cols.length < 5) return null;
 
-    // Normalize Class Name (remove "Kelas " if exists) to ensure compatibility with dropdowns
+    // Normalize Class Name to ensure consistency (e.g. remove multiple 'Kelas', ensure clean 'IX A')
     const rawClass = cols[41]?.trim() || 'VII A';
-    const normalizedClass = rawClass.replace(/^Kelas\s+/i, '');
+    // Fix: Remove "Kelas" entirely (case insensitive) then let UI re-add it if needed.
+    const normalizedClass = rawClass.replace(/kelas/gi, '').trim();
 
     // Mapping based on the exact columns 0-64 provided in the prompt
     return {

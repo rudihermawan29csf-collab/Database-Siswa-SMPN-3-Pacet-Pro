@@ -11,7 +11,11 @@ interface GradeVerificationViewProps {
   onUpdate?: () => void;
   currentUser?: { name: string; role: string };
   userRole?: 'ADMIN' | 'STUDENT' | 'GURU'; 
+  targetStudentId?: string; // Add support for targeted linking
+  onSave?: (student: Student) => void; // Added onSave prop
 }
+
+const CLASS_LIST = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
 
 // Helper to format Drive URLs
 const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
@@ -71,7 +75,7 @@ const PDFPageCanvas: React.FC<{ pdf: any; pageNum: number; scale: number }> = ({
     return <canvas ref={canvasRef} className="shadow-lg bg-white mb-4" />;
 };
 
-const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students, onUpdate, currentUser, userRole = 'ADMIN' }) => {
+const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students, onUpdate, currentUser, userRole = 'ADMIN', targetStudentId, onSave }) => {
   const [activeSemester, setActiveSemester] = useState<number>(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>(''); 
@@ -144,15 +148,21 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       return filtered.sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [students, searchTerm, selectedClassFilter]);
 
+  // Init Selection logic (handle props target)
   useEffect(() => {
-      if (filteredStudents.length > 0) {
-          if (!selectedStudentId || !filteredStudents.find(s => s.id === selectedStudentId)) {
-              setSelectedStudentId(filteredStudents[0].id);
+      if (targetStudentId) {
+          const target = students.find(s => s.id === targetStudentId);
+          if (target) {
+              // Update local state to match target
+              setSelectedClassFilter(target.className);
+              setSelectedStudentId(target.id);
           }
-      } else {
+      } else if (filteredStudents.length > 0 && !selectedStudentId) {
+          setSelectedStudentId(filteredStudents[0].id);
+      } else if (filteredStudents.length === 0) {
           setSelectedStudentId('');
       }
-  }, [filteredStudents, selectedStudentId]);
+  }, [filteredStudents, selectedStudentId, targetStudentId]);
 
   const currentStudent = students.find(s => s.id === selectedStudentId);
   const currentRecord = currentStudent?.academicRecords?.[activeSemester];
@@ -163,7 +173,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           d.subType?.semester == activeSemester && 
           d.subType?.page == activePage
       );
-  }, [currentStudent, activeSemester, activePage]);
+  }, [currentStudent, activeSemester, activePage, forceUpdate]);
 
   // Enhanced File Type Detection
   const isImageFile = (doc: any) => {
@@ -195,9 +205,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
   // Get Dynamic Dropdown Options based on Semester
   const getClassOptions = () => {
-      if (activeSemester <= 2) return ['VII A', 'VII B', 'VII C'];
-      if (activeSemester <= 4) return ['VIII A', 'VIII B', 'VIII C'];
-      return ['IX A', 'IX B', 'IX C'];
+      return CLASS_LIST; // Allow changing to any class for flexibility
   };
 
   // Get Academic Year from settings or fallback
@@ -283,8 +291,11 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       if (currentDoc && currentStudent) { 
           setIsSaving(true);
           const updatedDocs = currentStudent.documents.map(d => d.id === currentDoc.id ? { ...d, status: 'APPROVED' as const, adminNote: 'Valid.', verifierName: currentUser?.name || 'Admin', verifierRole: currentUser?.role || 'ADMIN', verificationDate: new Date().toISOString().split('T')[0] } : d);
-          currentStudent.documents = updatedDocs;
-          await api.updateStudent(currentStudent);
+          const updatedStudent = { ...currentStudent, documents: updatedDocs };
+          
+          if (onSave) await onSave(updatedStudent);
+          else await api.updateStudent(updatedStudent);
+          
           setIsSaving(false); setForceUpdate(prev => prev + 1); if (onUpdate) onUpdate(); 
       } 
   };
@@ -293,14 +304,57 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           if (!rejectionNote.trim()) { alert("Isi alasan penolakan!"); return; }
           setIsSaving(true);
           const updatedDocs = currentStudent.documents.map(d => d.id === currentDoc.id ? { ...d, status: 'REVISION' as const, adminNote: rejectionNote, verifierName: currentUser?.name || 'Admin', verifierRole: currentUser?.role || 'ADMIN', verificationDate: new Date().toISOString().split('T')[0] } : d);
-          currentStudent.documents = updatedDocs;
-          await api.updateStudent(currentStudent);
+          const updatedStudent = { ...currentStudent, documents: updatedDocs };
+          
+          if (onSave) await onSave(updatedStudent);
+          else await api.updateStudent(updatedStudent);
+          
           setIsSaving(false); setRejectModalOpen(false); setRejectionNote(''); setForceUpdate(prev => prev + 1); if (onUpdate) onUpdate(); 
       } 
   };
   
-  const handleGradeChange = (subjectIndex: number, newScore: string) => { if (currentRecord) { currentRecord.subjects[subjectIndex].score = Number(newScore); setForceUpdate(prev => prev + 1); } };
-  const saveGrades = async () => { /* Logic handled by generic updates if needed */ };
+  const handleGradeChange = (subjectIndex: number, newScore: string) => { 
+      if (currentRecord) { 
+          currentRecord.subjects[subjectIndex].score = Number(newScore); 
+          setForceUpdate(prev => prev + 1); 
+      } 
+  };
+
+  const handleClassChange = (newClass: string) => {
+      if (!currentStudent) return;
+      
+      // Ensure record exists
+      if (!currentStudent.academicRecords) currentStudent.academicRecords = {};
+      if (!currentStudent.academicRecords[activeSemester]) {
+          // Init dummy record if needed to set class
+           const level = (activeSemester <= 2) ? 'VII' : (activeSemester <= 4) ? 'VIII' : 'IX';
+           currentStudent.academicRecords[activeSemester] = { 
+              semester: activeSemester, classLevel: level, className: newClass, phase: 'D', year: '2024', 
+              subjects: [], p5Projects: [], extracurriculars: [], teacherNote: '', attendance: {sick:0, permitted:0, noReason:0}
+           };
+      } else {
+          currentStudent.academicRecords[activeSemester].className = newClass;
+      }
+      setForceUpdate(prev => prev + 1);
+  };
+
+  const saveGrades = async () => { 
+      if (currentStudent) {
+          setIsSaving(true);
+          try {
+              if (onSave) await onSave(currentStudent);
+              else await api.updateStudent(currentStudent);
+              
+              setIsEditing(false);
+              if (onUpdate) onUpdate();
+          } catch(e) {
+              console.error(e);
+              alert("Terjadi kesalahan.");
+          } finally {
+              setIsSaving(false);
+          }
+      }
+  };
 
   // --- CORRECTION HANDLERS (STUDENT) ---
   const handleOpenCorrection = (key: string, label: string, currentValue: string, type: 'CLASS' | 'GRADE') => {
@@ -341,7 +395,9 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       updatedStudent.correctionRequests = updatedStudent.correctionRequests.filter(r => !(r.fieldKey === finalKey && r.status === 'PENDING'));
       updatedStudent.correctionRequests.push(newRequest);
 
-      await api.updateStudent(updatedStudent);
+      if (onSave) await onSave(updatedStudent);
+      else await api.updateStudent(updatedStudent);
+      
       setCorrectionModalOpen(false); alert("✅ Pengajuan revisi berhasil dikirim."); if (onUpdate) onUpdate();
   };
 
@@ -380,7 +436,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           return req;
       });
 
-      // 2. If Approved, Apply Data Changes specifically for this request
+      // 2. CRITICAL: If Approved, Apply Data Changes specifically for this request to ACADEMIC RECORDS
       if (action === 'APPROVED') {
           const { fieldKey, proposedValue } = selectedRequest;
           
@@ -425,11 +481,14 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           }
       }
 
-      // 3. Save
+      // 3. Save to Database
       try {
-          await api.updateStudent(updatedStudent);
+          if (onSave) await onSave(updatedStudent);
+          else await api.updateStudent(updatedStudent);
+          
           setAdminVerifyModalOpen(false);
           setForceUpdate(prev => prev + 1);
+          // Trigger global refresh
           if (onUpdate) onUpdate();
       } catch (e) {
           alert("Gagal menyimpan perubahan.");
@@ -448,7 +507,12 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   const allRequests = useMemo(() => {
       if (!currentStudent?.correctionRequests) return [];
       
-      return [...currentStudent.correctionRequests].sort((a, b) => {
+      // Filter only Grade/Class related requests
+      const gradeRelatedRequests = currentStudent.correctionRequests.filter(r => 
+          r.fieldKey.startsWith('grade-') || r.fieldKey.startsWith('class-')
+      );
+
+      return gradeRelatedRequests.sort((a, b) => {
           // Sort: Pending first, then by date (newest first)
           if (a.status === 'PENDING' && b.status !== 'PENDING') return -1;
           if (a.status !== 'PENDING' && b.status === 'PENDING') return 1;
@@ -736,7 +800,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                         {/* Only Admin edits directly here, Student edits via click */}
                         {!isStudent && (
                             <div className="flex gap-2">
-                                <button onClick={saveGrades} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${isEditing ? 'bg-green-600 text-white shadow-lg' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'}`}>
+                                <button onClick={() => { if(isEditing) saveGrades(); else setIsEditing(true); }} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${isEditing ? 'bg-green-600 text-white shadow-lg' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'}`}>
                                     {isEditing ? <><Save className="w-3 h-3" /> {isSaving ? 'Menyimpan...' : 'Simpan'}</> : <><Pencil className="w-3 h-3" /> Edit Nilai</>}
                                 </button>
                             </div>
@@ -824,9 +888,22 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                                                 }}
                                                 title={isStudent ? "Klik untuk koreksi Kelas" : (isAdmin && classPending ? "Klik untuk memverifikasi perubahan" : "")}
                                             >
-                                                KELAS: {classPending ? classPending.proposedValue : displayClass}
-                                                {classPending && <span className="text-[9px] bg-yellow-300 border border-yellow-400 px-1 rounded font-bold text-yellow-900">Menunggu Verifikasi</span>}
-                                                {isStudent && !classPending && <Pencil className="w-3 h-3 opacity-50" />}
+                                                KELAS: 
+                                                {isEditing && !isStudent ? (
+                                                    <select 
+                                                        className="ml-2 bg-gray-50 border border-gray-300 rounded text-sm p-1"
+                                                        value={currentRecord?.className || currentStudent.className}
+                                                        onChange={(e) => handleClassChange(e.target.value)}
+                                                    >
+                                                        {CLASS_LIST.map(c => <option key={c} value={c}>{c}</option>)}
+                                                    </select>
+                                                ) : (
+                                                    <>
+                                                        {classPending ? classPending.proposedValue : displayClass}
+                                                        {classPending && <span className="text-[9px] bg-yellow-300 border border-yellow-400 px-1 rounded font-bold text-yellow-900">Menunggu Verifikasi</span>}
+                                                        {isStudent && !classPending && <Pencil className="w-3 h-3 opacity-50" />}
+                                                    </>
+                                                )}
                                             </span>
                                         )
                                     })()}

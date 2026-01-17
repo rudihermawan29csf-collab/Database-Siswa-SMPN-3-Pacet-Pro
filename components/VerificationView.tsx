@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Student } from '../types';
+import { Student, CorrectionRequest } from '../types';
 import { 
-  CheckCircle2, Loader2, ZoomIn, ZoomOut, Maximize2, AlertCircle, ExternalLink, FileText, ImageIcon, FileType, Save, Pencil, Activity, Eye, RefreshCw
+  CheckCircle2, Loader2, ZoomIn, ZoomOut, Maximize2, AlertCircle, ExternalLink, FileText, ImageIcon, FileType, Save, Pencil, Activity, Eye, RefreshCw, X, Search, ListChecks, XCircle
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -26,6 +26,8 @@ const MASTER_DOC_LIST = [
     { id: 'SKL', label: 'Surat Ket. Lulus' },
     { id: 'NISN', label: 'Bukti NISN' },
 ];
+
+const CLASS_OPTIONS = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
 
 // --- HELPER FUNCTIONS ---
 
@@ -97,6 +99,15 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   const [isSaving, setIsSaving] = useState(false); 
   const [forceUpdate, setForceUpdate] = useState(0);
 
+  // Edit Data State
+  const [isEditingData, setIsEditingData] = useState(false);
+  const [editFormData, setEditFormData] = useState<Student | null>(null);
+
+  // Data Verification State
+  const [adminVerifyModalOpen, setAdminVerifyModalOpen] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<CorrectionRequest | null>(null);
+  const [adminResponseNote, setAdminResponseNote] = useState('');
+
   // PDF States
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState(false);
@@ -112,7 +123,8 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           const configIds = savedConfig ? JSON.parse(savedConfig) : ['IJAZAH', 'AKTA', 'KK', 'KTP_AYAH', 'KTP_IBU', 'FOTO'];
           
           // Filter MASTER_LIST based on config
-          const filtered = MASTER_DOC_LIST.filter(d => configIds.includes(d.id));
+          // CRITICAL: Ensure RAPOR is NEVER included here
+          const filtered = MASTER_DOC_LIST.filter(d => configIds.includes(d.id) && d.id !== 'RAPOR');
           setAvailableDocTypes(filtered);
           
           if (filtered.length > 0 && !activeDocType) {
@@ -264,17 +276,193 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       }
   };
 
+  // --- DATA VERIFICATION HANDLERS (BUKU INDUK) ---
+  const handleAdminVerifyClick = (request: CorrectionRequest) => {
+      setSelectedRequest(request);
+      setAdminResponseNote(request.adminNote || '');
+      setAdminVerifyModalOpen(true);
+  };
+
+  const processVerification = async (action: 'APPROVED' | 'REJECTED') => {
+      if (!currentStudent || !selectedRequest) return;
+      
+      if (action === 'REJECTED' && !adminResponseNote.trim()) {
+          alert("Mohon isi alasan penolakan.");
+          return;
+      }
+
+      setIsSaving(true);
+
+      // 1. Clone Student Data
+      const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+      
+      // 2. Update Request Status in correctionRequests array
+      if (updatedStudent.correctionRequests) {
+          updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((req: CorrectionRequest) => {
+              if (req.id === selectedRequest.id) {
+                  return {
+                      ...req,
+                      status: action,
+                      adminNote: adminResponseNote || (action === 'APPROVED' ? 'Disetujui.' : 'Ditolak.'),
+                      verifierName: currentUser?.name || 'Admin',
+                      processedDate: new Date().toISOString()
+                  };
+              }
+              return req;
+          });
+      }
+
+      // 3. CRITICAL: If Approved, Apply Data Changes to the ACTUAL field in Student Object
+      if (action === 'APPROVED') {
+          const keys = selectedRequest.fieldKey.split('.');
+          let current: any = updatedStudent;
+          
+          // Traverse path (e.g. 'father.name')
+          for (let i = 0; i < keys.length - 1; i++) {
+               if (!current[keys[i]]) current[keys[i]] = {};
+               current = current[keys[i]];
+          }
+          
+          // Set Value
+          const lastKey = keys[keys.length - 1];
+          const newValue = selectedRequest.proposedValue;
+
+          // Handle numeric conversions if existing value is number
+          if (typeof current[lastKey] === 'number') {
+              current[lastKey] = Number(newValue);
+          } else {
+              current[lastKey] = newValue;
+          }
+      }
+
+      // 4. Save Updated Student to API (Database)
+      try {
+          // Use onSave wrapper if available to update global state immediately
+          if (onSave) await onSave(updatedStudent);
+          else await api.updateStudent(updatedStudent);
+          
+          setAdminVerifyModalOpen(false);
+          setForceUpdate(prev => prev + 1);
+          
+          // Trigger global update to refresh data in other components
+          if (onUpdate) onUpdate(); 
+      } catch (e) {
+          alert("Gagal menyimpan perubahan.");
+          console.error(e);
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
+  // --- EDIT DATA HANDLERS ---
+  const handleStartEdit = () => {
+      if (currentStudent) {
+          setEditFormData(JSON.parse(JSON.stringify(currentStudent)));
+          setIsEditingData(true);
+      }
+  };
+
+  const handleCancelEdit = () => {
+      setIsEditingData(false);
+      setEditFormData(null);
+  };
+
+  const handleSaveData = async () => {
+      if (!editFormData) return;
+      setIsSaving(true);
+      try {
+          if (onSave) await onSave(editFormData);
+          else await api.updateStudent(editFormData);
+          
+          setIsEditingData(false);
+          setEditFormData(null);
+          if (onUpdate) onUpdate();
+      } catch (e) {
+          console.error(e);
+          alert("Gagal menyimpan data.");
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
+  const handleInputChange = (fieldKey: string, value: string) => {
+      if (!editFormData) return;
+      
+      const keys = fieldKey.split('.');
+      const newData = { ...editFormData };
+      let current: any = newData;
+
+      for (let i = 0; i < keys.length - 1; i++) {
+          if (!current[keys[i]]) current[keys[i]] = {};
+          current = current[keys[i]];
+      }
+      current[keys[keys.length - 1]] = value;
+      
+      setEditFormData(newData);
+  };
+
   // --- COMPONENT UI HELPER FOR BUKU INDUK LAYOUT ---
-  const FormField = ({ label, value, labelCol = "w-1/3", valueCol = "flex-1", className = "", labelClassName="" }: any) => (
-    <div className={`flex border-b border-gray-300 min-h-[20px] ${className}`}>
-        <div className={`${labelCol} px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center ${labelClassName}`}>
-            {label}
+  const FormField = ({ label, value, fieldKey, labelCol = "w-1/3", valueCol = "flex-1", className = "", labelClassName="" }: any) => {
+      const displayValue = isEditingData && editFormData ? getNestedValue(editFormData, fieldKey) : value;
+      
+      // Check for pending correction request
+      const pendingReq = fieldKey ? currentStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING') : null;
+
+      return (
+        <div className={`flex border-b border-gray-300 min-h-[20px] ${className}`}>
+            <div className={`${labelCol} px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center ${labelClassName}`}>
+                {label}
+            </div>
+            <div className={`${valueCol} px-1.5 py-0.5 text-[9px] font-medium flex items-center uppercase leading-tight bg-white relative`}>
+                {isEditingData && fieldKey ? (
+                    // Special case for Class Name: Use Dropdown
+                    fieldKey === 'className' ? (
+                        <select 
+                            className="w-full h-full bg-blue-50 px-1 outline-none text-blue-800 font-bold focus:ring-1 focus:ring-blue-300"
+                            value={displayValue}
+                            onChange={(e) => handleInputChange(fieldKey, e.target.value)}
+                        >
+                            {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                    ) : (
+                        <input 
+                            type="text" 
+                            className="w-full h-full bg-blue-50 px-1 outline-none text-blue-800 font-bold focus:ring-1 focus:ring-blue-300"
+                            value={displayValue || ''}
+                            onChange={(e) => handleInputChange(fieldKey, e.target.value)}
+                        />
+                    )
+                ) : (
+                    <>
+                        <span className={pendingReq ? 'line-through text-gray-400' : ''}>{value || '-'}</span>
+                        {pendingReq && (
+                            <div 
+                                className="ml-2 flex items-center gap-1 bg-yellow-100 px-2 py-0.5 rounded border border-yellow-300 cursor-pointer animate-pulse"
+                                onClick={() => handleAdminVerifyClick(pendingReq)}
+                                title="Klik untuk verifikasi data"
+                            >
+                                <span className="font-bold text-yellow-800">{pendingReq.proposedValue}</span>
+                                <AlertCircle className="w-3 h-3 text-yellow-700" />
+                            </div>
+                        )}
+                    </>
+                )}
+            </div>
         </div>
-        <div className={`${valueCol} px-1.5 py-0.5 text-[9px] font-medium flex items-center uppercase leading-tight bg-white`}>
-            {value || '-'}
-        </div>
-    </div>
-  );
+      );
+  };
+
+  // Helper to format class name consistent with DatabaseView
+  const formatClassName = (name: string) => {
+      if (!name) return '-';
+      return name.toLowerCase().startsWith('kelas') ? name : `Kelas ${name}`;
+  };
+
+  // Helper to get value from dotted string path (e.g. 'father.name')
+  const getNestedValue = (obj: any, path: string) => {
+      if (!path) return '';
+      return path.split('.').reduce((o, i) => (o ? o[i] : ''), obj);
+  };
 
   const SubHeader = ({ children }: { children?: React.ReactNode }) => (
     <div className="bg-gray-200 px-2 py-0.5 text-[9px] font-bold border-y border-gray-400 text-center uppercase mt-1">
@@ -282,8 +470,14 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
     </div>
   );
 
+  // Get all pending requests for sidebar
+  const pendingRequests = useMemo(() => {
+      return currentStudent?.correctionRequests?.filter(r => r.status === 'PENDING' && !r.fieldKey.startsWith('grade-') && !r.fieldKey.startsWith('class-')) || [];
+  }, [currentStudent]);
+
   return (
     <div className="flex flex-col h-full animate-fade-in relative">
+        {/* REJECT DOCUMENT MODAL */}
         {rejectModalOpen && (
             <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col">
@@ -292,6 +486,69 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                     <div className="flex justify-end gap-2">
                         <button onClick={()=>setRejectModalOpen(false)} className="px-3 py-1 bg-gray-100 rounded">Batal</button>
                         <button onClick={() => handleVerifyDoc('REVISION', rejectionNote)} disabled={isSaving} className="px-3 py-1 bg-red-600 text-white rounded flex items-center">{isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Simpan'}</button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* ADMIN VERIFICATION MODAL FOR DATA */}
+        {adminVerifyModalOpen && selectedRequest && (
+            <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform scale-100 transition-all">
+                    <div className="flex justify-between items-center mb-4 border-b pb-2">
+                        <h3 className="text-lg font-bold text-gray-800">Verifikasi Perubahan Data</h3>
+                        <button onClick={() => setAdminVerifyModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>
+                    </div>
+
+                    <div className="space-y-4 mb-6">
+                        <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <p className="text-xs font-bold text-gray-500 uppercase mb-1">Item Perubahan</p>
+                            <p className="text-sm font-semibold text-gray-800">{selectedRequest.fieldName}</p>
+                        </div>
+                        
+                        <div className="flex items-center gap-3">
+                            <div className="flex-1 p-3 bg-red-50 border border-red-100 rounded-lg">
+                                <p className="text-[10px] text-red-500 font-bold uppercase">Data Lama</p>
+                                <p className="text-sm font-bold text-gray-700 line-through decoration-red-400">{selectedRequest.originalValue || '(Kosong)'}</p>
+                            </div>
+                            <div className="flex-1 p-3 bg-green-50 border border-green-100 rounded-lg">
+                                <p className="text-[10px] text-green-600 font-bold uppercase">Usulan Baru</p>
+                                <p className="text-sm font-bold text-gray-800">{selectedRequest.proposedValue}</p>
+                            </div>
+                        </div>
+
+                        <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100">
+                            <p className="text-xs font-bold text-yellow-700 uppercase mb-1">Alasan Siswa</p>
+                            <p className="text-sm text-gray-700 italic">"{selectedRequest.studentReason}"</p>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Catatan Admin (Opsional)</label>
+                            <textarea 
+                                className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                rows={2}
+                                placeholder="Catatan persetujuan atau penolakan..."
+                                value={adminResponseNote}
+                                onChange={(e) => setAdminResponseNote(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={() => processVerification('REJECTED')} 
+                            disabled={isSaving}
+                            className="flex-1 py-2 bg-white border border-red-200 text-red-600 font-bold rounded-lg text-sm hover:bg-red-50 flex items-center justify-center gap-2"
+                        >
+                            <XCircle className="w-4 h-4" /> Tolak
+                        </button>
+                        <button 
+                            onClick={() => processVerification('APPROVED')} 
+                            disabled={isSaving}
+                            className="flex-1 py-2 bg-green-600 text-white font-bold rounded-lg text-sm hover:bg-green-700 flex items-center justify-center gap-2"
+                        >
+                            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Setujui
+                        </button>
                     </div>
                 </div>
             </div>
@@ -427,10 +684,55 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                             <Activity className="w-4 h-4 text-blue-600" />
                             <h3 className="text-xs font-bold text-gray-700 uppercase">Data Buku Induk Siswa</h3>
                         </div>
-                        <div className="text-[10px] text-gray-500 italic">Cocokkan dengan dokumen</div>
+                        {/* EDIT BUTTONS */}
+                        <div className="flex gap-2">
+                            {isEditingData ? (
+                                <>
+                                    <button onClick={handleCancelEdit} disabled={isSaving} className="px-2 py-1 bg-white border border-gray-300 rounded text-[10px] hover:bg-gray-50 flex items-center gap-1">
+                                        <X className="w-3 h-3" /> Batal
+                                    </button>
+                                    <button onClick={handleSaveData} disabled={isSaving} className="px-2 py-1 bg-green-600 text-white rounded text-[10px] hover:bg-green-700 flex items-center gap-1">
+                                        {isSaving ? <Loader2 className="w-3 h-3 animate-spin"/> : <Save className="w-3 h-3" />} Simpan
+                                    </button>
+                                </>
+                            ) : (
+                                <button onClick={handleStartEdit} className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-[10px] font-bold hover:bg-blue-200 flex items-center gap-1">
+                                    <Pencil className="w-3 h-3" /> Edit Data
+                                </button>
+                            )}
+                        </div>
                     </div>
                     
                     <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50">
+                        {/* SIDEBAR FOR PENDING BIO DATA REQUESTS */}
+                        {pendingRequests.length > 0 && !isEditingData && (
+                            <div className="mb-4 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+                                <div className="text-xs font-bold text-yellow-800 flex items-center gap-2 mb-2">
+                                    <ListChecks className="w-4 h-4" />
+                                    Pengajuan Perubahan Data ({pendingRequests.length})
+                                </div>
+                                <div className="space-y-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">
+                                    {pendingRequests.map(req => (
+                                        <div 
+                                            key={req.id} 
+                                            className="bg-white border border-yellow-200 rounded p-2 shadow-sm cursor-pointer hover:bg-yellow-100 transition-colors"
+                                            onClick={() => handleAdminVerifyClick(req)}
+                                        >
+                                            <div className="flex justify-between items-center mb-1">
+                                                <p className="text-[10px] font-bold text-gray-700">{req.fieldName}</p>
+                                                <span className="text-[8px] bg-yellow-200 text-yellow-800 px-1 rounded">Pending</span>
+                                            </div>
+                                            <div className="flex items-center gap-1 text-[9px] text-gray-500">
+                                                <span className="line-through decoration-red-300 truncate max-w-[40%]">{req.originalValue || '-'}</span>
+                                                <span>➔</span>
+                                                <span className="font-bold text-blue-700 truncate">{req.proposedValue}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         {/* REPLICATED BUKU INDUK LAYOUT */}
                         <div className="bg-white p-4 border border-gray-200 shadow-sm text-gray-800">
                             
@@ -443,28 +745,33 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                             <div className="border-x border-t border-gray-300 mt-1">
                                 <FormField 
                                     label="KELAS SAAT INI" 
-                                    value={currentStudent.className} 
+                                    value={formatClassName(currentStudent.className)} 
+                                    fieldKey="className"
                                     className="bg-yellow-50 border-b-2 border-yellow-200"
                                     labelClassName="font-bold text-yellow-800 bg-yellow-100"
                                 />
-                                <FormField label="1. Nama Lengkap" value={currentStudent.fullName} />
-                                <FormField label="2. Jenis Kelamin" value={currentStudent.gender === 'L' ? 'Laki-Laki' : 'Perempuan'} />
+                                <FormField label="1. Nama Lengkap" value={currentStudent.fullName} fieldKey="fullName" />
+                                <FormField label="2. Jenis Kelamin" value={currentStudent.gender === 'L' ? 'Laki-Laki' : 'Perempuan'} fieldKey="gender" />
                                 <div className="flex border-b border-gray-300 min-h-[20px]">
                                     <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">3. NISN</div>
-                                    <div className="w-1/3 px-1.5 py-0.5 text-[9px] font-medium uppercase">{currentStudent.nisn}</div>
+                                    <div className="w-1/3 px-1.5 py-0.5 text-[9px] font-medium uppercase bg-white">
+                                        {isEditingData ? <input type="text" className="w-full bg-blue-50 px-1" value={getNestedValue(editFormData, 'nisn')} onChange={(e) => handleInputChange('nisn', e.target.value)} /> : currentStudent.nisn}
+                                    </div>
                                     <div className="w-12 px-1.5 py-0.5 bg-gray-100 border-x border-gray-300 text-[9px] font-bold">NIS :</div>
-                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-gray-200">{currentStudent.nis}</div>
+                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-gray-200">
+                                        {isEditingData ? <input type="text" className="w-full bg-blue-50 px-1" value={getNestedValue(editFormData, 'nis')} onChange={(e) => handleInputChange('nis', e.target.value)} /> : currentStudent.nis}
+                                    </div>
                                 </div>
-                                <FormField label="4. No Seri Ijazah" value={currentStudent.diplomaNumber} />
-                                <FormField label="5. No Seri SKHUN" value={currentStudent.dapodik.skhun} />
-                                <FormField label="6. No. Ujian Nasional" value={currentStudent.dapodik.unExamNumber} />
-                                <FormField label="7. NIK" value={currentStudent.dapodik.nik} />
+                                <FormField label="4. No Seri Ijazah" value={currentStudent.diplomaNumber} fieldKey="diplomaNumber" />
+                                <FormField label="5. No Seri SKHUN" value={currentStudent.dapodik.skhun} fieldKey="dapodik.skhun" />
+                                <FormField label="6. No. Ujian Nasional" value={currentStudent.dapodik.unExamNumber} fieldKey="dapodik.unExamNumber" />
+                                <FormField label="7. NIK" value={currentStudent.dapodik.nik} fieldKey="dapodik.nik" />
                                 <FormField label="NPSN Sekolah Asal" value={currentStudent.previousSchool ? "20502873" : "-"} />
-                                <FormField label="Nama Sekolah Asal" value={currentStudent.previousSchool} />
-                                <FormField label="8. Tempat, Tgl Lahir" value={`${currentStudent.birthPlace}, ${currentStudent.birthDate}`} />
-                                <FormField label="9. Agama" value={currentStudent.religion} />
-                                <FormField label="10. Berkebutuhan Khusus" value={currentStudent.dapodik.specialNeeds} />
-                                <FormField label="11. Alamat Tempat Tinggal" value={currentStudent.address} />
+                                <FormField label="Nama Sekolah Asal" value={currentStudent.previousSchool} fieldKey="previousSchool" />
+                                <FormField label="8. Tempat, Tgl Lahir" value={`${currentStudent.birthPlace}, ${currentStudent.birthDate}`} fieldKey="birthPlace" />
+                                <FormField label="9. Agama" value={currentStudent.religion} fieldKey="religion" />
+                                <FormField label="10. Berkebutuhan Khusus" value={currentStudent.dapodik.specialNeeds} fieldKey="dapodik.specialNeeds" />
+                                <FormField label="11. Alamat Tempat Tinggal" value={currentStudent.address} fieldKey="address" />
                                 <div className="flex border-b border-gray-300 min-h-[20px]">
                                      <div className="w-1/3 flex flex-col">
                                          <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic"> - Dusun</div>
@@ -474,135 +781,119 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                                          <div className="flex-1 px-1.5 py-0.5 text-[8px] italic"> - Propinsi</div>
                                      </div>
                                      <div className="w-1/3 flex flex-col border-x border-gray-300">
-                                         <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{currentStudent.dapodik.dusun}</div>
-                                         <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{currentStudent.dapodik.kelurahan}</div>
-                                         <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{currentStudent.subDistrict}</div>
-                                         <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{currentStudent.district}</div>
+                                         <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">
+                                             {isEditingData ? <input className="w-full bg-blue-50" value={getNestedValue(editFormData, 'dapodik.dusun')} onChange={(e)=>handleInputChange('dapodik.dusun', e.target.value)} /> : currentStudent.dapodik.dusun}
+                                         </div>
+                                         <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">
+                                             {isEditingData ? <input className="w-full bg-blue-50" value={getNestedValue(editFormData, 'dapodik.kelurahan')} onChange={(e)=>handleInputChange('dapodik.kelurahan', e.target.value)} /> : currentStudent.dapodik.kelurahan}
+                                         </div>
+                                         <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">
+                                             {isEditingData ? <input className="w-full bg-blue-50" value={getNestedValue(editFormData, 'subDistrict')} onChange={(e)=>handleInputChange('subDistrict', e.target.value)} /> : currentStudent.subDistrict}
+                                         </div>
+                                         <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">
+                                             {isEditingData ? <input className="w-full bg-blue-50" value={getNestedValue(editFormData, 'district')} onChange={(e)=>handleInputChange('district', e.target.value)} /> : currentStudent.district}
+                                         </div>
                                          <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase">Jawa Timur</div>
                                      </div>
                                      <div className="flex-1 flex flex-col">
                                          <div className="flex border-b border-gray-200 h-1/3">
                                               <div className="w-10 px-1 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] font-bold">RT:</div>
-                                              <div className="flex-1 px-1 py-0.5 text-[9px]">{currentStudent.dapodik.rt}</div>
+                                              <div className="flex-1 px-1 py-0.5 text-[9px]">
+                                                  {isEditingData ? <input className="w-full bg-blue-50" value={getNestedValue(editFormData, 'dapodik.rt')} onChange={(e)=>handleInputChange('dapodik.rt', e.target.value)} /> : currentStudent.dapodik.rt}
+                                              </div>
                                               <div className="w-10 px-1 py-0.5 bg-gray-50 border-x border-gray-300 text-[8px] font-bold">RW:</div>
-                                              <div className="flex-1 px-1 py-0.5 text-[9px]">{currentStudent.dapodik.rw}</div>
+                                              <div className="flex-1 px-1 py-0.5 text-[9px]">
+                                                  {isEditingData ? <input className="w-full bg-blue-50" value={getNestedValue(editFormData, 'dapodik.rw')} onChange={(e)=>handleInputChange('dapodik.rw', e.target.value)} /> : currentStudent.dapodik.rw}
+                                              </div>
                                          </div>
                                          <div className="flex border-b border-gray-200 h-1/3">
                                               <div className="w-20 px-1 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] font-bold">Kode Pos</div>
-                                              <div className="flex-1 px-1 py-0.5 text-[9px]">{currentStudent.postalCode}</div>
+                                              <div className="flex-1 px-1 py-0.5 text-[9px]">
+                                                  {isEditingData ? <input className="w-full bg-blue-50" value={getNestedValue(editFormData, 'postalCode')} onChange={(e)=>handleInputChange('postalCode', e.target.value)} /> : currentStudent.postalCode}
+                                              </div>
                                          </div>
                                          <div className="flex-1 bg-gray-100"></div>
                                      </div>
                                 </div>
-                                <FormField label="12. Transportasi" value={currentStudent.dapodik.transportation} />
-                                <FormField label="13. Jenis Tinggal" value={currentStudent.dapodik.livingStatus} />
-                                <div className="flex border-b border-gray-300 min-h-[20px]">
-                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">14. No. Telp Rumah</div>
-                                    <div className="w-1/3 px-1.5 py-0.5 text-[9px] font-medium uppercase">-</div>
-                                    <div className="w-12 px-1.5 py-0.5 bg-gray-100 border-x border-gray-300 text-[9px] font-bold">HP :</div>
-                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] bg-gray-100">{currentStudent.father.phone || currentStudent.mother.phone || '0'}</div>
-                                </div>
-                                <FormField label="15. Email" value={currentStudent.dapodik.email} />
-                                <FormField label="16. No. KKS" value={currentStudent.dapodik.kksNumber} />
-                                <div className="flex border-b border-gray-300 min-h-[20px]">
-                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">17. Penerima KPS/KPH</div>
-                                    <div className="w-1/6 px-1.5 py-0.5 text-[9px] border-r border-gray-200 uppercase">{currentStudent.dapodik.kpsReceiver}</div>
-                                    <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">No. KPS</div>
-                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase">{currentStudent.dapodik.kpsNumber}</div>
-                                </div>
-                                <div className="flex border-b border-gray-300 min-h-[20px]">
-                                    <div className="w-1/3 px-1.5 py-0.5 text-[8px] italic"> - Usulan PIP</div>
-                                    <div className="w-1/6 px-1.5 py-0.5 text-[9px] border-x border-gray-300 uppercase">{currentStudent.dapodik.pipEligible}</div>
-                                    <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">Alasan</div>
-                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase">{currentStudent.dapodik.pipReason}</div>
-                                </div>
-                                <div className="flex border-b border-gray-300 min-h-[20px]">
-                                    <div className="w-1/3 px-1.5 py-0.5 text-[8px] italic"> - Penerima PIP</div>
-                                    <div className="w-1/6 px-1.5 py-0.5 text-[9px] border-x border-gray-300 uppercase">{currentStudent.dapodik.kipReceiver}</div>
-                                    <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">No. KIP</div>
-                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] uppercase">{currentStudent.dapodik.kipNumber}</div>
-                                </div>
-                                <FormField label=" - Nama di KIP" value={currentStudent.dapodik.kipName} />
-                                <FormField label=" - No Reg Akta Lahir" value={currentStudent.dapodik.birthRegNumber} />
-                                <FormField label=" - Lintang / Bujur" value={`${currentStudent.dapodik.latitude} / ${currentStudent.dapodik.longitude}`} />
+                                <FormField label="12. Transportasi" value={currentStudent.dapodik.transportation} fieldKey="dapodik.transportation" />
+                                <FormField label="13. Jenis Tinggal" value={currentStudent.dapodik.livingStatus} fieldKey="dapodik.livingStatus" />
+                                <FormField label="14. No HP" value={currentStudent.father.phone || currentStudent.mother.phone || '-'} fieldKey="father.phone" />
+                                <FormField label="15. Email" value={currentStudent.dapodik.email} fieldKey="dapodik.email" />
+                                <FormField label="16. No. KKS" value={currentStudent.dapodik.kksNumber} fieldKey="dapodik.kksNumber" />
+                                <FormField label="17. Penerima KPS/KPH" value={currentStudent.dapodik.kpsReceiver} fieldKey="dapodik.kpsReceiver" />
+                                <FormField label=" - No. KPS" value={currentStudent.dapodik.kpsNumber} fieldKey="dapodik.kpsNumber" />
+                                <FormField label=" - Penerima KIP" value={currentStudent.dapodik.kipReceiver} fieldKey="dapodik.kipReceiver" />
+                                <FormField label=" - No. KIP" value={currentStudent.dapodik.kipNumber} fieldKey="dapodik.kipNumber" />
+                                <FormField label=" - Nama di KIP" value={currentStudent.dapodik.kipName} fieldKey="dapodik.kipName" />
+                                <FormField label=" - No Reg Akta Lahir" value={currentStudent.dapodik.birthRegNumber} fieldKey="dapodik.birthRegNumber" />
                             </div>
 
                             {/* SECTION 2: DATA AYAH */}
                             <SubHeader>DATA AYAH KANDUNG</SubHeader>
                             <div className="border-x border-t border-gray-300 mt-1">
-                                <div className="flex border-b border-gray-300 min-h-[20px]">
-                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">18. Nama Ayah</div>
-                                    <div className="w-1/2 px-1.5 py-0.5 text-[9px] font-bold uppercase">{currentStudent.father.name}</div>
-                                    <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-x border-gray-300 text-[9px]">Tahun:</div>
-                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] bg-gray-100 font-bold">{currentStudent.father.birthPlaceDate}</div>
-                                </div>
-                                <FormField label=" - Pekerjaan" value={currentStudent.father.job} />
-                                <FormField label=" - Pendidikan" value={currentStudent.father.education} />
-                                <FormField label=" - Penghasilan" value={currentStudent.father.income} />
+                                <FormField label="18. Nama Ayah" value={currentStudent.father.name} fieldKey="father.name" />
+                                <FormField label=" - NIK Ayah" value={currentStudent.father.nik} fieldKey="father.nik" />
+                                <FormField label=" - Tahun Lahir" value={currentStudent.father.birthPlaceDate} fieldKey="father.birthPlaceDate" />
+                                <FormField label=" - Pekerjaan" value={currentStudent.father.job} fieldKey="father.job" />
+                                <FormField label=" - Pendidikan" value={currentStudent.father.education} fieldKey="father.education" />
+                                <FormField label=" - Penghasilan" value={currentStudent.father.income} fieldKey="father.income" />
                             </div>
 
                             {/* SECTION 3: DATA IBU */}
                             <SubHeader>DATA IBU KANDUNG</SubHeader>
                             <div className="border-x border-t border-gray-300 mt-1">
-                                <div className="flex border-b border-gray-300 min-h-[20px]">
-                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">19. Nama Ibu</div>
-                                    <div className="w-1/2 px-1.5 py-0.5 text-[9px] font-bold uppercase">{currentStudent.mother.name}</div>
-                                    <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-x border-gray-300 text-[9px]">Tahun:</div>
-                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] bg-gray-100 font-bold">{currentStudent.mother.birthPlaceDate}</div>
-                                </div>
-                                <FormField label=" - Pekerjaan" value={currentStudent.mother.job} />
-                                <FormField label=" - Pendidikan" value={currentStudent.mother.education} />
-                                <FormField label=" - Penghasilan" value={currentStudent.mother.income} />
+                                <FormField label="19. Nama Ibu" value={currentStudent.mother.name} fieldKey="mother.name" />
+                                <FormField label=" - NIK Ibu" value={currentStudent.mother.nik} fieldKey="mother.nik" />
+                                <FormField label=" - Tahun Lahir" value={currentStudent.mother.birthPlaceDate} fieldKey="mother.birthPlaceDate" />
+                                <FormField label=" - Pekerjaan" value={currentStudent.mother.job} fieldKey="mother.job" />
+                                <FormField label=" - Pendidikan" value={currentStudent.mother.education} fieldKey="mother.education" />
+                                <FormField label=" - Penghasilan" value={currentStudent.mother.income} fieldKey="mother.income" />
                             </div>
 
                             {/* SECTION 4: DATA WALI */}
                             <SubHeader>DATA WALI</SubHeader>
                             <div className="border-x border-t border-gray-300 mt-1">
-                                <div className="flex border-b border-gray-300 min-h-[20px]">
-                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">20. Nama Wali</div>
-                                    <div className="w-1/2 px-1.5 py-0.5 text-[9px] uppercase">{currentStudent.guardian?.name || '-'}</div>
-                                    <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-x border-gray-300 text-[9px]">Tahun:</div>
-                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] bg-gray-100 font-bold">{currentStudent.guardian?.birthPlaceDate || '-'}</div>
-                                </div>
-                                <FormField label=" - Pekerjaan" value={currentStudent.guardian?.job || '-'} />
-                                <FormField label=" - Pendidikan" value={currentStudent.guardian?.education || '-'} />
-                                <FormField label=" - Penghasilan" value={currentStudent.guardian?.income || '-'} />
+                                <FormField label="20. Nama Wali" value={currentStudent.guardian?.name} fieldKey="guardian.name" />
+                                <FormField label=" - Tahun Lahir" value={currentStudent.guardian?.birthPlaceDate} fieldKey="guardian.birthPlaceDate" />
+                                <FormField label=" - Pekerjaan" value={currentStudent.guardian?.job} fieldKey="guardian.job" />
+                                <FormField label=" - Pendidikan" value={currentStudent.guardian?.education} fieldKey="guardian.education" />
+                                <FormField label=" - Penghasilan" value={currentStudent.guardian?.income} fieldKey="guardian.income" />
                             </div>
 
                             {/* SECTION 5: PERIODIK */}
-                            <div className="border border-gray-800 mt-1">
-                                <div className="flex border-b border-gray-300 h-6">
-                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">21. Tinggi Badan</div>
-                                    <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-gray-200">{currentStudent.height}</div>
-                                    <div className="w-10 px-1.5 py-0.5 border-r border-gray-300 text-[9px] flex items-center">cm</div>
-                                    <div className="w-24 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">Berat Badan:</div>
-                                    <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-gray-200">{currentStudent.weight}</div>
-                                    <div className="flex-1 px-1.5 py-0.5 text-[9px] flex items-center">Kg</div>
+                            <SubHeader>DATA PERIODIK</SubHeader>
+                            <div className="border-x border-t border-gray-300 mt-1 mb-2">
+                                <div className="flex border-b border-gray-300 min-h-[20px]">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">21. Tinggi (cm)</div>
+                                    <FormField label="" value={currentStudent.height} fieldKey="height" labelCol="hidden" valueCol="flex-1 pl-0" className="flex-1 border-none" />
                                 </div>
-                                <div className="flex border-b border-gray-300 h-6">
-                                    <div className="w-1/2 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] flex items-center">22. Jarak Ke Sekolah</div>
-                                    <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-gray-200">{currentStudent.dapodik.distanceToSchool}</div>
-                                    <div className="w-10 px-1.5 py-0.5 border-r border-gray-300 text-[9px] flex items-center">km</div>
-                                    <div className="flex-1 px-1.5 py-0.5 text-[8px] italic flex items-center leading-tight">2) &gt; 1km sebutkan: {Number(currentStudent.dapodik.distanceToSchool) > 1 ? currentStudent.dapodik.distanceToSchool : '-'} Km</div>
+                                <div className="flex border-b border-gray-300 min-h-[20px]">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">22. Berat (kg)</div>
+                                    <FormField label="" value={currentStudent.weight} fieldKey="weight" labelCol="hidden" valueCol="flex-1 pl-0" className="flex-1 border-none" />
                                 </div>
-                                <div className="flex border-b border-gray-300 h-6">
-                                    <div className="w-1/2 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] flex items-center">23. Waktu Tempuh</div>
-                                    <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-gray-200">{currentStudent.dapodik.travelTimeMinutes}</div>
-                                    <div className="w-12 px-1.5 py-0.5 border-r border-gray-300 text-[9px] flex items-center">menit</div>
-                                    <div className="flex-1 px-1.5 py-0.5 text-[8px] italic flex items-center leading-tight">2) &gt; 60 menit: - Menit</div>
+                                <div className="flex border-b border-gray-300 min-h-[20px]">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">23. Jarak (km)</div>
+                                    <FormField label="" value={currentStudent.dapodik.distanceToSchool} fieldKey="dapodik.distanceToSchool" labelCol="hidden" valueCol="flex-1 pl-0" className="flex-1 border-none" />
                                 </div>
-                                <div className="flex h-5">
-                                    <div className="w-1/2 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">24. Jml Saudara Kandung</div>
-                                    <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-gray-200">{currentStudent.siblingCount}</div>
-                                    <div className="flex-1 bg-gray-100"></div>
+                                <div className="flex border-b border-gray-300 min-h-[20px]">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">24. Waktu (menit)</div>
+                                    <FormField label="" value={currentStudent.dapodik.travelTimeMinutes} fieldKey="dapodik.travelTimeMinutes" labelCol="hidden" valueCol="flex-1 pl-0" className="flex-1 border-none" />
+                                </div>
+                                <div className="flex border-b border-gray-300 min-h-[20px]">
+                                    <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">25. Jml Saudara</div>
+                                    <FormField label="" value={currentStudent.siblingCount} fieldKey="siblingCount" labelCol="hidden" valueCol="flex-1 pl-0" className="flex-1 border-none" />
                                 </div>
                             </div>
+
                         </div>
                     </div>
                 </div>
             </div>
         ) : (
-            <div className="flex-1 flex items-center justify-center text-gray-400">Pilih Siswa dari Dropdown</div>
+            <div className="flex-1 flex items-center justify-center text-gray-400 flex-col">
+                <Search className="w-16 h-16 mb-4 opacity-20" />
+                <p>Pilih siswa untuk memulai verifikasi.</p>
+            </div>
         )}
     </div>
   );

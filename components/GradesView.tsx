@@ -20,6 +20,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [renderKey, setRenderKey] = useState(0); 
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   
   // Settings State
   const [appSettings, setAppSettings] = useState<any>(null);
@@ -127,37 +128,88 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       return s.academicRecords?.[dbSemester];
   };
 
-  const setScore = (s: Student, subjKey: string, val: number) => {
-      if (userRole === 'GURU') return; 
-
-      if (!s.academicRecords) s.academicRecords = {};
-      if (!s.academicRecords[dbSemester]) {
-          const level = (dbSemester <= 2) ? 'VII' : (dbSemester <= 4) ? 'VIII' : 'IX';
-          s.academicRecords[dbSemester] = { 
-              semester: dbSemester, classLevel: level, className: s.className, phase: 'D', year: '2024', 
-              subjects: [], p5Projects: [], extracurriculars: [], teacherNote: '', promotionStatus: '', 
-              attendance: { sick: 0, permitted: 0, noReason: 0 } 
-          };
-      }
-
-      const record = s.academicRecords[dbSemester];
-      const mapItem = SUBJECT_MAP.find(m => m.key === subjKey);
+  // --- EDIT HANDLERS (ADMIN) ---
+  const startEdit = (s: Student) => {
+      const record = getRecord(s);
+      setEditingId(s.id);
       
-      let subj = record.subjects.find(sub => {
-           if (mapItem) {
-               return sub.subject === mapItem.full || 
-                      sub.subject === mapItem.key ||
-                      sub.subject.startsWith(mapItem.key) || 
-                      (mapItem.key === 'PAI' && sub.subject.includes('Agama'));
-           }
-           return sub.subject.startsWith(subjKey);
+      // Populate Edit State
+      const currentScores: Record<string, number> = {};
+      SUBJECT_MAP.forEach(sub => {
+          currentScores[sub.key] = getScore(s, sub.key);
       });
+      setEditScores(currentScores);
       
-      if (subj) {
-          subj.score = val;
-      } else {
-          const subjectName = mapItem ? mapItem.full : (subjKey === 'PAI' ? 'Pendidikan Agama' : subjKey);
-          record.subjects.push({ no: record.subjects.length + 1, subject: subjectName, score: val, competency: '-' });
+      setEditAttendance(record?.attendance || { sick: 0, permitted: 0, noReason: 0 });
+      setEditExtra(record?.extracurriculars?.[0]?.name || '');
+      setEditPromotion(record?.promotionStatus || '');
+  };
+
+  const saveEdit = async (s: Student) => {
+      setIsSaving(true);
+      try {
+          // 1. Ensure Record Exists
+          if (!s.academicRecords) s.academicRecords = {};
+          if (!s.academicRecords[dbSemester]) {
+              const level = (dbSemester <= 2) ? 'VII' : (dbSemester <= 4) ? 'VIII' : 'IX';
+              s.academicRecords[dbSemester] = { 
+                  semester: dbSemester, classLevel: level, className: s.className, phase: 'D', year: '2024', 
+                  subjects: [], p5Projects: [], extracurriculars: [], teacherNote: '', promotionStatus: '', 
+                  attendance: { sick: 0, permitted: 0, noReason: 0 } 
+              };
+          }
+          
+          const record = s.academicRecords[dbSemester];
+
+          // 2. Update Subjects
+          SUBJECT_MAP.forEach((mapItem, idx) => {
+              const score = editScores[mapItem.key] || 0;
+              const competency = getCompetencyDescription(score, mapItem.full);
+              
+              // Find existing subject or create new
+              let subj = record.subjects.find(sub => 
+                  sub.subject === mapItem.full || 
+                  sub.subject.startsWith(mapItem.key) || 
+                  (mapItem.key === 'PAI' && sub.subject.includes('Agama'))
+              );
+
+              if (subj) {
+                  subj.score = score;
+                  subj.competency = competency;
+              } else {
+                  record.subjects.push({
+                      no: idx + 1,
+                      subject: mapItem.full,
+                      score: score,
+                      competency: competency
+                  });
+              }
+          });
+
+          // 3. Update Extras
+          if (editExtra) {
+              record.extracurriculars = [{ name: editExtra, score: 'Baik' }];
+          } else {
+              record.extracurriculars = [];
+          }
+
+          // 4. Update Attendance & Promotion
+          record.attendance = editAttendance;
+          record.promotionStatus = editPromotion;
+
+          // 5. Save to API
+          const success = await api.updateStudent(s);
+          if (success) {
+              setEditingId(null);
+              if (onUpdate) onUpdate();
+          } else {
+              alert("Gagal menyimpan data.");
+          }
+      } catch (e) {
+          console.error(e);
+          alert("Terjadi kesalahan.");
+      } finally {
+          setIsSaving(false);
       }
   };
 
@@ -505,14 +557,99 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       );
   };
 
-  // --- EXCEL & OTHER HANDLERS REMAIN UNCHANGED ---
-  const handleDownloadTemplate = () => { /* ...existing logic... */ };
+  // --- EXCEL & OTHER HANDLERS ---
+  const handleDownloadTemplate = () => {
+      try {
+          // @ts-ignore
+          const xlsx = window.XLSX;
+          if (!xlsx || !xlsx.utils) { alert("Library Excel belum siap. Silakan refresh halaman."); return; }
+
+          // Prepare data with student names for easy input
+          const templateData = filteredStudents.map((s, index) => {
+              const row: any = {
+                  'No': index + 1,
+                  'Nama Siswa': s.fullName,
+                  'NISN': s.nisn,
+                  'Kelas': s.className,
+              };
+              
+              // Add empty columns for subjects
+              SUBJECT_MAP.forEach(sub => {
+                  row[sub.label] = '';
+              });
+              
+              // Add extras
+              row['Ekstrakurikuler'] = '';
+              row['Sakit'] = '';
+              row['Ijin'] = '';
+              row['Alpha'] = '';
+              
+              return row;
+          });
+
+          // If no students, create at least one dummy row for header structure
+          if (templateData.length === 0) {
+              const dummyRow: any = { 'No': 1, 'Nama Siswa': 'Contoh Siswa', 'NISN': '1234567890', 'Kelas': 'VII A' };
+              SUBJECT_MAP.forEach(sub => dummyRow[sub.label] = '');
+              dummyRow['Ekstrakurikuler'] = ''; dummyRow['Sakit'] = ''; dummyRow['Ijin'] = ''; dummyRow['Alpha'] = '';
+              templateData.push(dummyRow);
+          }
+
+          const ws = xlsx.utils.json_to_sheet(templateData);
+          const wb = xlsx.utils.book_new();
+          xlsx.utils.book_append_sheet(wb, ws, `Template_Nilai_S${dbSemester}`);
+          
+          const fileName = `Template_Nilai_Sem${dbSemester}_${dbClassFilter !== 'ALL' ? dbClassFilter.replace(/\s/g, '') : 'All'}.xlsx`;
+          xlsx.writeFile(wb, fileName);
+          
+      } catch (e) {
+          console.error("Error creating template", e);
+          alert("Gagal membuat template Excel.");
+      }
+  };
+
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => { /* ...existing logic... */ };
-  const startEdit = (s: Student) => { /* ...existing logic... */ };
-  const saveEdit = (s: Student) => { /* ...existing logic... */ };
   const handleViewReport = (s: Student) => { setSelectedStudent(s); setViewMode('REPORT'); };
-  const handlePrint = () => { window.print(); };
-  const handleDownloadPDF = () => { /* ...existing logic... */ };
+  
+  const handleDownloadPDF = () => {
+      if (!selectedStudent) return;
+      setIsGeneratingPdf(true);
+
+      // Allow DOM to update if needed
+      setTimeout(() => {
+          const element = document.getElementById('report-content');
+          const filename = `Rapor_${selectedStudent.fullName.replace(/[^a-zA-Z0-9]/g, '_')}_S${dbSemester}.pdf`;
+
+          // Options for single page A4
+          const opt = {
+              margin: 0, // No margin because the component has padding
+              filename: filename,
+              image: { type: 'jpeg', quality: 0.98 },
+              html2canvas: { 
+                  scale: 2, // Higher scale for better quality
+                  useCORS: true,
+                  scrollY: 0
+              },
+              jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+          };
+
+          // @ts-ignore
+          const html2pdf = window.html2pdf;
+
+          if (html2pdf) {
+              html2pdf().set(opt).from(element).save().then(() => {
+                  setIsGeneratingPdf(false);
+              }).catch((err: any) => {
+                  console.error('PDF Generation Error:', err);
+                  setIsGeneratingPdf(false);
+                  alert('Gagal membuat PDF. Silakan coba lagi.');
+              });
+          } else {
+              alert("Library PDF belum siap (html2pdf not found).");
+              setIsGeneratingPdf(false);
+          }
+      }, 500);
+  };
 
   return (
     <div className="flex flex-col h-full space-y-4 animate-fade-in relative">
@@ -560,11 +697,11 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                       )}
 
                       <div>
-                          <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Alasan Perubahan</label>
+                          <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Alasan Revisi</label>
                           <textarea 
                               className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none"
                               rows={2}
-                              placeholder={correctionType === 'CLASS' ? "Contoh: Saya pindah kelas..." : "Contoh: Nilai ulangan saya..."}
+                              placeholder="Jelaskan alasan perubahan..."
                               value={correctionReason}
                               onChange={(e) => setCorrectionReason(e.target.value)}
                           />
@@ -624,7 +761,6 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                 <button onClick={handleDownloadPDF} disabled={isGeneratingPdf} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50">
                     {isGeneratingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} Download PDF
                 </button>
-                <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-lg text-sm font-bold hover:bg-black"><Printer className="w-4 h-4" /> Cetak Rapor</button>
             </div>
         )}
       </div>

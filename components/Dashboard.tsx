@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Users, FileCheck, School, AlertCircle, FileText, CheckCircle2, Clock, AlertTriangle, ArrowRight, BookOpen, FileCheck2, Files, ClipboardList, Filter } from 'lucide-react';
+import { Users, FileCheck, School, AlertCircle, FileText, CheckCircle2, Clock, AlertTriangle, ArrowRight, BookOpen, FileCheck2, Files, ClipboardList, Filter, Award } from 'lucide-react';
 import { Student } from '../types';
 
 const COLORS = ['#007AFF', '#FF2D55', '#FFCC00', '#34C759'];
@@ -8,7 +8,7 @@ const COLORS = ['#007AFF', '#FF2D55', '#FFCC00', '#34C759'];
 // Interface for Notification Items passed from App
 export interface DashboardNotification {
     id: string;
-    type: 'ADMIN_VERIFY' | 'STUDENT_REVISION' | 'STUDENT_APPROVED' | 'ADMIN_DOC_VERIFY';
+    type: 'ADMIN_VERIFY' | 'STUDENT_REVISION' | 'STUDENT_APPROVED' | 'ADMIN_DOC_VERIFY' | 'ADMIN_GRADE_VERIFY' | 'ADMIN_BIO_VERIFY' | 'ADMIN_IJAZAH_VERIFY';
     title: string;
     description: string;
     date: string;
@@ -40,7 +40,13 @@ const StatCard: React.FC<{ title: string; value: string | number; icon: React.Re
 const NotificationCard: React.FC<{ notification: DashboardNotification; onClick: () => void }> = ({ notification, onClick }) => {
     const getIcon = () => {
         switch(notification.type) {
-            case 'ADMIN_VERIFY': return <AlertCircle className="w-5 h-5 text-orange-500" />;
+            case 'ADMIN_VERIFY': 
+            case 'ADMIN_DOC_VERIFY':
+            case 'ADMIN_GRADE_VERIFY':
+            case 'ADMIN_BIO_VERIFY':
+                return <AlertCircle className="w-5 h-5 text-orange-500" />;
+            case 'ADMIN_IJAZAH_VERIFY':
+                return <Award className="w-5 h-5 text-purple-500" />;
             case 'STUDENT_REVISION': return <AlertTriangle className="w-5 h-5 text-red-500" />;
             case 'STUDENT_APPROVED': return <CheckCircle2 className="w-5 h-5 text-green-500" />;
             default: return <Clock className="w-5 h-5 text-blue-500" />;
@@ -51,7 +57,13 @@ const NotificationCard: React.FC<{ notification: DashboardNotification; onClick:
         switch(notification.type) {
             case 'STUDENT_REVISION': return 'bg-red-50 border-red-100 hover:bg-red-100';
             case 'STUDENT_APPROVED': return 'bg-green-50 border-green-100 hover:bg-green-100';
-            case 'ADMIN_VERIFY': return 'bg-orange-50 border-orange-100 hover:bg-orange-100';
+            case 'ADMIN_VERIFY': 
+            case 'ADMIN_DOC_VERIFY':
+            case 'ADMIN_GRADE_VERIFY':
+            case 'ADMIN_BIO_VERIFY':
+                return 'bg-orange-50 border-orange-100 hover:bg-orange-100';
+            case 'ADMIN_IJAZAH_VERIFY':
+                return 'bg-purple-50 border-purple-100 hover:bg-purple-100';
             default: return 'bg-blue-50 border-blue-100 hover:bg-blue-100';
         }
     };

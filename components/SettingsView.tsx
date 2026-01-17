@@ -399,6 +399,18 @@ const SettingsView: React.FC = () => {
                              <p className="text-sm text-blue-800">Pengaturan ini akan ditampilkan pada kop/header Rapor Nilai siswa sesuai dengan semester yang dipilih.</p>
                          </div>
                          
+                         <div className="mb-4 bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+                            <label className="block text-xs font-bold text-yellow-800 uppercase mb-2">Tahun Pelajaran Aktif (Sistem)</label>
+                            <input 
+                                type="text" 
+                                className="w-full p-2 border border-yellow-300 rounded-lg text-sm font-bold"
+                                placeholder="Contoh: 2024/2025"
+                                value={academicData.year}
+                                onChange={e => setAcademicData({...academicData, year: e.target.value})}
+                            />
+                            <p className="text-[10px] text-yellow-600 mt-1">Tahun pelajaran ini digunakan sebagai default saat membuka aplikasi.</p>
+                         </div>
+
                          <div className="border-b pb-4 mb-4">
                             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Setting Tahun Pelajaran per Semester</label>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

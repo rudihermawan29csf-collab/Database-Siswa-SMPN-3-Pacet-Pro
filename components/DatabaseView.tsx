@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Search, Plus, Pencil, Trash2, Save, X, Loader2 } from 'lucide-react';
+import React, { useState, useMemo, useRef } from 'react';
+import { Search, Plus, Pencil, Trash2, Save, X, Loader2, Download, UploadCloud, RotateCcw } from 'lucide-react';
 import { Student } from '../types';
 import { api } from '../services/api';
 
@@ -8,11 +8,14 @@ interface DatabaseViewProps {
   onUpdateStudents: (students: Student[]) => void;
 }
 
+const CLASS_OPTIONS = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
+
 const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Initial Empty Student for Form
   const initialFormState: Student = {
@@ -73,7 +76,16 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
       if (window.confirm("Yakin ingin menghapus data siswa ini?")) {
           const newStudents = students.filter(s => s.id !== id);
           onUpdateStudents(newStudents);
-          await api.syncInitialData(newStudents); // Using sync to persist deletion if possible
+          await api.syncInitialData(newStudents); 
+      }
+  };
+
+  const handleResetData = async () => {
+      if (window.confirm("PERINGATAN: Apakah anda yakin menghapus SEMUA data siswa? Data yang dihapus tidak dapat dikembalikan.")) {
+          if (window.confirm("Konfirmasi kedua: Yakin hapus semua data?")) {
+              onUpdateStudents([]);
+              await api.syncInitialData([]);
+          }
       }
   };
 
@@ -110,12 +122,115 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
       setIsModalOpen(true);
   };
 
+  // --- EXCEL HANDLERS ---
+  const handleDownloadTemplate = () => {
+      try {
+          // @ts-ignore
+          const xlsx = window.XLSX;
+          if (!xlsx) { alert("Library Excel belum siap."); return; }
+
+          // Complete Header List based on Mock Data & Type Definition
+          const headers = [
+              'No', 'Nama Lengkap', 'NISN', 'NIS', 'Kelas', 'L/P', 'Tempat Lahir', 'Tanggal Lahir (YYYY-MM-DD)', 
+              'NIK', 'Agama', 'Alamat', 'RT', 'RW', 'Dusun', 'Kelurahan', 'Kecamatan', 'Kode Pos', 
+              'Jenis Tinggal', 'Transportasi', 'Telepon/HP', 'Email', 
+              'SKHUN', 'Penerima KPS', 'No. KPS', 
+              'Nama Ayah', 'NIK Ayah', 'Tahun Lahir Ayah', 'Pendidikan Ayah', 'Pekerjaan Ayah', 'Penghasilan Ayah',
+              'Nama Ibu', 'NIK Ibu', 'Tahun Lahir Ibu', 'Pendidikan Ibu', 'Pekerjaan Ibu', 'Penghasilan Ibu',
+              'Nama Wali', 'NIK Wali', 'Tahun Lahir Wali', 'Pendidikan Wali', 'Pekerjaan Wali', 'Penghasilan Wali',
+              'Sekolah Asal', 'No Seri Ijazah', 'No Ujian Nasional', 
+              'Penerima KIP', 'No KIP', 'Nama di KIP', 'No KKS', 'No Reg Akta Lahir', 
+              'Bank', 'No Rekening', 'Atas Nama Rekening', 
+              'Layak PIP', 'Alasan Layak PIP', 'Kebutuhan Khusus', 
+              'Lintang', 'Bujur', 'No KK', 
+              'Berat Badan', 'Tinggi Badan', 'Lingkar Kepala', 'Jml Saudara', 'Jarak ke Sekolah (KM)', 'Waktu Tempuh (Menit)'
+          ];
+
+          // Create a dummy row with empty strings for all headers
+          const dummyData = {};
+          headers.forEach((h, i) => {
+              // @ts-ignore
+              dummyData[String.fromCharCode(65 + (i % 26))] = ''; 
+          });
+
+          // Create worksheet with headers
+          const ws = xlsx.utils.aoa_to_sheet([headers]);
+          const wb = xlsx.utils.book_new();
+          xlsx.utils.book_append_sheet(wb, ws, "Template Lengkap");
+          xlsx.writeFile(wb, "Template_Database_Siswa_Lengkap.xlsx");
+      } catch (e) {
+          console.error(e);
+          alert("Gagal download template.");
+      }
+  };
+
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+          try {
+              // @ts-ignore
+              const xlsx = window.XLSX;
+              const bstr = evt.target?.result;
+              const wb = xlsx.read(bstr, { type: 'binary' });
+              const wsname = wb.SheetNames[0];
+              const ws = wb.Sheets[wsname];
+              const data = xlsx.utils.sheet_to_json(ws, { header: 1 });
+
+              // Remove header row
+              const rows = data.slice(1);
+              
+              const newStudents: Student[] = rows.map((row: any) => {
+                  if (!row[1]) return null; // Skip empty names
+                  
+                  // Handle Class format from Excel (remove 'Kelas ' if exists to match internal format)
+                  let className = row[4] ? String(row[4]).trim() : 'VII A';
+                  className = className.replace(/^Kelas\s+/i, '');
+
+                  // Basic mapping for Import (For full mapping, complex logic needed)
+                  return {
+                      ...initialFormState,
+                      id: Math.random().toString(36).substr(2, 9),
+                      fullName: row[1] || '',
+                      nisn: row[2] ? String(row[2]) : '',
+                      nis: row[3] ? String(row[3]) : '',
+                      className: className,
+                      gender: row[5] === 'P' || row[5] === 'Perempuan' ? 'P' : 'L',
+                      birthPlace: row[6] || '',
+                      birthDate: row[7] || '', // Expecting YYYY-MM-DD or standard date
+                      father: { ...initialFormState.father, name: row[24] || '' }, // Adjusted index based on new full header
+                      mother: { ...initialFormState.mother, name: row[30] || '' }, // Adjusted index
+                  };
+              }).filter((s: any) => s !== null) as Student[];
+
+              if (newStudents.length > 0) {
+                  const mergedStudents = [...students, ...newStudents];
+                  onUpdateStudents(mergedStudents);
+                  api.syncInitialData(mergedStudents); // Auto sync to cloud
+                  alert(`Berhasil import ${newStudents.length} data siswa (Data dasar).`);
+              } else {
+                  alert("Tidak ada data valid yang ditemukan di file.");
+              }
+          } catch (err) {
+              console.error(err);
+              alert("Gagal membaca file Excel.");
+          }
+      };
+      reader.readAsBinaryString(file);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   return (
     <div className="flex flex-col h-full space-y-4 animate-fade-in">
+      <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx,.xls,.csv" onChange={handleImportExcel} />
+
       {/* Toolbar */}
-      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
-        <h2 className="text-lg font-bold text-gray-800">Database Siswa</h2>
-        <div className="flex gap-2 w-full md:w-auto">
+      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+        <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">Database Siswa</h2>
+        
+        <div className="flex flex-col md:flex-row gap-2 w-full lg:w-auto">
             <div className="relative flex-1 md:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <input 
@@ -126,9 +241,21 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
             </div>
-            <button onClick={openAddModal} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700">
-                <Plus className="w-4 h-4 mr-2" /> Tambah
-            </button>
+            
+            <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0">
+                <button onClick={handleDownloadTemplate} className="flex items-center px-3 py-2 bg-white border border-green-200 text-green-700 rounded-lg text-xs font-bold hover:bg-green-50 whitespace-nowrap">
+                    <Download className="w-3.5 h-3.5 mr-1.5" /> Template
+                </button>
+                <button onClick={() => fileInputRef.current?.click()} className="flex items-center px-3 py-2 bg-white border border-blue-200 text-blue-700 rounded-lg text-xs font-bold hover:bg-blue-50 whitespace-nowrap">
+                    <UploadCloud className="w-3.5 h-3.5 mr-1.5" /> Import
+                </button>
+                <button onClick={handleResetData} className="flex items-center px-3 py-2 bg-white border border-red-200 text-red-600 rounded-lg text-xs font-bold hover:bg-red-50 whitespace-nowrap" title="Hapus Semua Data">
+                    <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Reset
+                </button>
+                <button onClick={openAddModal} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 whitespace-nowrap shadow-sm">
+                    <Plus className="w-4 h-4 mr-2" /> Tambah
+                </button>
+            </div>
         </div>
       </div>
 
@@ -152,7 +279,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                             <td className="px-6 py-3 text-sm text-gray-500">{student.nis} / {student.nisn}</td>
                             <td className="px-6 py-3">
                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                    {student.className}
+                                    {student.className.startsWith('Kelas') ? student.className : `Kelas ${student.className}`}
                                 </span>
                             </td>
                             <td className="px-6 py-3 text-sm">{student.gender}</td>
@@ -199,8 +326,14 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Kelas</label>
-                                <select className="w-full p-2 border rounded-lg text-sm" value={formData.className} onChange={(e) => setFormData({...formData, className: e.target.value})}>
-                                    {['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'].map(c => <option key={c} value={c}>Kelas {c}</option>)}
+                                <select 
+                                    className="w-full p-2 border rounded-lg text-sm bg-white font-medium" 
+                                    value={formData.className} 
+                                    onChange={(e) => setFormData({...formData, className: e.target.value})}
+                                >
+                                    {CLASS_OPTIONS.map(c => (
+                                        <option key={c} value={c}>Kelas {c}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div>

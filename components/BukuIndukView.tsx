@@ -15,6 +15,12 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
   const [classFilter, setClassFilter] = useState('ALL');
   const [studentFilter, setStudentFilter] = useState('ALL');
 
+  // Helper to format class name consistently
+  const formatClassName = (name: string) => {
+      if (!name) return '-';
+      return name.toLowerCase().startsWith('kelas') ? name : `Kelas ${name}`;
+  };
+
   // Derive unique classes
   const uniqueClasses = useMemo(() => {
       const classes = new Set(students.map(s => s.className));
@@ -167,7 +173,7 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
                       <div className="flex justify-between border-b border-gray-800 mb-1">
                           <div className="flex-1 flex">
                               <div className="w-24 text-[9px] font-bold"> - Tingkat</div>
-                              <div className="flex-1 text-[9px]">: {selectedStudent.className}</div>
+                              <div className="flex-1 text-[9px]">: {formatClassName(selectedStudent.className)}</div>
                           </div>
                           <div className="flex-1 flex border-l border-gray-800 pl-4">
                               <div className="w-24 text-[9px] font-bold">Program :</div>
@@ -420,7 +426,7 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
                                         <td className="px-6 py-3 text-sm font-bold text-gray-800 group-hover:text-blue-600">{s.fullName}</td>
                                         <td className="px-6 py-3 text-xs text-gray-500 font-mono tracking-tight">{s.nisn}</td>
                                         <td className="px-6 py-3 text-xs">
-                                            <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">{s.className}</span>
+                                            <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">{formatClassName(s.className)}</span>
                                         </td>
                                         <td className="px-6 py-3 text-right">
                                             <button className="text-[10px] font-bold text-blue-600 uppercase border border-blue-200 px-3 py-1 rounded-md group-hover:bg-blue-600 group-hover:text-white transition-all">

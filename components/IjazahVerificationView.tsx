@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Student } from '../types';
+import { Student, CorrectionRequest } from '../types';
 import { 
-  CheckCircle2, FileText, Maximize2, ZoomIn, ZoomOut, Loader2, Search, Filter, AlertCircle, ScrollText, X
+  CheckCircle2, FileText, Maximize2, ZoomIn, ZoomOut, Loader2, Search, Filter, AlertCircle, ScrollText, X, ListChecks, XCircle, Pencil, Save, Activity
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -9,6 +9,7 @@ interface IjazahVerificationViewProps {
   students: Student[];
   onUpdate?: () => void;
   currentUser?: { name: string; role: string };
+  onSave?: (student: Student) => void; // Added onSave prop
 }
 
 // Helper to format Drive URLs
@@ -68,13 +69,18 @@ const PDFPageCanvas: React.FC<{ pdf: any; pageNum: number; scale: number }> = ({
     return <canvas ref={canvasRef} className="shadow-lg bg-white mb-4" />;
 };
 
-const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ students, onUpdate, currentUser }) => {
-  // Specific docs for Ijazah Verification
+const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ students, onUpdate, currentUser, onSave }) => {
+  // Expanded Docs List to match Data Ijazah requirements
   const IJAZAH_DOC_TYPES = [
       { id: 'IJAZAH', label: 'Ijazah SD' },
+      { id: 'SKL', label: 'Surat Ket. Lulus' },
       { id: 'AKTA', label: 'Akta Kelahiran' },
       { id: 'KK', label: 'Kartu Keluarga' },
-      { id: 'NISN', label: 'Bukti NISN' }
+      { id: 'NISN', label: 'Bukti NISN' },
+      { id: 'FOTO', label: 'Pas Foto' },
+      { id: 'KTP_AYAH', label: 'KTP Ayah' },
+      { id: 'KTP_IBU', label: 'KTP Ibu' },
+      { id: 'KIP', label: 'KIP / PKH' }
   ];
 
   const [activeDocType, setActiveDocType] = useState<string>('IJAZAH');
@@ -88,6 +94,15 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionNote, setRejectionNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Edit Data State
+  const [isEditingData, setIsEditingData] = useState(false);
+  const [editFormData, setEditFormData] = useState<Student | null>(null);
+
+  // Admin Verification for Data Correction
+  const [adminVerifyModalOpen, setAdminVerifyModalOpen] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<CorrectionRequest | null>(null);
+  const [adminResponseNote, setAdminResponseNote] = useState('');
 
   // PDF States
   const [isPdfLoading, setIsPdfLoading] = useState(false);
@@ -219,7 +234,8 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
           const updatedStudent = { ...currentStudent, documents: updatedDocs };
           
           try {
-              await api.updateStudent(updatedStudent);
+              if (onSave) await onSave(updatedStudent);
+              else await api.updateStudent(updatedStudent);
               if (onUpdate) onUpdate();
           } catch (e) {
               console.error("Save failed", e);
@@ -233,16 +249,175 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
       }
   };
 
-  const FormField = ({ label, value }: { label: string, value: string | undefined }) => (
-    <div className="flex flex-col border-b border-gray-100 py-2">
-        <span className="text-[10px] uppercase font-bold text-gray-400">{label}</span>
-        <span className="text-sm font-semibold text-gray-800">{value || '-'}</span>
-    </div>
-  );
+  // --- EDIT DATA LOGIC ---
+  const handleStartEdit = () => {
+      if (currentStudent) {
+          setEditFormData(JSON.parse(JSON.stringify(currentStudent)));
+          setIsEditingData(true);
+      }
+  };
+
+  const handleCancelEdit = () => {
+      setIsEditingData(false);
+      setEditFormData(null);
+  };
+
+  const handleSaveData = async () => {
+      if (!editFormData) return;
+      setIsSaving(true);
+      try {
+          if (onSave) await onSave(editFormData);
+          else await api.updateStudent(editFormData);
+          
+          setIsEditingData(false);
+          setEditFormData(null);
+          if (onUpdate) onUpdate();
+      } catch (e) {
+          console.error(e);
+          alert("Gagal menyimpan data.");
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
+  const handleInputChange = (fieldKey: string, value: string) => {
+      if (!editFormData) return;
+      
+      const keys = fieldKey.split('.');
+      const newData = { ...editFormData };
+      let current: any = newData;
+
+      for (let i = 0; i < keys.length - 1; i++) {
+          if (!current[keys[i]]) current[keys[i]] = {};
+          current = current[keys[i]];
+      }
+      current[keys[keys.length - 1]] = value;
+      
+      setEditFormData(newData);
+  };
+
+  const getNestedValue = (obj: any, path: string) => {
+      if (!path) return '';
+      return path.split('.').reduce((o, i) => (o ? o[i] : ''), obj);
+  };
+
+  // --- ADMIN DATA VERIFICATION HANDLERS (REQUESTS) ---
+  const handleAdminVerifyClick = (request: CorrectionRequest) => {
+      setSelectedRequest(request);
+      setAdminResponseNote(request.adminNote || '');
+      setAdminVerifyModalOpen(true);
+  };
+
+  const processVerification = async (action: 'APPROVED' | 'REJECTED') => {
+      if (!currentStudent || !selectedRequest) return;
+      
+      if (action === 'REJECTED' && !adminResponseNote.trim()) {
+          alert("Mohon isi alasan penolakan.");
+          return;
+      }
+
+      setIsSaving(true);
+
+      const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+      
+      // 1. Update Request Status
+      updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((req: CorrectionRequest) => {
+          if (req.id === selectedRequest.id) {
+              return {
+                  ...req,
+                  status: action,
+                  adminNote: adminResponseNote || (action === 'APPROVED' ? 'Disetujui.' : 'Ditolak.'),
+                  verifierName: currentUser?.name || 'Admin',
+                  processedDate: new Date().toISOString()
+              };
+          }
+          return req;
+      });
+
+      // 2. CRITICAL: If Approved, Apply Data Changes to the ACTUAL field in Student Object
+      if (action === 'APPROVED') {
+          const keys = selectedRequest.fieldKey.split('.');
+          let current: any = updatedStudent;
+          for (let i = 0; i < keys.length - 1; i++) {
+               if (!current[keys[i]]) current[keys[i]] = {};
+               current = current[keys[i]];
+          }
+          
+          const lastKey = keys[keys.length - 1];
+          // Handle type safety if original was number
+          if (typeof current[lastKey] === 'number') {
+              current[lastKey] = Number(selectedRequest.proposedValue);
+          } else {
+              current[lastKey] = selectedRequest.proposedValue;
+          }
+      }
+
+      // 3. Save to Database
+      try {
+          if (onSave) await onSave(updatedStudent);
+          else await api.updateStudent(updatedStudent);
+          
+          setAdminVerifyModalOpen(false);
+          setForceUpdate(prev => prev + 1);
+          if (onUpdate) onUpdate();
+      } catch (e) {
+          alert("Gagal menyimpan perubahan.");
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
+  const allRequests = useMemo(() => {
+      if (!currentStudent?.correctionRequests) return [];
+      // Filter for Ijazah related fields generally
+      const filtered = currentStudent.correctionRequests.filter(r => !r.fieldKey.startsWith('grade-') && !r.fieldKey.startsWith('class-'));
+
+      return filtered.sort((a, b) => {
+          if (a.status === 'PENDING' && b.status !== 'PENDING') return -1;
+          if (a.status !== 'PENDING' && b.status === 'PENDING') return 1;
+          return new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime();
+      });
+  }, [currentStudent]);
+
+  const FormField = ({ label, value, fieldKey }: { label: string, value: string | undefined, fieldKey?: string }) => {
+      const pendingReq = fieldKey ? currentStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING') : null;
+      const displayValue = isEditingData && editFormData && fieldKey ? getNestedValue(editFormData, fieldKey) : value;
+
+      return (
+        <div className="flex flex-col border-b border-gray-100 py-2">
+            <span className="text-[10px] uppercase font-bold text-gray-400">{label}</span>
+            <div className="flex items-center gap-2 w-full">
+                {isEditingData && fieldKey ? (
+                    <input 
+                        type="text" 
+                        className="w-full text-sm font-bold bg-blue-50 border-b border-blue-300 outline-none text-blue-900 px-1"
+                        value={displayValue || ''}
+                        onChange={(e) => handleInputChange(fieldKey, e.target.value)}
+                    />
+                ) : (
+                    <span className={`text-sm font-semibold ${pendingReq ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                        {value || '-'}
+                    </span>
+                )}
+                
+                {pendingReq && !isEditingData && (
+                    <div 
+                        className="flex items-center gap-1 bg-yellow-100 px-2 py-0.5 rounded border border-yellow-300 cursor-pointer animate-pulse ml-auto"
+                        onClick={() => handleAdminVerifyClick(pendingReq)}
+                        title="Klik untuk verifikasi"
+                    >
+                        <span className="text-xs font-bold text-yellow-800">{pendingReq.proposedValue}</span>
+                        <AlertCircle className="w-3 h-3 text-yellow-700" />
+                    </div>
+                )}
+            </div>
+        </div>
+      );
+  };
 
   return (
     <div className="flex flex-col h-full animate-fade-in relative">
-        {/* REJECT MODAL */}
+        {/* REJECT DOCUMENT MODAL */}
         {rejectModalOpen && (
             <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col">
@@ -252,6 +427,82 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
                         <button onClick={()=>setRejectModalOpen(false)} className="px-3 py-1 bg-gray-100 rounded">Batal</button>
                         <button onClick={() => handleVerifyDoc('REVISION', rejectionNote)} disabled={isSaving} className="px-3 py-1 bg-red-600 text-white rounded flex items-center">{isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Simpan'}</button>
                     </div>
+                </div>
+            </div>
+        )}
+
+        {/* ADMIN VERIFICATION MODAL */}
+        {adminVerifyModalOpen && selectedRequest && (
+            <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform scale-100 transition-all">
+                    <div className="flex justify-between items-center mb-4 border-b pb-2">
+                        <h3 className="text-lg font-bold text-gray-800">Verifikasi Pengajuan Ijazah</h3>
+                        <button onClick={() => setAdminVerifyModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>
+                    </div>
+
+                    <div className="space-y-4 mb-6">
+                        <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <p className="text-xs font-bold text-gray-500 uppercase mb-1">Item Perubahan</p>
+                            <p className="text-sm font-semibold text-gray-800">{selectedRequest.fieldName}</p>
+                        </div>
+                        
+                        <div className="flex items-center gap-3">
+                            <div className="flex-1 p-3 bg-red-50 border border-red-100 rounded-lg">
+                                <p className="text-[10px] text-red-500 font-bold uppercase">Data Lama</p>
+                                <p className="text-sm font-bold text-gray-700 line-through decoration-red-400">{selectedRequest.originalValue}</p>
+                            </div>
+                            <div className="flex-1 p-3 bg-green-50 border border-green-100 rounded-lg">
+                                <p className="text-[10px] text-green-600 font-bold uppercase">Usulan Baru</p>
+                                <p className="text-sm font-bold text-gray-800">{selectedRequest.proposedValue}</p>
+                            </div>
+                        </div>
+
+                        <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100">
+                            <p className="text-xs font-bold text-yellow-700 uppercase mb-1">Alasan Siswa</p>
+                            <p className="text-sm text-gray-700 italic">"{selectedRequest.studentReason}"</p>
+                        </div>
+
+                        {selectedRequest.status !== 'PENDING' && (
+                            <div className={`p-3 rounded-lg border ${selectedRequest.status === 'APPROVED' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                <p className={`text-xs font-bold uppercase mb-1 ${selectedRequest.status === 'APPROVED' ? 'text-green-700' : 'text-red-700'}`}>
+                                    Status: {selectedRequest.status === 'APPROVED' ? 'Disetujui' : 'Ditolak'}
+                                </p>
+                                <p className="text-sm text-gray-700 italic">"{selectedRequest.adminNote}"</p>
+                            </div>
+                        )}
+
+                        {selectedRequest.status === 'PENDING' && (
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Catatan Admin (Opsional)</label>
+                                <textarea 
+                                    className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                    rows={2}
+                                    placeholder="Alasan penolakan atau catatan..."
+                                    value={adminResponseNote}
+                                    onChange={(e) => setAdminResponseNote(e.target.value)}
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    {selectedRequest.status === 'PENDING' && (
+                        <div className="flex gap-2">
+                            <button 
+                                onClick={() => processVerification('REJECTED')} 
+                                disabled={isSaving}
+                                className="flex-1 py-2 bg-white border border-red-200 text-red-600 font-bold rounded-lg text-sm hover:bg-red-50 flex items-center justify-center gap-2"
+                            >
+                                <XCircle className="w-4 h-4" /> Tolak
+                            </button>
+                            <button 
+                                onClick={() => processVerification('APPROVED')} 
+                                disabled={isSaving}
+                                className="flex-1 py-2 bg-green-600 text-white font-bold rounded-lg text-sm hover:bg-green-700 flex items-center justify-center gap-2"
+                            >
+                                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Setujui
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
         )}
@@ -378,25 +629,76 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
                     )}
                 </div>
 
-                {/* Right Side: Data Reference (Simplified for Ijazah) */}
+                {/* Right Side: Data Reference */}
                 <div className={`bg-white rounded-xl border border-gray-200 flex flex-col shadow-sm transition-all duration-300 ${layoutMode === 'full-doc' ? 'hidden' : 'flex-1'} overflow-hidden`}>
-                    <div className="p-4 border-b border-gray-200 bg-gray-50">
-                        <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                            <ScrollText className="w-5 h-5 text-blue-600" /> Data Referensi Siswa
-                        </h3>
-                        <p className="text-xs text-gray-500 mt-1">Gunakan data ini untuk memverifikasi dokumen Ijazah, KK, dll.</p>
+                    <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+                        <div>
+                            <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                                <ScrollText className="w-5 h-5 text-blue-600" /> Data Ijazah & SKL
+                            </h3>
+                            <p className="text-xs text-gray-500 mt-1">Data referensi untuk verifikasi dokumen Ijazah.</p>
+                        </div>
+                        <div className="flex gap-2">
+                            {isEditingData ? (
+                                <>
+                                    <button onClick={handleCancelEdit} disabled={isSaving} className="px-2 py-1 bg-white border border-gray-300 rounded text-[10px] hover:bg-gray-50 flex items-center gap-1">
+                                        <X className="w-3 h-3" /> Batal
+                                    </button>
+                                    <button onClick={handleSaveData} disabled={isSaving} className="px-2 py-1 bg-green-600 text-white rounded text-[10px] hover:bg-green-700 flex items-center gap-1">
+                                        {isSaving ? <Loader2 className="w-3 h-3 animate-spin"/> : <Save className="w-3 h-3" />} Simpan
+                                    </button>
+                                </>
+                            ) : (
+                                <button onClick={handleStartEdit} className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-[10px] font-bold hover:bg-blue-200 flex items-center gap-1">
+                                    <Pencil className="w-3 h-3" /> Edit Data
+                                </button>
+                            )}
+                        </div>
                     </div>
                     
-                    <div className="flex-1 overflow-auto p-6">
-                        <div className="space-y-4">
-                            <FormField label="Nama Lengkap" value={currentStudent.fullName} />
-                            <FormField label="NISN" value={currentStudent.nisn} />
-                            <FormField label="Tempat, Tanggal Lahir" value={`${currentStudent.birthPlace}, ${currentStudent.birthDate}`} />
-                            <FormField label="Nama Ayah" value={currentStudent.father.name} />
-                            <FormField label="Nama Ibu" value={currentStudent.mother.name} />
-                            <FormField label="NIK Siswa" value={currentStudent.dapodik.nik} />
-                            <FormField label="No KK" value={currentStudent.dapodik.noKK} />
-                            <FormField label="Alamat" value={currentStudent.address} />
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        {/* ADMIN SIDEBAR LIST FOR PENDING REQUESTS (Inside the data panel) */}
+                        {allRequests.length > 0 && !isEditingData && (
+                            <div className="border-b border-gray-200 bg-yellow-50 p-3 overflow-y-auto max-h-48">
+                                <div className="text-xs font-bold text-yellow-800 flex items-center gap-2 mb-2">
+                                    <ListChecks className="w-4 h-4" />
+                                    Pengajuan Perubahan Data ({allRequests.length})
+                                </div>
+                                <div className="space-y-2">
+                                    {allRequests.map(req => (
+                                        <div 
+                                            key={req.id} 
+                                            className="bg-white border border-yellow-200 rounded-lg p-2 shadow-sm cursor-pointer hover:bg-yellow-100 transition-colors"
+                                            onClick={() => handleAdminVerifyClick(req)}
+                                        >
+                                            <div className="flex justify-between items-center">
+                                                <p className="text-xs font-bold text-gray-800">{req.fieldName}</p>
+                                                <span className={`text-[9px] px-1 rounded font-bold ${req.status === 'PENDING' ? 'bg-yellow-200 text-yellow-800' : req.status === 'APPROVED' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{req.status}</span>
+                                            </div>
+                                            <div className="mt-1 flex items-center gap-1 text-[10px] text-gray-500">
+                                                <span className="line-through decoration-red-300 truncate max-w-[40%]">{req.originalValue}</span>
+                                                <span>➔</span>
+                                                <span className="font-bold text-gray-800">{req.proposedValue}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex-1 overflow-auto p-6">
+                            <div className="space-y-4">
+                                <FormField label="Nama Lengkap" value={currentStudent.fullName} fieldKey="fullName" />
+                                <FormField label="NISN" value={currentStudent.nisn} fieldKey="nisn" />
+                                <FormField label="NIS" value={currentStudent.nis} fieldKey="nis" />
+                                <FormField label="Tempat Lahir" value={currentStudent.birthPlace} fieldKey="birthPlace" />
+                                <FormField label="Tanggal Lahir" value={currentStudent.birthDate} fieldKey="birthDate" />
+                                <FormField label="Nama Ayah" value={currentStudent.father.name} fieldKey="father.name" />
+                                <FormField label="Nama Ibu" value={currentStudent.mother.name} fieldKey="mother.name" />
+                                <FormField label="NIK Siswa" value={currentStudent.dapodik.nik} fieldKey="dapodik.nik" />
+                                <FormField label="No KK" value={currentStudent.dapodik.noKK} fieldKey="dapodik.noKK" />
+                                <FormField label="Alamat" value={currentStudent.address} fieldKey="address" />
+                            </div>
                         </div>
                     </div>
                 </div>

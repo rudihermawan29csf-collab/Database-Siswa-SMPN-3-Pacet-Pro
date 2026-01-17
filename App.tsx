@@ -30,6 +30,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [studentsData, setStudentsData] = useState<Student[]>([]);
+  const [activeAcademicYear, setActiveAcademicYear] = useState('2024/2025'); // Default fallback
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>('ADMIN');
   const [currentUser, setCurrentUser] = useState<{name: string, role: string} | null>(null);
@@ -49,6 +50,15 @@ const App: React.FC = () => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu toggle
 
+  // Helper to ensure clean class names globally
+  const sanitizeStudents = (data: Student[]): Student[] => {
+      return data.map(s => ({
+          ...s,
+          // Strip "Kelas" variations and whitespace to ensure unique ID (e.g. "IX A")
+          className: s.className ? s.className.replace(/kelas/gi, '').trim() : '-'
+      }));
+  };
+
   // FETCH DATA ON MOUNT & UPDATE
   useEffect(() => {
     const initData = async () => {
@@ -56,19 +66,29 @@ const App: React.FC = () => {
         if (studentsData.length === 0) setIsLoading(true);
 
         try {
-            // Try fetch from online API
-            const onlineData = await api.getStudents();
+            // Fetch Students & Settings in Parallel
+            const [onlineData, settings] = await Promise.all([
+                api.getStudents(),
+                api.getAppSettings()
+            ]);
             
-            // If fetch success, use Cloud Data (even if empty array!)
-            setStudentsData(onlineData);
+            // Set Students (Sanitized)
+            setStudentsData(sanitizeStudents(onlineData));
+            
+            // Set Active Year from Settings
+            if (settings && settings.academicData && settings.academicData.year) {
+                setActiveAcademicYear(settings.academicData.year);
+            }
+
             setIsCloudConnected(true);
         } catch (error) {
             console.error("Failed to connect to Cloud, using Mock Data", error);
             setIsCloudConnected(false);
             // Only fallback to Mock if Local Data is empty
             if (studentsData.length === 0) {
-                setStudentsData(MOCK_STUDENTS);
+                setStudentsData(sanitizeStudents(MOCK_STUDENTS));
             }
+            // Try to set year from cache/mock if available, otherwise keep default
         } finally {
             setIsLoading(false);
         }
@@ -94,13 +114,19 @@ const App: React.FC = () => {
 
   // UPDATED: Save Logic to update LOCAL STATE immediately
   const saveStudentToCloud = async (student: Student) => {
+      // Ensure we sanitize outgoing student class name as well just in case
+      const sanitizedStudent = {
+          ...student,
+          className: student.className.replace(/kelas/gi, '').trim()
+      };
+
       // 1. Update Local State Immediately (Optimistic UI)
       setStudentsData(prevStudents => 
-          prevStudents.map(s => s.id === student.id ? student : s)
+          prevStudents.map(s => s.id === sanitizedStudent.id ? sanitizedStudent : s)
       );
 
       // 2. Send to Cloud
-      await api.updateStudent(student);
+      await api.updateStudent(sanitizedStudent);
   };
 
   const handleLogin = (role: UserRole, studentData?: Student) => {
@@ -134,14 +160,21 @@ const App: React.FC = () => {
           const pendingDocs = s.documents.filter(d => d.status === 'PENDING');
           if (pendingDocs.length > 0) {
               pendingDocs.forEach(d => {
+                  const isRapor = d.category === 'RAPOR';
                   notifs.push({
                       id: `doc-${d.id}`,
-                      type: 'ADMIN_VERIFY',
-                      title: 'Verifikasi Dokumen',
+                      // Distinguish between General Verification and Grade/Rapor Verification
+                      type: isRapor ? 'ADMIN_GRADE_VERIFY' : 'ADMIN_DOC_VERIFY',
+                      title: isRapor ? 'Verifikasi Nilai (Rapor)' : 'Verifikasi Buku Induk (Dokumen)',
                       description: `${s.fullName} mengupload ${d.name} (${d.category})`,
                       date: d.uploadDate,
                       priority: 'HIGH',
-                      data: { studentId: s.id, docId: d.id, category: d.category }
+                      data: { 
+                          studentId: s.id, 
+                          docId: d.id, 
+                          category: d.category,
+                          targetView: isRapor ? 'grade-verification' : 'verification'
+                      }
                   });
               });
           }
@@ -150,14 +183,36 @@ const App: React.FC = () => {
           const pendingReqs = s.correctionRequests?.filter(r => r.status === 'PENDING');
           if (pendingReqs && pendingReqs.length > 0) {
               pendingReqs.forEach(r => {
+                  // Check if it's academic (Grade/Class) or Bio (Buku Induk) or Ijazah
+                  const isAcademic = r.fieldKey.startsWith('grade-') || r.fieldKey.startsWith('class-');
+                  const isIjazah = ['nis', 'nisn', 'birthPlace', 'birthDate'].includes(r.fieldKey);
+                  
+                  let type: any = 'ADMIN_BIO_VERIFY';
+                  let title = 'Verifikasi Buku Induk (Data Diri)';
+                  let targetView = 'student-detail';
+
+                  if (isAcademic) {
+                      type = 'ADMIN_GRADE_VERIFY';
+                      title = 'Verifikasi Nilai (Koreksi Data)';
+                      targetView = 'grade-verification';
+                  } else if (isIjazah) {
+                      type = 'ADMIN_IJAZAH_VERIFY';
+                      title = 'Verifikasi Data Ijazah';
+                      targetView = 'ijazah-verification';
+                  }
+                  
                   notifs.push({
                       id: `req-${r.id}`,
-                      type: 'ADMIN_VERIFY',
-                      title: 'Pengajuan Perbaikan Data',
+                      type: type,
+                      title: title,
                       description: `${s.fullName} mengajukan perbaikan: ${r.fieldName}`,
                       date: new Date(r.requestDate).toLocaleDateString(),
                       priority: 'MEDIUM',
-                      data: { studentId: s.id, fieldKey: r.fieldKey }
+                      data: { 
+                          studentId: s.id, 
+                          fieldKey: r.fieldKey,
+                          targetView: targetView
+                      }
                   });
               });
           }
@@ -216,16 +271,31 @@ const App: React.FC = () => {
       if (userRole === 'ADMIN' || userRole === 'GURU') {
           if (notif.data) {
               setTargetVerificationStudentId(notif.data.studentId);
+              
               if (notif.data.docId) {
+                  // Document Handling
                   setTargetHighlightDoc(notif.data.docId);
-                  setCurrentView('verification'); // Go to verification view
+                  // Use explicit target view from notification data
+                  if (notif.data.targetView) {
+                      setCurrentView(notif.data.targetView);
+                  } else {
+                      // Fallback
+                      setCurrentView(notif.data.category === 'RAPOR' ? 'grade-verification' : 'verification');
+                  }
               } else if (notif.data.fieldKey) {
+                  // Correction Handling
                   setTargetHighlightField(notif.data.fieldKey);
-                  // Find student object
-                  const s = studentsData.find(st => st.id === notif.data.studentId);
-                  if (s) {
-                      setSelectedStudent(s);
-                      setCurrentView('student-detail');
+                  
+                  // Use explicit target view
+                  if (notif.data.targetView) {
+                      setCurrentView(notif.data.targetView);
+                  } else {
+                      // Default to Student Detail for Bio/Buku Induk corrections
+                      const s = studentsData.find(st => st.id === notif.data.studentId);
+                      if (s) {
+                          setSelectedStudent(s);
+                          setCurrentView('student-detail');
+                      }
                   }
               }
           }
@@ -267,6 +337,7 @@ const App: React.FC = () => {
                         students={studentsData} 
                         targetStudentId={targetVerificationStudentId}
                         onUpdate={refreshData}
+                        onSave={saveStudentToCloud} 
                         currentUser={currentUser || undefined}
                      />;
           case 'student-detail': // Specific for detailed view from list
@@ -293,6 +364,7 @@ const App: React.FC = () => {
                         students={studentsData} 
                         userRole={userRole}
                         onUpdate={refreshData}
+                        onSave={saveStudentToCloud} // ADDED HERE
                         currentUser={currentUser || undefined}
                      />;
           case 'recap':
@@ -300,7 +372,12 @@ const App: React.FC = () => {
           case 'data-ijazah':
               return <IjazahView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
           case 'ijazah-verification':
-              return <IjazahVerificationView students={studentsData} onUpdate={refreshData} currentUser={currentUser || undefined} />;
+              return <IjazahVerificationView 
+                        students={studentsData} 
+                        onUpdate={refreshData} 
+                        onSave={saveStudentToCloud} // ADDED HERE
+                        currentUser={currentUser || undefined} 
+                     />;
           case 'settings':
               return <SettingsView />;
           case 'upload-rapor':
@@ -421,7 +498,7 @@ const App: React.FC = () => {
                          currentView === 'grades' ? 'Nilai Akademik' :
                          currentView === 'settings' ? 'Pengaturan' : 'Menu Utama'}
                     </h1>
-                    <span className="text-[10px] text-gray-500 font-medium">Tahun Ajaran 2024/2025</span>
+                    <span className="text-[10px] text-gray-500 font-medium">Tahun Ajaran {activeAcademicYear}</span>
                 </div>
             </div>
 

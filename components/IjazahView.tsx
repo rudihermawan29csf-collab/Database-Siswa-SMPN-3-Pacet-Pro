@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Student } from '../types';
-import { Search, FileSpreadsheet, Award, LayoutList, TableProperties, Save, Pencil, X, CheckCircle2, FileText, ScrollText, Eye, ArrowLeft, Printer, Loader2 } from 'lucide-react';
+import { Student, CorrectionRequest } from '../types';
+import { Search, FileSpreadsheet, Award, LayoutList, TableProperties, Save, Pencil, X, CheckCircle2, FileText, ScrollText, Eye, ArrowLeft, Printer, Loader2, Send } from 'lucide-react';
 import { api } from '../services/api';
 
 interface IjazahViewProps {
@@ -21,6 +21,12 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
   const [viewDetailScore, setViewDetailScore] = useState(false); // For Nilai Tab Detail Toggle
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   
+  // Correction State (For Students)
+  const [isCorrectionModalOpen, setIsCorrectionModalOpen] = useState(false);
+  const [targetCorrection, setTargetCorrection] = useState<{key: string, label: string, currentValue: string} | null>(null);
+  const [proposedValue, setProposedValue] = useState('');
+  const [correctionReason, setCorrectionReason] = useState('');
+
   // Settings State for Dynamic Year
   const [appSettings, setAppSettings] = useState<any>(null);
 
@@ -70,7 +76,14 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
   const getScore = (s: Student, subjKey: string, sem: number) => {
       const record = s.academicRecords?.[sem];
       if (!record) return 0;
-      const subj = record.subjects.find(sub => sub.subject.startsWith(subjKey) || (subjKey === 'PAI' && sub.subject.includes('Agama')));
+      
+      const subj = record.subjects.find(sub => {
+          if (subjKey === 'IPA') return sub.subject.includes('Alam') || sub.subject.includes('IPA');
+          if (subjKey === 'IPS') return sub.subject.includes('Sosial') || sub.subject.includes('IPS');
+          if (subjKey === 'PAI') return sub.subject.includes('Agama') || sub.subject.includes('PAI');
+          return sub.subject.startsWith(subjKey) || sub.subject === subjKey;
+      });
+      
       return subj ? subj.score : 0;
   };
 
@@ -178,11 +191,124 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
       } catch (e) { console.error(e); alert("Gagal download excel."); }
   };
 
-  // Get Academic Year from Settings (Semester 6)
-  const academicYear = appSettings?.academicData?.semesterYears?.[6] || '2024/2025';
+  // --- STUDENT CORRECTION HANDLERS ---
+  const handleOpenCorrection = (key: string, label: string, value: string) => {
+      setTargetCorrection({ key, label, currentValue: value });
+      setProposedValue(value);
+      setCorrectionReason('');
+      setIsCorrectionModalOpen(true);
+  };
+
+  const submitCorrection = async () => {
+      if (!selectedStudent || !targetCorrection) return;
+      if (!correctionReason.trim()) { alert("Mohon isi alasan perubahan."); return; }
+
+      const newRequest: CorrectionRequest = {
+          id: Math.random().toString(36).substr(2, 9),
+          fieldKey: targetCorrection.key,
+          fieldName: targetCorrection.label,
+          originalValue: targetCorrection.currentValue,
+          proposedValue: proposedValue,
+          studentReason: correctionReason,
+          status: 'PENDING',
+          requestDate: new Date().toISOString(),
+      };
+
+      const updatedStudent = { ...selectedStudent };
+      if (!updatedStudent.correctionRequests) updatedStudent.correctionRequests = [];
+      
+      // Remove dups
+      updatedStudent.correctionRequests = updatedStudent.correctionRequests.filter(
+          r => !(r.fieldKey === targetCorrection.key && r.status === 'PENDING')
+      );
+      updatedStudent.correctionRequests.push(newRequest);
+
+      await api.updateStudent(updatedStudent);
+      setSelectedStudent(updatedStudent); // Update local view
+      setIsCorrectionModalOpen(false);
+      alert("✅ Pengajuan revisi data ijazah berhasil dikirim.");
+  };
+
+  // Interactive Field Component for Student
+  const InteractiveField = ({ label, value, fieldKey, className = "" }: any) => {
+      const pendingReq = selectedStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING');
+      const canEdit = userRole === 'STUDENT';
+
+      return (
+          <div 
+            className={`relative group ${className} ${canEdit ? 'cursor-pointer' : ''}`} 
+            onClick={() => canEdit && !pendingReq && handleOpenCorrection(fieldKey, label, value)}
+            title={canEdit ? "Klik untuk koreksi data" : ""}
+          >
+              <span className={`font-bold ${pendingReq ? 'bg-yellow-100 text-yellow-800 px-1 rounded' : ''} transition-colors group-hover:text-blue-600`}>
+                  {pendingReq ? pendingReq.proposedValue : value}
+              </span>
+              {pendingReq && <span className="absolute -top-3 -right-3 text-[8px] bg-yellow-400 text-yellow-900 px-1 rounded shadow animate-pulse">Revisi</span>}
+              {canEdit && !pendingReq && <Pencil className="w-3 h-3 absolute -right-4 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-blue-500" />}
+          </div>
+      );
+  };
+
+  // Get Academic Year from Active Settings (Request: mengikuti di pengaturan admin di tahun pelajaran aktif)
+  const academicYear = appSettings?.academicData?.year || '2024/2025';
 
   return (
     <div className="flex flex-col h-full animate-fade-in space-y-4">
+        {/* CORRECTION MODAL */}
+        {isCorrectionModalOpen && targetCorrection && (
+            <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform scale-100 transition-all">
+                    <div className="flex justify-between items-center mb-4 border-b pb-2">
+                        <h3 className="text-lg font-bold text-gray-800">Koreksi Data Ijazah</h3>
+                        <button onClick={() => setIsCorrectionModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>
+                    </div>
+                    
+                    <div className="mb-4 bg-blue-50 p-3 rounded border border-blue-100">
+                        <p className="text-xs text-gray-500 uppercase">{targetCorrection.label} (Saat Ini)</p>
+                        <p className="text-sm font-bold text-gray-700">{targetCorrection.currentValue || '-'}</p>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Data Baru / Usulan</label>
+                            {targetCorrection.key === 'birthDate' ? (
+                                <input 
+                                    type="date" 
+                                    className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none font-bold"
+                                    value={proposedValue}
+                                    onChange={(e) => setProposedValue(e.target.value)}
+                                />
+                            ) : (
+                                <input 
+                                    type="text" 
+                                    className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none font-bold"
+                                    value={proposedValue}
+                                    onChange={(e) => setProposedValue(e.target.value)}
+                                />
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Alasan Revisi</label>
+                            <textarea 
+                                className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none"
+                                rows={2}
+                                placeholder="Jelaskan alasan perubahan..."
+                                value={correctionReason}
+                                onChange={(e) => setCorrectionReason(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex gap-2 mt-6">
+                        <button onClick={() => setIsCorrectionModalOpen(false)} className="flex-1 py-2 bg-gray-100 text-gray-600 font-bold rounded-lg text-sm hover:bg-gray-200">Batal</button>
+                        <button onClick={submitCorrection} className="flex-1 py-2 bg-blue-600 text-white font-bold rounded-lg text-sm hover:bg-blue-700 flex items-center justify-center gap-2">
+                            <Send className="w-3 h-3" /> Kirim
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
         {/* Toolbar */}
         <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between gap-4 print:hidden">
             <div className="flex flex-col md:flex-row justify-between items-center gap-4">
@@ -208,16 +334,19 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                 </div>
                 
                 <div className="flex gap-2 w-full md:w-auto items-center">
-                    {activeTab === 'DATA' && viewMode === 'DETAIL' && (
+                    {activeTab === 'DATA' && viewMode === 'DETAIL' && userRole !== 'STUDENT' && (
                         <div className="flex gap-2">
                             <button onClick={() => setViewMode('LIST')} className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-xs font-bold hover:bg-gray-200 flex items-center gap-1">
                                 <ArrowLeft className="w-4 h-4" /> Kembali
                             </button>
-                            <button onClick={() => setDetailType(t => t === 'CERTIFICATE' ? 'TRANSCRIPT' : 'CERTIFICATE')} className="bg-blue-50 text-blue-700 px-3 py-2 rounded-lg text-xs font-bold hover:bg-blue-100 flex items-center gap-1 border border-blue-200">
-                                {detailType === 'CERTIFICATE' ? <FileText className="w-4 h-4" /> : <ScrollText className="w-4 h-4" />}
-                                Ganti ke {detailType === 'CERTIFICATE' ? 'Transkrip' : 'Ijazah'}
-                            </button>
                         </div>
+                    )}
+                    
+                    {activeTab === 'DATA' && viewMode === 'DETAIL' && (
+                        <button onClick={() => setDetailType(t => t === 'CERTIFICATE' ? 'TRANSCRIPT' : 'CERTIFICATE')} className="bg-blue-50 text-blue-700 px-3 py-2 rounded-lg text-xs font-bold hover:bg-blue-100 flex items-center gap-1 border border-blue-200">
+                            {detailType === 'CERTIFICATE' ? <FileText className="w-4 h-4" /> : <ScrollText className="w-4 h-4" />}
+                            Ganti ke {detailType === 'CERTIFICATE' ? 'Transkrip' : 'Ijazah'}
+                        </button>
                     )}
 
                     {userRole === 'ADMIN' && (
@@ -329,22 +458,24 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                                         
                                         {/* BIO DATA */}
                                         <div className="w-full px-16 mb-8 font-serif text-sm">
-                                            <div className="flex mb-1">
+                                            <div className="flex mb-2 items-center">
                                                 <span className="w-64">tempat, tanggal lahir</span>
                                                 <span className="w-4">:</span>
-                                                <span className="font-bold uppercase">
-                                                    {selectedStudent?.birthPlace}, {selectedStudent?.birthDate ? new Date(selectedStudent.birthDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}
-                                                </span>
+                                                <div className="font-bold uppercase flex gap-1">
+                                                    <InteractiveField label="Tempat Lahir" value={selectedStudent?.birthPlace} fieldKey="birthPlace" />
+                                                    , 
+                                                    <InteractiveField label="Tanggal Lahir" value={selectedStudent?.birthDate} fieldKey="birthDate" />
+                                                </div>
                                             </div>
-                                            <div className="flex mb-1">
+                                            <div className="flex mb-2 items-center">
                                                 <span className="w-64">Nomor Induk Siswa</span>
                                                 <span className="w-4">:</span>
-                                                <span className="font-bold">{selectedStudent?.nis}</span>
+                                                <InteractiveField label="NIS" value={selectedStudent?.nis} fieldKey="nis" className="font-bold" />
                                             </div>
-                                            <div className="flex mb-1">
+                                            <div className="flex mb-2 items-center">
                                                 <span className="w-64">Nomor Induk Siswa Nasional</span>
                                                 <span className="w-4">:</span>
-                                                <span className="font-bold">{selectedStudent?.nisn}</span>
+                                                <InteractiveField label="NISN" value={selectedStudent?.nisn} fieldKey="nisn" className="font-bold" />
                                             </div>
                                         </div>
 
@@ -399,14 +530,16 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                                                     <tr>
                                                         <td className="w-56 py-1">Tempat, Tanggal Lahir</td>
                                                         <td className="w-4">:</td>
-                                                        <td className="capitalize">
-                                                            {selectedStudent?.birthPlace}, {selectedStudent?.birthDate ? new Date(selectedStudent.birthDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : ''}
+                                                        <td className="capitalize flex gap-1">
+                                                            <InteractiveField label="Tempat Lahir" value={selectedStudent?.birthPlace} fieldKey="birthPlace" />
+                                                            ,
+                                                            <InteractiveField label="Tanggal Lahir" value={selectedStudent?.birthDate} fieldKey="birthDate" />
                                                         </td>
                                                     </tr>
                                                     <tr>
                                                         <td className="w-56 py-1">Nomor Induk Siswa Nasional</td>
                                                         <td className="w-4">:</td>
-                                                        <td>{selectedStudent?.nisn}</td>
+                                                        <td><InteractiveField label="NISN" value={selectedStudent?.nisn} fieldKey="nisn" /></td>
                                                     </tr>
                                                     <tr>
                                                         <td className="w-56 py-1">Nomor Ijazah</td>
@@ -552,7 +685,7 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                                                     const avg = calculate6SemAvg(student, sub.key);
                                                     return (
                                                         <td key={sub.key} className="px-2 py-2 text-center border border-blue-100">
-                                                            <span className={`font-semibold ${avg < 75 ? 'text-red-500' : 'text-gray-700'}`}>
+                                                            <span className={`font-semibold ${avg < 75 ? 'text-red-600' : 'text-gray-700'}`}>
                                                                 {avg > 0 ? avg : '-'}
                                                             </span>
                                                         </td>
