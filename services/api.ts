@@ -1,7 +1,7 @@
 import { Student, DocumentFile } from '../types';
 
 // URL Deployment Google Apps Script
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyLeUDR_iMNcbxz8f016dn-u2LrCU4xeU59XVWW3iqfFVBob5V_hO_NpA2xOHh33jQg/exec';
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx0AkM5EP7vvvo4hiF1JokLNUfgiXQfnJOI0UA7gtnKAdRbBntszmbU5FswlO8Cdhjy/exec';
 
 // Helper for fetch with timeout
 const fetchWithTimeout = async (resource: string, options: RequestInit = {}) => {

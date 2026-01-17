@@ -10,7 +10,7 @@ import BukuIndukView from './components/BukuIndukView';
 import GradesView from './components/GradesView';
 import RecapView from './components/RecapView';
 import IjazahView from './components/IjazahView';
-import SKLView from './components/SKLView'; // Import SKLView
+import SKLView from './components/SKLView'; 
 import FileManager from './components/FileManager';
 import SettingsView from './components/SettingsView';
 import UploadRaporView from './components/UploadRaporView';
@@ -31,41 +31,29 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [studentsData, setStudentsData] = useState<Student[]>([]);
-  const [activeAcademicYear, setActiveAcademicYear] = useState('2024/2025'); // Default fallback
+  const [activeAcademicYear, setActiveAcademicYear] = useState('2024/2025'); 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>('ADMIN');
   const [currentUser, setCurrentUser] = useState<{name: string, role: string} | null>(null);
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   
-  // Triggers & Navigation State
   const [dataVersion, setDataVersion] = useState(0); 
-  const [targetHighlightField, setTargetHighlightField] = useState<string | undefined>(undefined);
-  const [targetHighlightDoc, setTargetHighlightDoc] = useState<string | undefined>(undefined);
-  const [targetVerificationStudentId, setTargetVerificationStudentId] = useState<string | undefined>(undefined); 
   
-  // Track read notifications (Persistent per session)
-  const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(new Set());
-
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu toggle
 
-  // Helper to ensure clean class names globally
   const sanitizeStudents = (data: Student[]): Student[] => {
       return data.map(s => ({
           ...s,
-          // Strip "Kelas" variations and whitespace to ensure unique ID (e.g. "IX A")
           className: s.className ? s.className.replace(/kelas/gi, '').trim() : '-'
       }));
   };
 
-  // INITIAL DATA LOAD
   useEffect(() => {
     const initData = async () => {
         if (studentsData.length === 0) setIsLoading(true);
 
-        // 1. FIRST: Try loading from Local Storage (Cache) for immediate data display
         const cached = localStorage.getItem('sidata_students_cache');
         let localData: Student[] = [];
         
@@ -74,7 +62,7 @@ const App: React.FC = () => {
                 localData = JSON.parse(cached);
                 if (localData.length > 0) {
                     setStudentsData(localData);
-                    setIsLoading(false); // Immediate display from cache
+                    setIsLoading(false);
                 }
             } catch (e) {
                 console.error("Cache corrupted, clearing", e);
@@ -83,23 +71,19 @@ const App: React.FC = () => {
         }
 
         try {
-            // 2. SECOND: Try syncing with Cloud
             const [onlineData, settings] = await Promise.all([
                 api.getStudents(),
                 api.getAppSettings()
             ]);
             
-            // SMART MERGE LOGIC:
             const sanitizedOnline = sanitizeStudents(onlineData);
             
             let mergedData = sanitizedOnline.map(onlineStudent => {
                 const cachedStudent = localData.find(c => c.id === onlineStudent.id);
                 if (cachedStudent) {
-                    // Critical: Restore 'previousSchool' if missing in cloud (Spreadsheet column issue)
                     if (!onlineStudent.previousSchool && cachedStudent.previousSchool) {
                         onlineStudent = { ...onlineStudent, previousSchool: cachedStudent.previousSchool };
                     }
-                    // Restore complex objects if cloud returns partial (optional safety check)
                     if (!onlineStudent.documents || onlineStudent.documents.length === 0) {
                         if (cachedStudent.documents && cachedStudent.documents.length > 0) {
                              onlineStudent = { ...onlineStudent, documents: cachedStudent.documents };
@@ -109,22 +93,16 @@ const App: React.FC = () => {
                 return onlineStudent;
             });
 
-            // Handle OFFLINE CREATED students:
-            // Find students in Local Cache that are NOT in Cloud Data
             const onlineIds = new Set(mergedData.map(s => s.id));
             const offlineCreatedStudents = localData.filter(l => !onlineIds.has(l.id));
             
             if (offlineCreatedStudents.length > 0) {
-                console.log(`Found ${offlineCreatedStudents.length} students created offline. Merging...`);
                 mergedData = [...mergedData, ...offlineCreatedStudents];
             }
 
             setStudentsData(mergedData);
-            
-            // Update Cache with merged data
             localStorage.setItem('sidata_students_cache', JSON.stringify(mergedData));
             
-            // Set Active Year from Settings
             if (settings && settings.academicData && settings.academicData.year) {
                 setActiveAcademicYear(settings.academicData.year);
             }
@@ -133,8 +111,6 @@ const App: React.FC = () => {
         } catch (error) {
             console.error("Failed to connect to Cloud", error);
             setIsCloudConnected(false);
-            
-            // Fallback to Mock if cache is also empty
             if (localData.length === 0) {
                 console.warn("Using MOCK data as fallback");
                 setStudentsData(sanitizeStudents(MOCK_STUDENTS));
@@ -146,7 +122,6 @@ const App: React.FC = () => {
     initData();
   }, [dataVersion]);
 
-  // SYNC SELECTED STUDENT DATA
   useEffect(() => {
       if (selectedStudent && studentsData.length > 0) {
           const updatedStudent = studentsData.find(s => s.id === selectedStudent.id);
@@ -156,7 +131,6 @@ const App: React.FC = () => {
       }
   }, [studentsData, selectedStudent]);
 
-  // PERSIST TO LOCAL STORAGE ON ANY CHANGE
   useEffect(() => {
       if (studentsData.length > 0) {
           localStorage.setItem('sidata_students_cache', JSON.stringify(studentsData));
@@ -167,9 +141,7 @@ const App: React.FC = () => {
       setDataVersion(prev => prev + 1);
   };
 
-  // UPDATED: Save Logic with Local Persistence Priority
   const saveStudentToCloud = async (student: Student) => {
-      // 1. Update Local State Immediately (Optimistic UI)
       const sanitizedStudent = {
           ...student,
           className: student.className.replace(/kelas/gi, '').trim()
@@ -177,15 +149,11 @@ const App: React.FC = () => {
 
       setStudentsData(prevStudents => {
           const newData = prevStudents.map(s => s.id === sanitizedStudent.id ? sanitizedStudent : s);
-          // SAVE TO CACHE IMMEDIATELY
           localStorage.setItem('sidata_students_cache', JSON.stringify(newData)); 
           return newData;
       });
 
-      // 2. Attempt Send to Cloud (Background)
       try {
-          // Even if this fails or partial fields are rejected by Sheet, 
-          // our local cache retains the correct data for the user session.
           await api.updateStudent(sanitizedStudent);
       } catch (error) {
           console.error("Cloud save failed (data saved locally):", error);
@@ -193,7 +161,6 @@ const App: React.FC = () => {
       }
   };
 
-  // Login Handler
   const handleLogin = (role: UserRole, studentData?: Student) => {
       setIsAuthenticated(true);
       setUserRole(role);
@@ -215,7 +182,6 @@ const App: React.FC = () => {
       setCurrentView('dashboard');
   };
 
-  // Helper for Student Document Upload (used in Documents view)
   const handleStudentUpload = async (file: File, category: string) => {
       if (!selectedStudent) return;
       try {
@@ -246,62 +212,33 @@ const App: React.FC = () => {
       }
   };
 
-  // Render Content Switch
   const renderContent = () => {
       switch (currentView) {
-          case 'dashboard':
-              return <Dashboard students={studentsData} userRole={userRole} />;
-          case 'database':
-              return <DatabaseView students={studentsData} onUpdateStudents={setStudentsData} />;
-          case 'buku-induk':
-              return <BukuIndukView students={studentsData} />;
-          case 'grades':
-              return <GradesView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} onUpdate={refreshData} />;
-          case 'recap':
-              return <RecapView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
-          case 'skl':
-              return <SKLView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
-          case 'data-ijazah':
-              return <IjazahView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
-          case 'verification':
-              return <VerificationView students={studentsData} onUpdate={refreshData} currentUser={currentUser || undefined} onSave={saveStudentToCloud} />;
-          case 'ijazah-verification':
-              return <IjazahVerificationView students={studentsData} onUpdate={refreshData} currentUser={currentUser || undefined} onSave={saveStudentToCloud} />;
-          case 'grade-verification':
-              return <GradeVerificationView students={studentsData} onUpdate={refreshData} currentUser={currentUser || undefined} userRole={userRole} onSave={saveStudentToCloud} />;
-          case 'student-docs':
-              return <StudentDocsAdminView students={studentsData} onUpdate={refreshData} />;
-          case 'history':
-              return <HistoryView students={studentsData} />;
-          case 'monitoring':
-              return <MonitoringView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
-          case 'reports':
-              return <ReportsView students={studentsData} onUpdate={refreshData} />;
-          case 'settings':
-              return <SettingsView />;
-          
-          // Student Views
+          case 'dashboard': return <Dashboard students={studentsData} userRole={userRole} />;
+          case 'database': return <DatabaseView students={studentsData} onUpdateStudents={setStudentsData} />;
+          case 'buku-induk': return <BukuIndukView students={studentsData} />;
+          case 'grades': return <GradesView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} onUpdate={refreshData} />;
+          case 'recap': return <RecapView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
+          case 'skl': return <SKLView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
+          case 'data-ijazah': return <IjazahView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
+          case 'verification': return <VerificationView students={studentsData} onUpdate={refreshData} currentUser={currentUser || undefined} onSave={saveStudentToCloud} />;
+          case 'ijazah-verification': return <IjazahVerificationView students={studentsData} onUpdate={refreshData} currentUser={currentUser || undefined} onSave={saveStudentToCloud} />;
+          case 'grade-verification': return <GradeVerificationView students={studentsData} onUpdate={refreshData} currentUser={currentUser || undefined} userRole={userRole} onSave={saveStudentToCloud} />;
+          case 'student-docs': return <StudentDocsAdminView students={studentsData} onUpdate={refreshData} />;
+          case 'history': return <HistoryView students={studentsData} />;
+          case 'monitoring': return <MonitoringView students={studentsData} userRole={userRole} loggedInStudent={selectedStudent || undefined} />;
+          case 'reports': return <ReportsView students={studentsData} onUpdate={refreshData} />;
+          case 'settings': return <SettingsView />;
           case 'dapodik':
               if (!selectedStudent) return null;
               return <StudentDetail student={selectedStudent} onBack={() => {}} viewMode="dapodik" readOnly={true} onUpdate={refreshData} />;
           case 'documents':
               if (!selectedStudent) return null;
-              return <FileManager 
-                        documents={selectedStudent.documents} 
-                        onUpload={handleStudentUpload}
-                        onDelete={async (id) => {
-                            if(!selectedStudent) return;
-                            const updated = {...selectedStudent, documents: selectedStudent.documents.filter(d => d.id !== id)};
-                            await saveStudentToCloud(updated);
-                            setSelectedStudent(updated);
-                        }}
-                     />;
+              return <FileManager documents={selectedStudent.documents} onUpload={handleStudentUpload} onDelete={async (id) => { if(!selectedStudent) return; const updated = {...selectedStudent, documents: selectedStudent.documents.filter(d => d.id !== id)}; await saveStudentToCloud(updated); setSelectedStudent(updated); }} />;
           case 'upload-rapor':
               if (!selectedStudent) return null;
               return <UploadRaporView student={selectedStudent} onUpdate={refreshData} />;
-              
-          default:
-              return <Dashboard students={studentsData} userRole={userRole} />;
+          default: return <Dashboard students={studentsData} userRole={userRole} />;
       }
   };
 
@@ -320,49 +257,23 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-gray-100 font-sans overflow-hidden">
-        {/* Sidebar */}
         <div className={`fixed inset-y-0 left-0 transform ${isSidebarCollapsed ? '-translate-x-full' : 'translate-x-0'} md:relative md:translate-x-0 transition duration-200 ease-in-out z-30 md:block md:w-64 flex-shrink-0 bg-gray-900 m-0 md:m-4 rounded-none md:rounded-2xl shadow-xl`}>
-             <Sidebar 
-                currentView={currentView} 
-                setView={setCurrentView} 
-                onLogout={handleLogout} 
-                isCollapsed={false} 
-                toggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-                userRole={userRole}
-             />
+             <Sidebar currentView={currentView} setView={setCurrentView} onLogout={handleLogout} isCollapsed={false} toggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)} userRole={userRole} />
         </div>
-
-        {/* Mobile Overlay */}
-        {isSidebarCollapsed && (
-            <div className="fixed inset-0 bg-black/50 z-20 md:hidden" onClick={() => setIsSidebarCollapsed(false)}></div>
-        )}
-
-        {/* Main Content */}
+        {isSidebarCollapsed && <div className="fixed inset-0 bg-black/50 z-20 md:hidden" onClick={() => setIsSidebarCollapsed(false)}></div>}
         <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-            {/* Header */}
             <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 h-16 flex items-center justify-between px-6 z-20">
                 <div className="flex items-center gap-4">
-                    <button className="md:hidden p-2 rounded-lg hover:bg-gray-100 text-gray-600" onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}>
-                        <Menu className="w-6 h-6" />
-                    </button>
-                    <h1 className="text-lg font-bold text-gray-800 capitalize hidden sm:block">
-                        {currentView.replace(/-/g, ' ')}
-                    </h1>
+                    <button className="md:hidden p-2 rounded-lg hover:bg-gray-100 text-gray-600" onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}><Menu className="w-6 h-6" /></button>
+                    <h1 className="text-lg font-bold text-gray-800 capitalize hidden sm:block">{currentView.replace(/-/g, ' ')}</h1>
                 </div>
-                
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-full text-xs font-bold border border-blue-100 cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => setIsProfileOpen(!isProfileOpen)}>
-                        <User className="w-3 h-3" />
-                        {currentUser?.name || 'User'} ({currentUser?.role})
-                        <ChevronDown className="w-3 h-3" />
+                        <User className="w-3 h-3" /> {currentUser?.name || 'User'} ({currentUser?.role}) <ChevronDown className="w-3 h-3" />
                     </div>
                 </div>
             </header>
-
-            {/* View Content */}
-            <main className="flex-1 overflow-hidden p-4 md:p-6 relative">
-                {renderContent()}
-            </main>
+            <main className="flex-1 overflow-hidden p-4 md:p-6 relative">{renderContent()}</main>
         </div>
     </div>
   );
