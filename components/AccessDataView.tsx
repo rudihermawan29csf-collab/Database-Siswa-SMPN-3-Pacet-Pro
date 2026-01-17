@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Student } from '../types';
 import { KeyRound, Search, Filter, Download, CreditCard, FileSpreadsheet, Loader2, GraduationCap, Eye } from 'lucide-react';
-// @ts-ignore
 import QRCode from 'qrcode';
 
 interface AccessDataViewProps {
