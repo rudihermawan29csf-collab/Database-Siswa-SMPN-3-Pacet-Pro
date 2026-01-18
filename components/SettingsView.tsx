@@ -45,7 +45,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
-  // 1. GENERAL & PROFILE
+  // 1. GENERAL & PROFILE (Updated from Spreadsheet Data)
   const [schoolData, setSchoolData] = useState({
       name: 'SMP Negeri 3 Pacet',
       address: 'Jl. Raya Pacet No. 12',
@@ -54,26 +54,26 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
   });
   const [adminName, setAdminName] = useState('Administrator');
 
-  // 2. ACADEMIC 
-  const [activeAcademicYear, setActiveAcademicYear] = useState('2024/2025'); 
-  const [activeSemester, setActiveSemester] = useState(1); 
-  const [availableYears, setAvailableYears] = useState<string[]>(['2024/2025', '2023/2024', '2022/2023']);
+  // 2. ACADEMIC (Updated from Spreadsheet Data: 2025/2026 Active)
+  const [activeAcademicYear, setActiveAcademicYear] = useState('2025/2026'); 
+  const [activeSemester, setActiveSemester] = useState(2); 
+  const [availableYears, setAvailableYears] = useState<string[]>(['2025/2026', '2024/2025', '2023/2024', '2022/2023']);
   const [newYearInput, setNewYearInput] = useState('');
   
   const [semesterYears, setSemesterYears] = useState<Record<string, Record<number, string>>>({
-      'VII': { 1: '2024/2025', 2: '2024/2025' },
-      'VIII': { 3: '2023/2024', 4: '2023/2024' },
-      'IX': { 5: '2022/2023', 6: '2022/2023' }
+      'VII': { 1: '2025/2026', 2: '2025/2026', 3: '2026/2027', 4: '2026/2027', 5: '2027/2028', 6: '2027/2028' },
+      'VIII': { 1: '2024/2025', 2: '2024/2025', 3: '2025/2026', 4: '2025/2026', 5: '2026/2027', 6: '2026/2027' },
+      'IX': { 1: '2023/2024', 2: '2023/2024', 3: '2024/2025', 4: '2024/2025', 5: '2025/2026', 6: '2025/2026' }
   });
   const [semesterDates, setSemesterDates] = useState<Record<string, Record<number, string>>>({}); 
 
   // 3. CLASSES
   const [classList, setClassList] = useState<string[]>(DEFAULT_CLASSES);
   const [newClassName, setNewClassName] = useState('');
-  const [waliContext, setWaliContext] = useState({ year: '2024/2025', semester: 1 });
+  const [waliContext, setWaliContext] = useState({ year: '2025/2026', semester: 2 });
   const [classConfig, setClassConfig] = useState<Record<string, { teacher: string, nip: string }>>({});
 
-  // 4. SKL CONFIG
+  // 4. SKL CONFIG (Updated from Spreadsheet Data)
   const [sklConfig, setSklConfig] = useState({
       nomorSurat: '421.3/ 1457 /416-101.64/2025',
       nomorSK: '421.3/1456/416-101.64/2025',
@@ -96,18 +96,18 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
       ijazahVerification: string[];
       gradeVerification: string[];
       raporPageCount: number;
-      showParentOnIjazah: boolean; // New Config
+      showParentOnIjazah: boolean;
   }>({
-      studentVisible: ['IJAZAH', 'AKTA', 'KK', 'KTP_AYAH', 'KTP_IBU', 'NISN', 'FOTO'],
-      indukVerification: ['AKTA', 'KK', 'FOTO', 'IJAZAH'],
-      ijazahVerification: ['IJAZAH', 'AKTA', 'KK', 'NISN', 'FOTO', 'SKL'],
-      gradeVerification: ['PIAGAM'],
+      studentVisible: ['IJAZAH', 'AKTA', 'KK', 'KTP_AYAH', 'KTP_IBU', 'NISN', 'FOTO', 'KARTU_PELAJAR', 'KIP'],
+      indukVerification: ['AKTA', 'KK', 'FOTO', 'IJAZAH', 'KTP_AYAH', 'KTP_IBU', 'NISN', 'KIP', 'KARTU_PELAJAR'],
+      ijazahVerification: ['IJAZAH', 'AKTA', 'KK', 'NISN', 'KTP_AYAH'],
+      gradeVerification: [],
       raporPageCount: 3,
       showParentOnIjazah: false
   });
   
   // State for Recap 5 Semester Subjects
-  const [recapSubjects, setRecapSubjects] = useState<string[]>(SUBJECT_MAP_CONFIG.map(s => s.key));
+  const [recapSubjects, setRecapSubjects] = useState<string[]>(["PAI","Pendidikan Pancasila","Bahasa Indonesia","Matematika","IPA","IPS","Bahasa Inggris"]);
   
   const [p5Themes, setP5Themes] = useState<{theme: string, description: string}[]>([
       { theme: "Gaya Hidup Berkelanjutan", description: "Peserta didik memahami dampak aktivitas manusia terhadap lingkungan." },
@@ -124,23 +124,35 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
   const applySettingsToState = (settings: any) => {
       if (!settings) return;
       
-      if (settings.schoolData) setSchoolData(settings.schoolData);
+      // Only apply if the object from cloud is not empty/malformed
+      if (settings.schoolData && settings.schoolData.name) setSchoolData(settings.schoolData);
       if (settings.adminName) setAdminName(settings.adminName);
+      
       if (settings.academicData) {
-          if (settings.academicData.semesterYears) setSemesterYears(settings.academicData.semesterYears);
+          if (settings.academicData.semesterYears && Object.keys(settings.academicData.semesterYears).length > 0) {
+              setSemesterYears(settings.academicData.semesterYears);
+          }
           if (settings.academicData.semesterDates) setSemesterDates(settings.academicData.semesterDates);
           if (settings.academicData.activeYear) setActiveAcademicYear(settings.academicData.activeYear);
-          if (settings.academicData.activeSemester) setActiveSemester(settings.academicData.activeSemester);
-          if (settings.academicData.availableYears) setAvailableYears(settings.academicData.availableYears);
+          if (settings.academicData.activeSemester) setActiveSemester(Number(settings.academicData.activeSemester));
+          if (settings.academicData.availableYears && settings.academicData.availableYears.length > 0) {
+              setAvailableYears(settings.academicData.availableYears);
+          }
       }
-      if (settings.classConfig) setClassConfig(settings.classConfig);
-      if (settings.classList && Array.isArray(settings.classList)) setClassList(settings.classList);
-      if (settings.sklConfig) setSklConfig(prev => ({ ...prev, ...settings.sklConfig }));
       
-      // Initialize Doc List & Config
-      if (settings.availableDocs && Array.isArray(settings.availableDocs)) {
+      if (settings.classConfig) setClassConfig(settings.classConfig);
+      if (settings.classList && Array.isArray(settings.classList) && settings.classList.length > 0) {
+          setClassList(settings.classList);
+      }
+      
+      if (settings.sklConfig && settings.sklConfig.nomorSurat) {
+          setSklConfig(prev => ({ ...prev, ...settings.sklConfig }));
+      }
+      
+      if (settings.availableDocs && Array.isArray(settings.availableDocs) && settings.availableDocs.length > 0) {
           setAvailableDocs(settings.availableDocs);
       }
+      
       if (settings.docConfig) {
           setDocConfig(prev => ({
               ...prev,
@@ -150,18 +162,18 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
           }));
       }
       
-      // Initialize Recap Subjects
       if (settings.recapSubjects && Array.isArray(settings.recapSubjects)) {
           setRecapSubjects(settings.recapSubjects);
       }
       
-      if (settings.p5Themes) {
+      if (settings.p5Themes && settings.p5Themes.length > 0) {
           if (typeof settings.p5Themes[0] === 'string') {
               setP5Themes(settings.p5Themes.map((t: string) => ({ theme: t, description: '' })));
           } else {
               setP5Themes(settings.p5Themes);
           }
       }
+      
       if (settings.academicData && settings.academicData.activeYear) {
           setWaliContext(prev => ({ ...prev, year: settings.academicData.activeYear }));
       }
@@ -180,8 +192,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
               }
 
               // 2. Then try to load from API (Cloud)
+              // Only overwrite if cloud returns valid data
               const settings = await api.getAppSettings();
-              if (settings) {
+              if (settings && settings.schoolData) {
                   applySettingsToState(settings);
                   // Update local storage to match cloud
                   localStorage.setItem('app_full_settings_v2', JSON.stringify(settings));
