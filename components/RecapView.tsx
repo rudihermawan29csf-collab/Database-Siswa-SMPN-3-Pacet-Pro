@@ -136,11 +136,12 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
   }
 
   // Calculate Semester Average (Row Average per Semester)
+  // UPDATED: Now only calculates average based on selected subjects
   const calculateSemesterAvg = (student: Student, semester: number): number => {
       let total = 0;
       let count = 0;
-      SUBJECT_MAP.forEach(sub => {
-          const score = Number(getScore(student, sub.key, semester));
+      selected5SemSubjects.forEach(key => {
+          const score = Number(getScore(student, key, semester));
           if (score > 0) {
               total += score;
               count++;
@@ -186,8 +187,11 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
                   };
 
                   [1, 2, 3, 4, 5].forEach(sem => {
-                      SUBJECT_MAP.forEach(sub => {
-                          row[`S${sem} - ${sub.label}`] = getScore(s, sub.key, sem) || 0;
+                      // Only export selected subjects in detail mode as well? 
+                      // Or export all? Usually detail exports all, but let's stick to config for consistency
+                      selected5SemSubjects.forEach(key => {
+                          const label = SUBJECT_MAP.find(sub => sub.key === key)?.label || key;
+                          row[`S${sem} - ${label}`] = getScore(s, key, sem) || 0;
                       });
                       row[`S${sem} - Rata-rata`] = calculateSemesterAvg(s, sem) || 0;
                   });
@@ -205,6 +209,9 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
 
   // --- STUDENT VIEW (SPECIAL LAYOUT) ---
   if (userRole === 'STUDENT' && loggedInStudent) {
+      // Filter the subjects to display based on Admin Configuration
+      const visibleSubjects = SUBJECT_MAP.filter(sub => selected5SemSubjects.includes(sub.key));
+
       return (
         <div className="flex flex-col h-full animate-fade-in space-y-6">
             {/* Header / Info Card */}
@@ -257,44 +264,51 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                            {SUBJECT_MAP.map((sub, idx) => {
-                                let totalSubjectScore = 0;
-                                let countSubjectScore = 0;
-                                const semScores = [1, 2, 3, 4, 5].map(sem => {
-                                    const score = Number(getScore(loggedInStudent, sub.key, sem));
-                                    if (score > 0) {
-                                        totalSubjectScore += score;
-                                        countSubjectScore++;
-                                    }
-                                    return score;
-                                });
-                                // FIX: Use Number() to ensure type is number for comparison
-                                const subjectAvg = countSubjectScore > 0 ? Number((totalSubjectScore / countSubjectScore).toFixed(1)) : 0;
+                            {visibleSubjects.length > 0 ? (
+                                visibleSubjects.map((sub, idx) => {
+                                    let totalSubjectScore = 0;
+                                    let countSubjectScore = 0;
+                                    const semScores = [1, 2, 3, 4, 5].map(sem => {
+                                        const score = Number(getScore(loggedInStudent, sub.key, sem));
+                                        if (score > 0) {
+                                            totalSubjectScore += score;
+                                            countSubjectScore++;
+                                        }
+                                        return score;
+                                    });
+                                    const subjectAvg = countSubjectScore > 0 ? Number((totalSubjectScore / countSubjectScore).toFixed(1)) : 0;
 
-                                return (
-                                    <tr key={sub.key} className="hover:bg-purple-50/30 transition-colors">
-                                        <td className="p-4 text-center text-gray-400 font-medium">{idx + 1}</td>
-                                        <td className="p-4">
-                                            <div className="font-bold text-gray-700">{sub.label}</div>
-                                            <div className="text-xs text-gray-400 hidden md:block">{sub.full}</div>
-                                        </td>
-                                        {semScores.map((score, i) => (
-                                            <td key={i} className="p-4 text-center border-l border-gray-50">
-                                                {score > 0 ? (
-                                                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${getScoreColor(score)}`}>
-                                                        {score}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-gray-300">-</span>
-                                                )}
+                                    return (
+                                        <tr key={sub.key} className="hover:bg-purple-50/30 transition-colors">
+                                            <td className="p-4 text-center text-gray-400 font-medium">{idx + 1}</td>
+                                            <td className="p-4">
+                                                <div className="font-bold text-gray-700">{sub.label}</div>
+                                                <div className="text-xs text-gray-400 hidden md:block">{sub.full}</div>
                                             </td>
-                                        ))}
-                                        <td className="p-4 text-center font-bold text-gray-800 bg-gray-50/50 border-l border-gray-100">
-                                            {subjectAvg > 0 ? subjectAvg : '-'}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
+                                            {semScores.map((score, i) => (
+                                                <td key={i} className="p-4 text-center border-l border-gray-50">
+                                                    {score > 0 ? (
+                                                        <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${getScoreColor(score)}`}>
+                                                            {score}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-gray-300">-</span>
+                                                    )}
+                                                </td>
+                                            ))}
+                                            <td className="p-4 text-center font-bold text-gray-800 bg-gray-50/50 border-l border-gray-100">
+                                                {subjectAvg > 0 ? subjectAvg : '-'}
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            ) : (
+                                <tr>
+                                    <td colSpan={8} className="p-8 text-center text-gray-400">
+                                        Belum ada mata pelajaran yang dikonfigurasi oleh admin.
+                                    </td>
+                                </tr>
+                            )}
                         </tbody>
                         <tfoot className="bg-gray-50/80 border-t border-gray-200 font-bold text-sm sticky bottom-0 z-10 shadow-md">
                             <tr>
@@ -387,7 +401,7 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
                                     <th className="px-4 py-3 text-left min-w-[200px] border border-purple-200 sticky left-[48px] bg-purple-50 z-20 shadow-md" rowSpan={2}>Nama Siswa</th>
                                     <th className="px-4 py-3 text-center border border-purple-200 w-20" rowSpan={2}>Kelas</th>
                                     {[1, 2, 3, 4, 5].map(sem => (
-                                        <th key={sem} className="px-2 py-2 text-center border border-purple-200 font-black bg-purple-100/50" colSpan={SUBJECT_MAP.length + 1}>
+                                        <th key={sem} className="px-2 py-2 text-center border border-purple-200 font-black bg-purple-100/50" colSpan={selected5SemSubjects.length + 1}>
                                             Semester {sem}
                                         </th>
                                     ))}
@@ -395,11 +409,14 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
                                 <tr>
                                     {[1, 2, 3, 4, 5].map(sem => (
                                         <React.Fragment key={sem}>
-                                            {SUBJECT_MAP.map(sub => (
-                                                <th key={`${sem}-${sub.key}`} className="px-1 py-1 text-[9px] border border-purple-200 min-w-[50px] text-center whitespace-normal">
-                                                    {sub.label}
-                                                </th>
-                                            ))}
+                                            {selected5SemSubjects.map(key => {
+                                                const label = SUBJECT_MAP.find(sub => sub.key === key)?.label || key;
+                                                return (
+                                                    <th key={`${sem}-${key}`} className="px-1 py-1 text-[9px] border border-purple-200 min-w-[50px] text-center whitespace-normal">
+                                                        {label}
+                                                    </th>
+                                                );
+                                            })}
                                             <th className="px-1 py-1 text-[9px] border border-purple-200 w-12 min-w-[50px] text-center bg-purple-100 font-bold">AVG</th>
                                         </React.Fragment>
                                     ))}
@@ -452,10 +469,10 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
                                             const semAvg = calculateSemesterAvg(student, sem);
                                             return (
                                                 <React.Fragment key={sem}>
-                                                    {SUBJECT_MAP.map(sub => {
-                                                        const score = Number(getScore(student, sub.key, sem));
+                                                    {selected5SemSubjects.map(key => {
+                                                        const score = Number(getScore(student, key, sem));
                                                         return (
-                                                            <td key={`${sem}-${sub.key}`} className="px-1 py-2 text-center border border-purple-100 min-w-[40px]">
+                                                            <td key={`${sem}-${key}`} className="px-1 py-2 text-center border border-purple-100 min-w-[40px]">
                                                                 <span className={`text-[10px] ${getScoreColor(score)} px-1 rounded`}>{score > 0 ? score : '-'}</span>
                                                             </td>
                                                         );
@@ -470,7 +487,7 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
                                 );
                             }
                         }) : (
-                            <tr><td colSpan={viewMode === 'SUMMARY' ? selected5SemSubjects.length + 4 : SUBJECT_MAP.length * 5 + 10} className="p-8 text-center text-gray-500">Tidak ada data siswa.</td></tr>
+                            <tr><td colSpan={viewMode === 'SUMMARY' ? selected5SemSubjects.length + 4 : selected5SemSubjects.length * 5 + 10} className="p-8 text-center text-gray-500">Tidak ada data siswa.</td></tr>
                         )}
                     </tbody>
                 </table>
