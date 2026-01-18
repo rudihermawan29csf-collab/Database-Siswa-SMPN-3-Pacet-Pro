@@ -268,7 +268,8 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
                                     }
                                     return score;
                                 });
-                                const subjectAvg = countSubjectScore > 0 ? (totalSubjectScore / countSubjectScore).toFixed(1) : 0;
+                                // FIX: Use Number() to ensure type is number for comparison
+                                const subjectAvg = countSubjectScore > 0 ? Number((totalSubjectScore / countSubjectScore).toFixed(1)) : 0;
 
                                 return (
                                     <tr key={sub.key} className="hover:bg-purple-50/30 transition-colors">

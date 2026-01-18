@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, CorrectionRequest } from '../types';
-import { Search, FileSpreadsheet, Award, LayoutList, TableProperties, Save, Pencil, X, CheckCircle2, FileText, ScrollText, Eye, ArrowLeft, Printer, Loader2, Send, Columns, Rows } from 'lucide-react';
+import { Search, FileSpreadsheet, Award, LayoutList, TableProperties, Save, Pencil, X, CheckCircle2, FileText, ScrollText, Eye, ArrowLeft, Printer, Loader2, Send, Columns, Rows, Calculator } from 'lucide-react';
 import { api } from '../services/api';
 
 interface IjazahViewProps {
@@ -55,7 +55,8 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
       if (userRole === 'STUDENT' && loggedInStudent) {
           setSelectedStudent(loggedInStudent);
           setViewMode('DETAIL');
-          setActiveTab('DATA');
+          // Default tab can be DATA or NILAI, letting user switch now
+          if (activeTab === 'DATA') setActiveTab('DATA'); 
       }
   }, [userRole, loggedInStudent]);
 
@@ -298,6 +299,7 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
 
   return (
     <div className="flex flex-col h-full animate-fade-in space-y-4">
+        
         {/* CORRECTION MODAL */}
         {isCorrectionModalOpen && targetCorrection && (
             <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
@@ -339,8 +341,10 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                     <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-2 rounded-lg font-bold text-sm border border-blue-100">
                         <Award className="w-4 h-4" /> Manajemen Ijazah
                     </div>
+                    
+                    {/* TABS Navigation (Visible for Students Now) */}
                     <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200">
-                        <button onClick={() => { setActiveTab('DATA'); setViewMode('LIST'); }} className={`px-4 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${activeTab === 'DATA' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
+                        <button onClick={() => { setActiveTab('DATA'); if(userRole!=='STUDENT') setViewMode('LIST'); }} className={`px-4 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${activeTab === 'DATA' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
                             <ScrollText className="w-3 h-3" /> Data Ijazah
                         </button>
                         <button onClick={() => setActiveTab('NILAI')} className={`px-4 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${activeTab === 'NILAI' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
@@ -350,17 +354,18 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                 </div>
                 
                 <div className="flex gap-2 w-full md:w-auto items-center">
-                    {activeTab === 'DATA' && viewMode === 'DETAIL' && userRole !== 'STUDENT' && (
-                        <div className="flex gap-2">
-                            <button onClick={() => setViewMode('LIST')} className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-xs font-bold hover:bg-gray-200 flex items-center gap-1"><ArrowLeft className="w-4 h-4" /> Kembali</button>
-                        </div>
-                    )}
-                    
+                    {/* Switch Certificate/Transcript within DATA tab */}
                     {activeTab === 'DATA' && viewMode === 'DETAIL' && (
                         <button onClick={() => setDetailType(t => t === 'CERTIFICATE' ? 'TRANSCRIPT' : 'CERTIFICATE')} className="bg-blue-50 text-blue-700 px-3 py-2 rounded-lg text-xs font-bold hover:bg-blue-100 flex items-center gap-1 border border-blue-200">
                             {detailType === 'CERTIFICATE' ? <FileText className="w-4 h-4" /> : <ScrollText className="w-4 h-4" />}
                             Ganti ke {detailType === 'CERTIFICATE' ? 'Transkrip' : 'Ijazah'}
                         </button>
+                    )}
+
+                    {activeTab === 'DATA' && viewMode === 'DETAIL' && userRole !== 'STUDENT' && (
+                        <div className="flex gap-2">
+                            <button onClick={() => setViewMode('LIST')} className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-xs font-bold hover:bg-gray-200 flex items-center gap-1"><ArrowLeft className="w-4 h-4" /> Kembali</button>
+                        </div>
                     )}
 
                     {userRole === 'ADMIN' && (
@@ -444,7 +449,7 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                     </table>
                 )}
 
-                {/* --- TAB NILAI IJAZAH LIST --- */}
+                {/* --- TAB NILAI IJAZAH LIST (TRANSPOSED TABLE for STUDENTS) --- */}
                 {activeTab === 'NILAI' && (
                     <table className="border-collapse min-w-max text-sm">
                         <thead className="bg-blue-50 border-b border-blue-200 sticky top-0 z-10 shadow-sm text-blue-800 uppercase text-xs">
