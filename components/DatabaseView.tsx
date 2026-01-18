@@ -1,5 +1,6 @@
+
 import React, { useState, useMemo, useRef } from 'react';
-import { Search, Plus, Pencil, Trash2, Save, X, Loader2, Download, UploadCloud, RotateCcw, User, MapPin, Users, Heart, Wallet, Filter, CheckSquare, Square, FileSpreadsheet } from 'lucide-react';
+import { Search, Plus, Pencil, Trash2, Save, X, Loader2, Download, UploadCloud, RotateCcw, User, MapPin, Users, Heart, Wallet, Filter, CheckSquare, Square, FileSpreadsheet, Check, AlertCircle } from 'lucide-react';
 import { Student } from '../types';
 import { api } from '../services/api';
 
@@ -17,6 +18,9 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('PROFILE');
+  
+  // Notification State
+  const [notification, setNotification] = useState<{message: string, type: 'success' | 'warning' | 'error'} | null>(null);
   
   // Selection State
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -398,17 +402,36 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                       const mergedStudents = [...students, ...nonDuplicateStudents];
                       onUpdateStudents(mergedStudents);
                       await api.syncInitialData(mergedStudents);
-                      alert(`Berhasil menambahkan ${nonDuplicateStudents.length} data siswa baru.`);
+                      
+                      // Notification Success
+                      setNotification({
+                          message: `Berhasil mengimport ${nonDuplicateStudents.length} data siswa baru.`,
+                          type: 'success'
+                      });
+                      setTimeout(() => setNotification(null), 5000); // Hide after 5s
                   } else {
-                      alert("Data terbaca, namun semua siswa sudah ada di database (NISN duplikat).");
+                      // Notification Duplicate
+                      setNotification({
+                          message: "Data terbaca, tetapi semua siswa sudah ada di database (NISN duplikat).",
+                          type: 'warning'
+                      });
+                      setTimeout(() => setNotification(null), 5000);
                   }
               } else {
-                  alert("Tidak ada data valid yang ditemukan dalam file.");
+                  setNotification({
+                      message: "Tidak ada data valid yang ditemukan dalam file.",
+                      type: 'error'
+                  });
+                  setTimeout(() => setNotification(null), 5000);
               }
 
           } catch (err) {
               console.error(err);
-              alert("Gagal membaca file Excel. Pastikan format benar.");
+              setNotification({
+                  message: "Gagal membaca file Excel. Pastikan format benar.",
+                  type: 'error'
+              });
+              setTimeout(() => setNotification(null), 5000);
           } finally {
               if (fileInputRef.current) fileInputRef.current.value = '';
           }
@@ -465,6 +488,21 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
             </div>
         </div>
       </div>
+
+      {/* NOTIFICATION BANNER */}
+      {notification && (
+          <div className={`px-4 py-3 rounded-xl border flex items-center justify-between animate-bounce-in shadow-sm ${
+              notification.type === 'success' ? 'bg-green-100 border-green-200 text-green-800' :
+              notification.type === 'warning' ? 'bg-yellow-50 border-yellow-200 text-yellow-800' :
+              'bg-red-100 border-red-200 text-red-800'
+          }`}>
+              <div className="flex items-center gap-2">
+                  {notification.type === 'success' ? <Check className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+                  <span className="font-bold text-sm">{notification.message}</span>
+              </div>
+              <button onClick={() => setNotification(null)} className="p-1 hover:bg-black/5 rounded-full"><X className="w-4 h-4" /></button>
+          </div>
+      )}
 
       {/* Bulk Actions */}
       {selectedIds.size > 0 && (

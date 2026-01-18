@@ -77,6 +77,9 @@ function App() {
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Target ID for notifications navigation
+  const [targetNotificationStudentId, setTargetNotificationStudentId] = useState<string | undefined>(undefined);
+
   // Profile & School Data State
   const [adminProfile, setAdminProfile] = useState({ name: 'Administrator' });
   const [schoolName, setSchoolName] = useState('SMPN 3 Pacet'); // Default fallback
@@ -170,8 +173,104 @@ function App() {
     }
   }, [isLoggedIn]);
 
-  // Placeholder notifications
-  const notifications = useMemo(() => { return []; }, []);
+  // --- GENERATE NOTIFICATIONS DYNAMICALLY ---
+  const notifications = useMemo(() => {
+      const list: DashboardNotification[] = [];
+
+      students.forEach(s => {
+          // 1. CHECK DOCUMENTS (UPLOADED & PENDING)
+          s.documents.forEach(doc => {
+              if (doc.status === 'PENDING') {
+                  if (doc.category === 'RAPOR') {
+                      // Upload Rapor -> Verifikasi Nilai
+                      list.push({
+                          id: `doc-${doc.id}`,
+                          type: 'ADMIN_GRADE_VERIFY',
+                          title: 'Upload Rapor Baru',
+                          description: `${s.fullName} mengupload Rapor Semester ${doc.subType?.semester || '-'}`,
+                          date: doc.uploadDate,
+                          priority: 'MEDIUM',
+                          data: s.id
+                      });
+                  } else if (doc.category === 'IJAZAH' || doc.category === 'SKL') {
+                      // Upload Ijazah -> Verifikasi Ijazah
+                      list.push({
+                          id: `doc-${doc.id}`,
+                          type: 'ADMIN_IJAZAH_VERIFY',
+                          title: 'Upload Dokumen Ijazah',
+                          description: `${s.fullName} mengupload file ${doc.category}`,
+                          date: doc.uploadDate,
+                          priority: 'HIGH',
+                          data: s.id
+                      });
+                  } else {
+                      // Upload Dokumen Lain (KK, Akta, dll) -> Verifikasi Buku Induk
+                      list.push({
+                          id: `doc-${doc.id}`,
+                          type: 'ADMIN_DOC_VERIFY',
+                          title: 'Dokumen Buku Induk',
+                          description: `${s.fullName} mengupload ${doc.name} (${doc.category})`,
+                          date: doc.uploadDate,
+                          priority: 'MEDIUM',
+                          data: s.id
+                      });
+                  }
+              }
+          });
+
+          // 2. CHECK CORRECTION REQUESTS (EDIT DATA & PENDING)
+          if (s.correctionRequests) {
+              s.correctionRequests.forEach(req => {
+                  if (req.status === 'PENDING') {
+                      let type: DashboardNotification['type'] = 'ADMIN_BIO_VERIFY';
+                      let title = 'Pengajuan Perubahan Data';
+
+                      // Routing Logic based on Field Key
+                      if (req.fieldKey.startsWith('grade-') || req.fieldKey.startsWith('class-')) {
+                          // Edit Nilai/Kelas -> Verifikasi Nilai
+                          type = 'ADMIN_GRADE_VERIFY';
+                          title = 'Koreksi Nilai/Kelas';
+                      } else if (req.fieldKey.startsWith('ijazah-') || req.fieldKey === 'diplomaNumber') {
+                          // Edit Ijazah -> Verifikasi Ijazah
+                          type = 'ADMIN_IJAZAH_VERIFY';
+                          title = 'Koreksi Data Ijazah';
+                      } else {
+                          // Edit Biodata -> Verifikasi Buku Induk
+                          type = 'ADMIN_BIO_VERIFY';
+                          title = 'Koreksi Data Buku Induk';
+                      }
+
+                      list.push({
+                          id: `req-${req.id}`,
+                          type: type,
+                          title: title,
+                          description: `${s.fullName} mengajukan perubahan pada ${req.fieldName}`,
+                          date: new Date(req.requestDate).toISOString().split('T')[0],
+                          priority: 'HIGH',
+                          data: s.id
+                      });
+                  }
+              });
+          }
+      });
+
+      // Sort by date descending
+      return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [students]);
+
+  // --- NOTIFICATION HANDLER ---
+  const handleNotificationClick = (notif: DashboardNotification) => {
+      setTargetNotificationStudentId(notif.data); // Set the target ID for view to consume
+
+      // Route to correct view based on type
+      if (notif.type === 'ADMIN_DOC_VERIFY' || notif.type === 'ADMIN_BIO_VERIFY') {
+          setCurrentView('verification'); // Go to Buku Induk Verification
+      } else if (notif.type === 'ADMIN_GRADE_VERIFY') {
+          setCurrentView('grade-verification'); // Go to Grade Verification
+      } else if (notif.type === 'ADMIN_IJAZAH_VERIFY') {
+          setCurrentView('ijazah-verification'); // Go to Ijazah Verification
+      }
+  };
 
   // --- HANDLERS ---
   const handleLogin = (role: 'ADMIN' | 'GURU' | 'STUDENT', studentData?: Student) => {
@@ -276,7 +375,7 @@ function App() {
 
     switch (currentView) {
       case 'dashboard':
-        return <Dashboard notifications={notifications} userRole={userRole || 'ADMIN'} students={students} schoolName={schoolName} />;
+        return <Dashboard notifications={notifications} onNotificationClick={handleNotificationClick} userRole={userRole || 'ADMIN'} students={students} schoolName={schoolName} />;
       
       // ADMIN VIEWS
       case 'database':
@@ -286,11 +385,11 @@ function App() {
       case 'student-docs':
         return <StudentDocsAdminView students={students} onUpdate={refreshData} />;
       case 'verification':
-        return <VerificationView students={students} onUpdate={refreshData} currentUser={{name: profile.name, role: 'ADMIN'}} />;
+        return <VerificationView students={students} targetStudentId={targetNotificationStudentId} onUpdate={refreshData} currentUser={{name: profile.name, role: 'ADMIN'}} />;
       case 'ijazah-verification':
-        return <IjazahVerificationView students={students} onUpdate={refreshData} currentUser={{name: profile.name, role: 'ADMIN'}} />;
+        return <IjazahVerificationView students={students} targetStudentId={targetNotificationStudentId} onUpdate={refreshData} currentUser={{name: profile.name, role: 'ADMIN'}} />;
       case 'grade-verification':
-        return <GradeVerificationView students={students} onUpdate={refreshData} currentUser={{name: profile.name, role: 'ADMIN'}} />;
+        return <GradeVerificationView students={students} targetStudentId={targetNotificationStudentId} onUpdate={refreshData} currentUser={{name: profile.name, role: 'ADMIN'}} />;
       case 'settings':
         return <SettingsView onProfileUpdate={refreshProfile} />;
       
@@ -342,7 +441,7 @@ function App() {
         ) : null;
 
       default:
-        return <Dashboard notifications={notifications} userRole={userRole || 'ADMIN'} students={students} schoolName={schoolName} />;
+        return <Dashboard notifications={notifications} onNotificationClick={handleNotificationClick} userRole={userRole || 'ADMIN'} students={students} schoolName={schoolName} />;
     }
   };
 

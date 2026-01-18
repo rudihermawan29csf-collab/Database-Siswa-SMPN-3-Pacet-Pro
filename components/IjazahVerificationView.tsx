@@ -11,6 +11,7 @@ interface IjazahVerificationViewProps {
   onUpdate?: () => void;
   currentUser?: { name: string; role: string };
   onSave?: (student: Student) => void; 
+  targetStudentId?: string; // NEW PROP
 }
 
 // ... (Helper functions getDriveUrl, PDFPageCanvas remain the same) ...
@@ -74,7 +75,7 @@ const PDFPageCanvas: React.FC<{ pdf: any; pageNum: number; scale: number }> = ({
     return <canvas ref={canvasRef} className="shadow-lg bg-white mb-4" />;
 };
 
-const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ students, onUpdate, currentUser, onSave }) => {
+const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ students, onUpdate, currentUser, onSave, targetStudentId }) => {
   // Configurable Docs State
   const [availableDocTypes, setAvailableDocTypes] = useState<any[]>([]);
   const [activeDocType, setActiveDocType] = useState<string>('IJAZAH');
@@ -155,13 +156,22 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
       if (searchTerm) filtered = filtered.filter(s => s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || s.nisn.includes(searchTerm));
       return filtered.sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [students, searchTerm, selectedClassFilter]);
+  
+  // Init Selection logic (handle targetStudentId)
   useEffect(() => {
-      if (filteredStudents.length > 0) {
+      if (targetStudentId) {
+          const target = students.find(s => s.id === targetStudentId);
+          if (target) {
+              setSelectedClassFilter(target.className);
+              setSelectedStudentId(target.id);
+          }
+      } else if (filteredStudents.length > 0) {
           if (!selectedStudentId || !filteredStudents.find(s => s.id === selectedStudentId)) {
               setSelectedStudentId(filteredStudents[0].id);
           }
       } else { setSelectedStudentId(''); }
-  }, [filteredStudents, selectedStudentId]);
+  }, [filteredStudents, targetStudentId]); // Removed selectedStudentId from deps to fix infinite loop if it relies on filtered
+
   const currentStudent = students.find(s => s.id === selectedStudentId);
   const currentDoc = useMemo(() => currentStudent?.documents.find(d => d.category === activeDocType), [currentStudent, activeDocType, forceUpdate]);
   const isImageFile = (doc: any) => { if (!doc) return false; return doc.type === 'IMAGE' || /\.(jpg|jpeg|png|gif|webp|bmp|heic)$/i.test(doc.name); };
