@@ -250,7 +250,9 @@ const Login: React.FC<LoginProps> = ({ onLogin, students, schoolName = 'SMPN 3 P
                         <div className="relative">
                             <School className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                             <select value={selectedClass} onChange={(e) => { setSelectedClass(e.target.value); setSelectedStudentId(''); }} className="w-full pl-10 pr-4 py-3 appearance-none rounded-xl bg-white/50 border border-gray-200 focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all text-sm font-medium cursor-pointer">
-                                <option value="" disabled>-- Pilih Kelas --</option>
+                                <option value="" disabled>
+                                    {students.length === 0 ? 'Memuat Data Kelas...' : '-- Pilih Kelas --'}
+                                </option>
                                 {uniqueClasses.map(c => (
                                     <option key={c} value={c}>Kelas {c}</option>
                                 ))}

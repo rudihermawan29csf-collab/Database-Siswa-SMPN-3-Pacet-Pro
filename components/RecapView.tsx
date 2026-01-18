@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student } from '../types';
-import { Search, FileSpreadsheet, FileText, Calculator } from 'lucide-react';
+import { Search, FileSpreadsheet, FileText, Calculator, LayoutList, TableProperties } from 'lucide-react';
 import { api } from '../services/api';
 
 interface RecapViewProps {
@@ -14,6 +14,7 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
   const [searchTerm, setSearchTerm] = useState('');
   const [dbClassFilter, setDbClassFilter] = useState<string>('ALL');
   const [selected5SemSubjects, setSelected5SemSubjects] = useState<string[]>([]);
+  const [viewMode, setViewMode] = useState<'SUMMARY' | 'DETAIL'>('SUMMARY');
 
   const SUBJECT_MAP = [
       { key: 'PAI', label: 'PAI', full: 'Pendidikan Agama dan Budi Pekerti' },
@@ -114,7 +115,7 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
       let total = 0;
       for (let i = 1; i <= 5; i++) {
           const score = getScore(student, subjectKey, i);
-          total += score || 0;
+          total += Number(score) || 0;
       }
       return Number((total / 5).toFixed(1));
   };
@@ -134,44 +135,215 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
       return count > 0 ? Number((totalOfAverages / count).toFixed(1)) : 0;
   }
 
+  // Calculate Semester Average (Row Average per Semester)
+  const calculateSemesterAvg = (student: Student, semester: number): number => {
+      let total = 0;
+      let count = 0;
+      SUBJECT_MAP.forEach(sub => {
+          const score = Number(getScore(student, sub.key, semester));
+          if (score > 0) {
+              total += score;
+              count++;
+          }
+      });
+      return count > 0 ? Number((total / count).toFixed(2)) : 0;
+  };
+
   const handleDownloadExcel = () => {
       try {
           // @ts-ignore
           const xlsx = window.XLSX;
           if (!xlsx || !xlsx.utils) { alert("Library Excel belum siap."); return; }
 
-          const dataToExport = filteredStudents.map((s, index) => {
-              const row: any = {
-                  'No': index + 1,
-                  'NISN': s.nisn,
-                  'Nama Siswa': s.fullName,
-                  'Kelas': s.className,
-              };
-              
-              selected5SemSubjects.forEach(key => {
-                  const label = SUBJECT_MAP.find(sub => sub.key === key)?.label || key;
-                  row[label] = calculate5SemAvg(s, key) || 0;
-              });
+          let dataToExport = [];
+          const sheetName = viewMode === 'SUMMARY' ? "Rekap Rata-rata" : "Detail Per Semester";
 
-              row['Total Rata-rata'] = calculateTotal5SemAvg(s) || 0;
-              return row;
-          });
+          if (viewMode === 'SUMMARY') {
+              dataToExport = filteredStudents.map((s, index) => {
+                  const row: any = {
+                      'No': index + 1,
+                      'NISN': s.nisn,
+                      'Nama Siswa': s.fullName,
+                      'Kelas': s.className,
+                  };
+                  
+                  selected5SemSubjects.forEach(key => {
+                      const label = SUBJECT_MAP.find(sub => sub.key === key)?.label || key;
+                      row[label] = calculate5SemAvg(s, key) || 0;
+                  });
+
+                  row['Total Rata-rata'] = calculateTotal5SemAvg(s) || 0;
+                  return row;
+              });
+          } else {
+              // DETAIL MODE
+              dataToExport = filteredStudents.map((s, index) => {
+                  const row: any = {
+                      'No': index + 1,
+                      'NISN': s.nisn,
+                      'Nama Siswa': s.fullName,
+                      'Kelas': s.className,
+                  };
+
+                  [1, 2, 3, 4, 5].forEach(sem => {
+                      SUBJECT_MAP.forEach(sub => {
+                          row[`S${sem} - ${sub.label}`] = getScore(s, sub.key, sem) || 0;
+                      });
+                      row[`S${sem} - Rata-rata`] = calculateSemesterAvg(s, sem) || 0;
+                  });
+                  
+                  return row;
+              });
+          }
 
           const ws = xlsx.utils.json_to_sheet(dataToExport);
           const wb = xlsx.utils.book_new();
-          xlsx.utils.book_append_sheet(wb, ws, "Rekap 5 Sem");
-          xlsx.writeFile(wb, `Rekap_5_Semester_${dbClassFilter === 'ALL' ? 'Semua' : dbClassFilter.replace(/\s/g, '')}.xlsx`);
+          xlsx.utils.book_append_sheet(wb, ws, sheetName);
+          xlsx.writeFile(wb, `Rekap_5_Semester_${viewMode}_${dbClassFilter === 'ALL' ? 'Semua' : dbClassFilter.replace(/\s/g, '')}.xlsx`);
       } catch (e) { console.error(e); alert("Gagal download excel."); }
   };
 
+  // --- STUDENT VIEW (SPECIAL LAYOUT) ---
+  if (userRole === 'STUDENT' && loggedInStudent) {
+      return (
+        <div className="flex flex-col h-full animate-fade-in space-y-6">
+            {/* Header / Info Card */}
+            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-6">
+                <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-full bg-purple-100 flex items-center justify-center text-purple-600">
+                        <Calculator className="w-8 h-8" />
+                    </div>
+                    <div>
+                        <h2 className="text-2xl font-bold text-gray-800">Rekapitulasi Nilai</h2>
+                        <p className="text-gray-500">Rapor 5 Semester (Semester 1 - 5)</p>
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full md:w-auto bg-gray-50 p-4 rounded-xl border border-gray-100">
+                    <div>
+                        <p className="text-[10px] uppercase font-bold text-gray-400">Nama Lengkap</p>
+                        <p className="text-sm font-bold text-gray-800">{loggedInStudent.fullName}</p>
+                    </div>
+                    <div>
+                        <p className="text-[10px] uppercase font-bold text-gray-400">NISN</p>
+                        <p className="text-sm font-mono font-bold text-gray-800">{loggedInStudent.nisn}</p>
+                    </div>
+                    <div>
+                        <p className="text-[10px] uppercase font-bold text-gray-400">Kelas</p>
+                        <p className="text-sm font-bold text-gray-800">{loggedInStudent.className}</p>
+                    </div>
+                    <div>
+                        <p className="text-[10px] uppercase font-bold text-gray-400">Total Rata-rata</p>
+                        <p className="text-sm font-black text-purple-600 text-lg leading-none">{calculateTotal5SemAvg(loggedInStudent)}</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Transposed Table Card */}
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm flex-1 overflow-hidden flex flex-col">
+                <div className="overflow-auto flex-1">
+                    <table className="w-full text-sm text-left border-collapse">
+                        <thead>
+                            <tr className="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase tracking-wider">
+                                <th className="p-4 w-16 text-center font-bold">No</th>
+                                <th className="p-4 font-bold min-w-[200px]">Mata Pelajaran</th>
+                                {[1, 2, 3, 4, 5].map(sem => (
+                                    <th key={sem} className="p-4 text-center font-bold bg-purple-50/50 text-purple-900 border-l border-gray-100 min-w-[60px]">
+                                        Sm {sem}
+                                    </th>
+                                ))}
+                                <th className="p-4 text-center font-bold bg-gray-100 text-gray-800 border-l border-gray-200 min-w-[80px]">
+                                    Rata-rata
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {SUBJECT_MAP.map((sub, idx) => {
+                                let totalSubjectScore = 0;
+                                let countSubjectScore = 0;
+                                const semScores = [1, 2, 3, 4, 5].map(sem => {
+                                    const score = Number(getScore(loggedInStudent, sub.key, sem));
+                                    if (score > 0) {
+                                        totalSubjectScore += score;
+                                        countSubjectScore++;
+                                    }
+                                    return score;
+                                });
+                                const subjectAvg = countSubjectScore > 0 ? (totalSubjectScore / countSubjectScore).toFixed(1) : 0;
+
+                                return (
+                                    <tr key={sub.key} className="hover:bg-purple-50/30 transition-colors">
+                                        <td className="p-4 text-center text-gray-400 font-medium">{idx + 1}</td>
+                                        <td className="p-4">
+                                            <div className="font-bold text-gray-700">{sub.label}</div>
+                                            <div className="text-xs text-gray-400 hidden md:block">{sub.full}</div>
+                                        </td>
+                                        {semScores.map((score, i) => (
+                                            <td key={i} className="p-4 text-center border-l border-gray-50">
+                                                {score > 0 ? (
+                                                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${getScoreColor(score)}`}>
+                                                        {score}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-gray-300">-</span>
+                                                )}
+                                            </td>
+                                        ))}
+                                        <td className="p-4 text-center font-bold text-gray-800 bg-gray-50/50 border-l border-gray-100">
+                                            {subjectAvg > 0 ? subjectAvg : '-'}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                        <tfoot className="bg-gray-50/80 border-t border-gray-200 font-bold text-sm sticky bottom-0 z-10 shadow-md">
+                            <tr>
+                                <td colSpan={2} className="p-4 text-right uppercase text-xs text-gray-500">Rata-rata Semester</td>
+                                {[1, 2, 3, 4, 5].map(sem => {
+                                    const avg = calculateSemesterAvg(loggedInStudent, sem);
+                                    return (
+                                        <td key={sem} className="p-4 text-center text-purple-700 border-l border-gray-200">
+                                            {avg > 0 ? avg : '-'}
+                                        </td>
+                                    );
+                                })}
+                                <td className="p-4 text-center bg-gray-100 border-l border-gray-200">
+                                    {calculateTotal5SemAvg(loggedInStudent)}
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+      );
+  }
+
+  // --- ADMIN / GURU VIEW ---
   return (
     <div className="flex flex-col h-full animate-fade-in space-y-4">
         {/* Toolbar */}
-        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
-            <div className="flex items-center gap-3 w-full md:w-auto">
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col xl:flex-row justify-between items-center gap-4">
+            <div className="flex items-center gap-3 w-full xl:w-auto">
                 <div className="flex items-center gap-2 bg-purple-50 text-purple-700 px-3 py-2 rounded-lg font-bold text-sm border border-purple-100">
                     <Calculator className="w-4 h-4" /> Rekap 5 Semester
                 </div>
+                
+                {/* View Mode Toggle */}
+                <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200">
+                    <button 
+                        onClick={() => setViewMode('SUMMARY')} 
+                        className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${viewMode === 'SUMMARY' ? 'bg-white shadow text-purple-700' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        <LayoutList className="w-3 h-3" /> Rata-rata
+                    </button>
+                    <button 
+                        onClick={() => setViewMode('DETAIL')} 
+                        className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${viewMode === 'DETAIL' ? 'bg-white shadow text-purple-700' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        <TableProperties className="w-3 h-3" /> Detail Semester
+                    </button>
+                </div>
+
                 {userRole === 'ADMIN' && (
                     <select className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium" value={dbClassFilter} onChange={(e) => setDbClassFilter(e.target.value)}>
                         {uniqueClasses.map(c => <option key={c} value={c}>{c === 'ALL' ? 'Semua Kelas' : `Kelas ${c}`}</option>)}
@@ -179,62 +351,125 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
                 )}
             </div>
             
-            <div className="flex gap-2 w-full md:w-auto">
+            <div className="flex gap-2 w-full xl:w-auto">
                 <div className="relative flex-1 md:w-64">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <input type="text" placeholder="Cari Siswa..." className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-lg text-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                 </div>
-                <button onClick={handleDownloadExcel} className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-green-700 flex items-center gap-2"><FileSpreadsheet className="w-4 h-4" /> Excel</button>
+                <button onClick={handleDownloadExcel} className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-green-700 flex items-center gap-2 whitespace-nowrap"><FileSpreadsheet className="w-4 h-4" /> Excel</button>
             </div>
         </div>
 
         {/* Table */}
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex-1 overflow-hidden flex flex-col">
             <div className="overflow-auto flex-1 w-full pb-32" id="recap-5-sem-table">
-                <table className="border-collapse w-full text-sm">
+                <table className="border-collapse min-w-full text-sm">
                     <thead className="bg-purple-50 border-b border-purple-200 sticky top-0 z-10 shadow-sm text-purple-800 uppercase text-xs">
-                        <tr>
-                            <th className="px-4 py-3 text-center w-12 border border-purple-200">No</th>
-                            <th className="px-4 py-3 text-left min-w-[200px] border border-purple-200">Nama Siswa</th>
-                            <th className="px-4 py-3 text-center border border-purple-200">Kelas</th>
-                            {selected5SemSubjects.map(key => (
-                                <th key={key} className="px-2 py-3 text-center min-w-[80px] bg-purple-100/50 border border-purple-200">
-                                    {SUBJECT_MAP.find(s => s.key === key)?.label} <br/><span className="text-[9px] opacity-70">(Rata2)</span>
-                                </th>
-                            ))}
-                            <th className="px-4 py-3 text-center bg-purple-200/50 border border-purple-200">Total Rata-rata</th>
-                        </tr>
+                        {viewMode === 'SUMMARY' ? (
+                            // --- SUMMARY HEADER ---
+                            <tr>
+                                <th className="px-4 py-3 text-center w-12 border border-purple-200 sticky left-0 bg-purple-50 z-20">No</th>
+                                <th className="px-4 py-3 text-left min-w-[200px] border border-purple-200 sticky left-[48px] bg-purple-50 z-20 shadow-md">Nama Siswa</th>
+                                <th className="px-4 py-3 text-center border border-purple-200">Kelas</th>
+                                {selected5SemSubjects.map(key => (
+                                    <th key={key} className="px-2 py-3 text-center min-w-[80px] bg-purple-100/50 border border-purple-200">
+                                        {SUBJECT_MAP.find(s => s.key === key)?.label} <br/><span className="text-[9px] opacity-70">(Rata2)</span>
+                                    </th>
+                                ))}
+                                <th className="px-4 py-3 text-center bg-purple-200/50 border border-purple-200">Total Rata-rata</th>
+                            </tr>
+                        ) : (
+                            // --- DETAIL HEADER ---
+                            <>
+                                <tr>
+                                    <th className="px-4 py-3 text-center w-12 border border-purple-200 sticky left-0 bg-purple-50 z-20" rowSpan={2}>No</th>
+                                    <th className="px-4 py-3 text-left min-w-[200px] border border-purple-200 sticky left-[48px] bg-purple-50 z-20 shadow-md" rowSpan={2}>Nama Siswa</th>
+                                    <th className="px-4 py-3 text-center border border-purple-200 w-20" rowSpan={2}>Kelas</th>
+                                    {[1, 2, 3, 4, 5].map(sem => (
+                                        <th key={sem} className="px-2 py-2 text-center border border-purple-200 font-black bg-purple-100/50" colSpan={SUBJECT_MAP.length + 1}>
+                                            Semester {sem}
+                                        </th>
+                                    ))}
+                                </tr>
+                                <tr>
+                                    {[1, 2, 3, 4, 5].map(sem => (
+                                        <React.Fragment key={sem}>
+                                            {SUBJECT_MAP.map(sub => (
+                                                <th key={`${sem}-${sub.key}`} className="px-1 py-1 text-[9px] border border-purple-200 min-w-[50px] text-center whitespace-normal">
+                                                    {sub.label}
+                                                </th>
+                                            ))}
+                                            <th className="px-1 py-1 text-[9px] border border-purple-200 w-12 min-w-[50px] text-center bg-purple-100 font-bold">AVG</th>
+                                        </React.Fragment>
+                                    ))}
+                                </tr>
+                            </>
+                        )}
                     </thead>
                     <tbody className="divide-y divide-purple-50">
                         {filteredStudents.length > 0 ? filteredStudents.map((student, idx) => {
-                            const totalAvg = calculateTotal5SemAvg(student);
-                            return (
-                                <tr key={student.id} className="hover:bg-purple-50/30 transition-colors">
-                                    <td className="px-4 py-2 text-center text-gray-500 border border-purple-100">{idx + 1}</td>
-                                    <td className="px-4 py-2 font-medium text-gray-900 border border-purple-100">
-                                        <div>{student.fullName}</div>
-                                        <div className="text-xs text-gray-400 font-mono">{student.nisn}</div>
-                                    </td>
-                                    <td className="px-4 py-2 text-center text-gray-500 border border-purple-100">{student.className}</td>
-                                    {selected5SemSubjects.map(key => {
-                                        const avg = calculate5SemAvg(student, key);
-                                        return (
-                                            <td key={key} className="px-2 py-2 text-center border border-purple-100">
-                                                <span className={`px-2 py-1 rounded text-xs ${getScoreColor(avg)}`}>
-                                                    {avg > 0 ? avg : '-'}
-                                                </span>
-                                            </td>
-                                        );
-                                    })}
-                                    <td className="px-4 py-2 text-center font-bold text-purple-700 bg-purple-50/30 border border-purple-100">
-                                        <span className={`px-2 py-1 rounded ${getScoreColor(totalAvg)}`}>
-                                            {totalAvg > 0 ? totalAvg : '-'}
-                                        </span>
-                                    </td>
-                                </tr>
-                            );
+                            if (viewMode === 'SUMMARY') {
+                                // --- SUMMARY ROW ---
+                                const totalAvg = calculateTotal5SemAvg(student);
+                                return (
+                                    <tr key={student.id} className="hover:bg-purple-50/30 transition-colors">
+                                        <td className="px-4 py-2 text-center text-gray-500 border border-purple-100 sticky left-0 bg-white z-10">{idx + 1}</td>
+                                        <td className="px-4 py-2 font-medium text-gray-900 border border-purple-100 sticky left-[48px] bg-white z-10 shadow-sm">
+                                            <div>{student.fullName}</div>
+                                            <div className="text-xs text-gray-400 font-mono">{student.nisn}</div>
+                                        </td>
+                                        <td className="px-4 py-2 text-center text-gray-500 border border-purple-100">{student.className}</td>
+                                        {selected5SemSubjects.map(key => {
+                                            const avg = calculate5SemAvg(student, key);
+                                            return (
+                                                <td key={key} className="px-2 py-2 text-center border border-purple-100">
+                                                    <span className={`px-2 py-1 rounded text-xs ${getScoreColor(avg)}`}>
+                                                        {avg > 0 ? avg : '-'}
+                                                    </span>
+                                                </td>
+                                            );
+                                        })}
+                                        <td className="px-4 py-2 text-center font-bold text-purple-700 bg-purple-50/30 border border-purple-100">
+                                            <span className={`px-2 py-1 rounded ${getScoreColor(totalAvg)}`}>
+                                                {totalAvg > 0 ? totalAvg : '-'}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                );
+                            } else {
+                                // --- DETAIL ROW ---
+                                return (
+                                    <tr key={student.id} className="hover:bg-purple-50/30 transition-colors">
+                                        <td className="px-4 py-2 text-center text-gray-500 border border-purple-100 sticky left-0 bg-white z-10">{idx + 1}</td>
+                                        <td className="px-4 py-2 font-medium text-gray-900 border border-purple-100 sticky left-[48px] bg-white z-10 shadow-sm min-w-[200px]">
+                                            <div>{student.fullName}</div>
+                                            <div className="text-xs text-gray-400 font-mono">{student.nisn}</div>
+                                        </td>
+                                        <td className="px-4 py-2 text-center text-gray-500 border border-purple-100 text-xs">{student.className}</td>
+                                        
+                                        {[1, 2, 3, 4, 5].map(sem => {
+                                            const semAvg = calculateSemesterAvg(student, sem);
+                                            return (
+                                                <React.Fragment key={sem}>
+                                                    {SUBJECT_MAP.map(sub => {
+                                                        const score = Number(getScore(student, sub.key, sem));
+                                                        return (
+                                                            <td key={`${sem}-${sub.key}`} className="px-1 py-2 text-center border border-purple-100 min-w-[40px]">
+                                                                <span className={`text-[10px] ${getScoreColor(score)} px-1 rounded`}>{score > 0 ? score : '-'}</span>
+                                                            </td>
+                                                        );
+                                                    })}
+                                                    <td className="px-1 py-2 text-center font-bold border border-purple-100 bg-purple-50/50">
+                                                        <span className={`text-[10px] ${getScoreColor(semAvg)} px-1 rounded`}>{semAvg > 0 ? semAvg : '-'}</span>
+                                                    </td>
+                                                </React.Fragment>
+                                            );
+                                        })}
+                                    </tr>
+                                );
+                            }
                         }) : (
-                            <tr><td colSpan={selected5SemSubjects.length + 4} className="p-8 text-center text-gray-500">Tidak ada data siswa.</td></tr>
+                            <tr><td colSpan={viewMode === 'SUMMARY' ? selected5SemSubjects.length + 4 : SUBJECT_MAP.length * 5 + 10} className="p-8 text-center text-gray-500">Tidak ada data siswa.</td></tr>
                         )}
                     </tbody>
                 </table>

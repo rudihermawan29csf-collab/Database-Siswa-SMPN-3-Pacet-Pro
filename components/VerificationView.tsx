@@ -185,10 +185,9 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       } else if (uniqueClasses.length > 0 && !selectedClass) {
           setSelectedClass(uniqueClasses[0]);
       }
-  }, [targetStudentId, uniqueClasses]); // Dependency on targetStudentId ensures switch
+  }, [targetStudentId, uniqueClasses]); 
 
   useEffect(() => {
-      // Only set default student if NO target ID was provided
       if (studentsInClass.length > 0 && !selectedStudentId && !targetStudentId) {
           setSelectedStudentId(studentsInClass[0].id);
       }
@@ -442,7 +441,12 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                                 <FormField label="Tanggal Lahir" value={currentStudent.birthDate} fieldKey="birthDate" />
                             </div>
                             <FormField label="Agama" value={currentStudent.religion} fieldKey="religion" />
-                            <FormField label="Alamat" value={currentStudent.address} fieldKey="address" />
+                            <FormField label="Kewarganegaraan" value={currentStudent.nationality} fieldKey="nationality" />
+                            <FormField label="Status" value={currentStudent.status} fieldKey="status" />
+                            <FormField label="Berkebutuhan Khusus" value={currentStudent.dapodik.specialNeeds} fieldKey="dapodik.specialNeeds" />
+
+                            <SubHeader>Alamat Domisili</SubHeader>
+                            <FormField label="Alamat Jalan" value={currentStudent.address} fieldKey="address" />
                             <div className="grid grid-cols-2 gap-4">
                                 <FormField label="RT" value={currentStudent.dapodik.rt} fieldKey="dapodik.rt" />
                                 <FormField label="RW" value={currentStudent.dapodik.rw} fieldKey="dapodik.rw" />
@@ -455,31 +459,64 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                                 <FormField label="Kecamatan" value={currentStudent.subDistrict} fieldKey="subDistrict" />
                                 <FormField label="Kabupaten" value={currentStudent.district} fieldKey="district" />
                             </div>
+                            <FormField label="Kode Pos" value={currentStudent.postalCode} fieldKey="postalCode" />
+                            <div className="grid grid-cols-2 gap-4">
+                                <FormField label="Lintang" value={currentStudent.dapodik.latitude} fieldKey="dapodik.latitude" />
+                                <FormField label="Bujur" value={currentStudent.dapodik.longitude} fieldKey="dapodik.longitude" />
+                            </div>
                             <FormField label="Jenis Tinggal" value={currentStudent.dapodik.livingStatus} fieldKey="dapodik.livingStatus" />
                             <FormField label="Alat Transportasi" value={currentStudent.dapodik.transportation} fieldKey="dapodik.transportation" />
                             
                             <SubHeader>Data Orang Tua</SubHeader>
-                            <FormField label="Nama Ayah" value={currentStudent.father.name} fieldKey="father.name" />
-                            <FormField label="NIK Ayah" value={currentStudent.father.nik} fieldKey="father.nik" />
-                            <FormField label="Nama Ibu" value={currentStudent.mother.name} fieldKey="mother.name" />
-                            <FormField label="NIK Ibu" value={currentStudent.mother.nik} fieldKey="mother.nik" />
+                            <div className="bg-blue-50 p-2 rounded mb-2">
+                                <p className="text-[10px] font-bold text-blue-800 mb-1">Data Ayah</p>
+                                <FormField label="Nama Ayah" value={currentStudent.father.name} fieldKey="father.name" />
+                                <FormField label="NIK Ayah" value={currentStudent.father.nik} fieldKey="father.nik" />
+                                <FormField label="Tahun Lahir" value={currentStudent.father.birthPlaceDate} fieldKey="father.birthPlaceDate" />
+                                <FormField label="Pendidikan" value={currentStudent.father.education} fieldKey="father.education" />
+                                <FormField label="Pekerjaan" value={currentStudent.father.job} fieldKey="father.job" />
+                                <FormField label="Penghasilan" value={currentStudent.father.income} fieldKey="father.income" />
+                                <FormField label="No HP" value={currentStudent.father.phone} fieldKey="father.phone" />
+                            </div>
+                            <div className="bg-pink-50 p-2 rounded">
+                                <p className="text-[10px] font-bold text-pink-800 mb-1">Data Ibu</p>
+                                <FormField label="Nama Ibu" value={currentStudent.mother.name} fieldKey="mother.name" />
+                                <FormField label="NIK Ibu" value={currentStudent.mother.nik} fieldKey="mother.nik" />
+                                <FormField label="Tahun Lahir" value={currentStudent.mother.birthPlaceDate} fieldKey="mother.birthPlaceDate" />
+                                <FormField label="Pendidikan" value={currentStudent.mother.education} fieldKey="mother.education" />
+                                <FormField label="Pekerjaan" value={currentStudent.mother.job} fieldKey="mother.job" />
+                                <FormField label="Penghasilan" value={currentStudent.mother.income} fieldKey="mother.income" />
+                                <FormField label="No HP" value={currentStudent.mother.phone} fieldKey="mother.phone" />
+                            </div>
                             
                             <SubHeader>Data Wali</SubHeader>
                             <FormField label="Nama Wali" value={currentStudent.guardian?.name} fieldKey="guardian.name" />
+                            <FormField label="NIK Wali" value={currentStudent.guardian?.nik} fieldKey="guardian.nik" />
+                            <FormField label="Tahun Lahir" value={currentStudent.guardian?.birthPlaceDate} fieldKey="guardian.birthPlaceDate" />
+                            <FormField label="Pekerjaan" value={currentStudent.guardian?.job} fieldKey="guardian.job" />
+                            <FormField label="Penghasilan" value={currentStudent.guardian?.income} fieldKey="guardian.income" />
                             
                             <SubHeader>Data Periodik</SubHeader>
                             <div className="grid grid-cols-2 gap-4">
                                 <FormField label="Tinggi Badan (cm)" value={currentStudent.height} fieldKey="height" />
                                 <FormField label="Berat Badan (kg)" value={currentStudent.weight} fieldKey="weight" />
                             </div>
+                            <FormField label="Lingkar Kepala" value={currentStudent.dapodik.headCircumference} fieldKey="dapodik.headCircumference" />
+                            <FormField label="Golongan Darah" value={currentStudent.bloodType} fieldKey="bloodType" />
                             <div className="grid grid-cols-2 gap-4">
                                 <FormField label="Jarak ke Sekolah (km)" value={currentStudent.dapodik.distanceToSchool} fieldKey="dapodik.distanceToSchool" />
                                 <FormField label="Waktu Tempuh (menit)" value={currentStudent.dapodik.travelTimeMinutes} fieldKey="dapodik.travelTimeMinutes" />
                             </div>
-                            <FormField label="Anak ke-" value={currentStudent.childOrder} fieldKey="childOrder" />
-                            <FormField label="Jumlah Saudara" value={currentStudent.siblingCount} fieldKey="siblingCount" />
+                            <div className="grid grid-cols-2 gap-4">
+                                <FormField label="Anak ke-" value={currentStudent.childOrder} fieldKey="childOrder" />
+                                <FormField label="Jumlah Saudara" value={currentStudent.siblingCount} fieldKey="siblingCount" />
+                            </div>
 
-                            <SubHeader>Kesejahteraan</SubHeader>
+                            <SubHeader>Kesejahteraan & Lainnya</SubHeader>
+                            <FormField label="No SKHUN" value={currentStudent.dapodik.skhun} fieldKey="dapodik.skhun" />
+                            <FormField label="No Peserta UN" value={currentStudent.dapodik.unExamNumber} fieldKey="dapodik.unExamNumber" />
+                            <FormField label="No Seri Ijazah" value={currentStudent.diplomaNumber} fieldKey="diplomaNumber" />
+                            <FormField label="No KKS" value={currentStudent.dapodik.kksNumber} fieldKey="dapodik.kksNumber" />
                             <div className="grid grid-cols-2 gap-4">
                                 <FormField label="Penerima KIP" value={currentStudent.dapodik.kipReceiver} fieldKey="dapodik.kipReceiver" />
                                 <FormField label="No. KIP" value={currentStudent.dapodik.kipNumber} fieldKey="dapodik.kipNumber" />
@@ -489,6 +526,13 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                                 <FormField label="Usulan PIP" value={currentStudent.dapodik.pipEligible} fieldKey="dapodik.pipEligible" />
                                 <FormField label="Alasan PIP" value={currentStudent.dapodik.pipReason} fieldKey="dapodik.pipReason" />
                             </div>
+                            <div className="mt-2 bg-gray-50 p-2 rounded border border-gray-200">
+                                <p className="text-[10px] font-bold text-gray-600 mb-1">Data Bank</p>
+                                <FormField label="Bank" value={currentStudent.dapodik.bank} fieldKey="dapodik.bank" />
+                                <FormField label="No Rekening" value={currentStudent.dapodik.bankAccount} fieldKey="dapodik.bankAccount" />
+                                <FormField label="Atas Nama" value={currentStudent.dapodik.bankAccountName} fieldKey="dapodik.bankAccountName" />
+                            </div>
+                            <FormField label="Email" value={currentStudent.dapodik.email} fieldKey="dapodik.email" />
                         </div>
                     </div>
                 </div>

@@ -167,11 +167,10 @@ function App() {
     }
   };
 
+  // UPDATED: Fetch students immediately on mount so they are available for Login screen
   useEffect(() => {
-    if (isLoggedIn) {
       fetchStudents();
-    }
-  }, [isLoggedIn]);
+  }, []);
 
   // --- GENERATE NOTIFICATIONS DYNAMICALLY ---
   const notifications = useMemo(() => {

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Save, Pencil, AlertTriangle, X, CheckCircle2, XCircle, MessageSquare, Loader2, FileText, ListChecks, AlertCircle } from 'lucide-react';
 import { Student, CorrectionRequest } from '../types';
@@ -235,6 +236,20 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
     </div>
   );
 
+  const ClickableGrid = ({label, value, fieldKey, className}: any) => {
+      const isInteractive = readOnly && fieldKey;
+      const pendingReq = fieldKey ? student.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING') : null;
+      return (
+          <div 
+            className={`flex-1 px-1.5 py-0.5 text-[9px] uppercase cursor-pointer hover:bg-blue-50 transition-colors relative group ${className} ${pendingReq ? 'bg-yellow-100 text-yellow-800' : ''}`}
+            onClick={() => isInteractive && !pendingReq && handleOpenCorrection(fieldKey, label, value)}
+          >
+              {pendingReq ? pendingReq.proposedValue : value}
+              {pendingReq && <Loader2 className="w-2 h-2 animate-spin absolute top-0.5 right-0.5 text-yellow-600"/>}
+          </div>
+      );
+  };
+
   const allRequests = useMemo(() => {
       if (!student.correctionRequests) return [];
       return [...student.correctionRequests].sort((a, b) => {
@@ -335,7 +350,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
             )}
 
             <div className="w-full max-w-[800px]">
-                {/* FORMULIR LAYOUT - EXACTLY LIKE ADMIN VERIFICATION VIEW */}
+                {/* FORMULIR LAYOUT - EXACTLY LIKE DATABASE VIEW / VERIFICATION VIEW */}
                 <div className="bg-white p-5 border border-gray-200 shadow-sm text-gray-800">
                     
                     <div className="border-2 border-gray-800 p-1 mb-2 bg-gray-800 text-white text-center">
@@ -357,11 +372,11 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                         <div className="flex border-b border-gray-300 min-h-[20px]">
                             <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">3. NISN</div>
                             <div className="w-1/3 px-1.5 py-0.5 text-[9px] font-medium uppercase bg-white">
-                                {student.nisn}
+                                <ClickableGrid label="NISN" value={student.nisn} fieldKey="nisn" />
                             </div>
                             <div className="w-12 px-1.5 py-0.5 bg-gray-100 border-x border-gray-300 text-[9px] font-bold">NIS :</div>
                             <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">
-                                {student.nis}
+                                <ClickableGrid label="NIS" value={student.nis} fieldKey="nis" />
                             </div>
                         </div>
                         <FormField label="4. No Seri Ijazah" value={student.diplomaNumber} fieldKey="diplomaNumber" />
@@ -372,7 +387,10 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                         <FormField label="Nama Sekolah Asal" value={student.previousSchool} fieldKey="previousSchool" />
                         <FormField label="8. Tempat, Tgl Lahir" value={`${student.birthPlace}, ${formatDateIndo(student.birthDate)}`} fieldKey="birthPlace" />
                         <FormField label="9. Agama" value={student.religion} fieldKey="religion" />
+                        <FormField label="   Kewarganegaraan" value={student.nationality} fieldKey="nationality" />
                         <FormField label="10. Berkebutuhan Khusus" value={student.dapodik.specialNeeds} fieldKey="dapodik.specialNeeds" />
+                        
+                        <SubHeader>ALAMAT DOMISILI</SubHeader>
                         <FormField label="11. Alamat Tempat Tinggal" value={student.address} fieldKey="address" />
                         <div className="flex border-b border-gray-300 min-h-[20px]">
                                <div className="w-1/3 flex flex-col">
@@ -382,21 +400,27 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                                    <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[8px] italic"> - Kabupaten / Kota</div>
                                </div>
                                <div className="w-1/3 flex flex-col border-x border-gray-300">
-                                   <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{student.dapodik.dusun}</div>
-                                   <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{student.dapodik.kelurahan}</div>
-                                   <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{student.subDistrict}</div>
-                                   <div className="flex-1 px-1.5 py-0.5 border-b border-gray-200 text-[9px] uppercase">{student.district}</div>
+                                   <ClickableGrid className="flex-1 border-b border-gray-200" label="Dusun" value={student.dapodik.dusun} fieldKey="dapodik.dusun" />
+                                   <ClickableGrid className="flex-1 border-b border-gray-200" label="Kelurahan" value={student.dapodik.kelurahan} fieldKey="dapodik.kelurahan" />
+                                   <ClickableGrid className="flex-1 border-b border-gray-200" label="Kecamatan" value={student.subDistrict} fieldKey="subDistrict" />
+                                   <ClickableGrid className="flex-1 border-b border-gray-200" label="Kabupaten" value={student.district} fieldKey="district" />
                                </div>
                                <div className="flex-1 flex flex-col">
                                    <div className="flex border-b border-gray-200 h-1/3">
                                         <div className="w-10 px-1 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] font-bold">RT:</div>
-                                        <div className="flex-1 px-1 py-0.5 text-[9px]">{student.dapodik.rt}</div>
+                                        <ClickableGrid label="RT" value={student.dapodik.rt} fieldKey="dapodik.rt" />
                                         <div className="w-10 px-1 py-0.5 bg-gray-50 border-x border-gray-300 text-[8px] font-bold">RW:</div>
-                                        <div className="flex-1 px-1 py-0.5 text-[9px]">{student.dapodik.rw}</div>
+                                        <ClickableGrid label="RW" value={student.dapodik.rw} fieldKey="dapodik.rw" />
                                    </div>
                                    <div className="flex border-b border-gray-200 h-1/3">
                                         <div className="w-20 px-1 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] font-bold">Kode Pos</div>
-                                        <div className="flex-1 px-1 py-0.5 text-[9px]">{student.postalCode}</div>
+                                        <ClickableGrid label="Kode Pos" value={student.postalCode} fieldKey="postalCode" />
+                                   </div>
+                                   <div className="flex h-1/3">
+                                        <div className="w-10 px-1 py-0.5 bg-gray-50 border-r border-gray-300 text-[8px] font-bold">Lat:</div>
+                                        <ClickableGrid label="Lintang" value={student.dapodik.latitude} fieldKey="dapodik.latitude" />
+                                        <div className="w-10 px-1 py-0.5 bg-gray-50 border-x border-gray-300 text-[8px] font-bold">Long:</div>
+                                        <ClickableGrid label="Bujur" value={student.dapodik.longitude} fieldKey="dapodik.longitude" />
                                    </div>
                                </div>
                         </div>
@@ -406,9 +430,13 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                               <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px]">14. No. Telp Rumah</div>
                               <div className="w-1/3 px-1.5 py-0.5 text-[9px] font-medium uppercase">-</div>
                               <div className="w-12 px-1.5 py-0.5 bg-gray-100 border-x border-gray-300 text-[9px] font-bold">HP :</div>
-                              <div className="flex-1 px-1.5 py-0.5 text-[9px] bg-white">{student.father.phone || student.mother.phone || '-'}</div>
+                              <div className="flex-1 px-1.5 py-0.5 text-[9px] bg-white">
+                                  {student.father.phone || student.mother.phone || '-'}
+                              </div>
                         </div>
                         <FormField label="15. Email" value={student.dapodik.email} fieldKey="dapodik.email" />
+                        
+                        <SubHeader>KESEJAHTERAAN PESERTA DIDIK</SubHeader>
                         <FormField label="16. No. KKS" value={student.dapodik.kksNumber} fieldKey="dapodik.kksNumber" />
                         <FormField label="17. Penerima KPS/KPH" value={student.dapodik.kpsReceiver} fieldKey="dapodik.kpsReceiver" />
                         <FormField label=" - No. KPS" value={student.dapodik.kpsNumber} fieldKey="dapodik.kpsNumber" />
@@ -417,6 +445,9 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                         <FormField label=" - No. KIP" value={student.dapodik.kipNumber} fieldKey="dapodik.kipNumber" />
                         <FormField label=" - Nama di KIP" value={student.dapodik.kipName} fieldKey="dapodik.kipName" />
                         <FormField label=" - No Reg Akta Lahir" value={student.dapodik.birthRegNumber} fieldKey="dapodik.birthRegNumber" />
+                        <FormField label=" - Bank" value={student.dapodik.bank} fieldKey="dapodik.bank" />
+                        <FormField label=" - No Rekening" value={student.dapodik.bankAccount} fieldKey="dapodik.bankAccount" />
+                        <FormField label=" - Atas Nama Rekening" value={student.dapodik.bankAccountName} fieldKey="dapodik.bankAccountName" />
                     </div>
 
                     {/* SECTION 2: DATA AYAH */}
@@ -428,6 +459,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                         <FormField label=" - Pekerjaan" value={student.father.job} fieldKey="father.job" />
                         <FormField label=" - Pendidikan" value={student.father.education} fieldKey="father.education" />
                         <FormField label=" - Penghasilan" value={student.father.income} fieldKey="father.income" />
+                        <FormField label=" - No HP" value={student.father.phone} fieldKey="father.phone" />
                     </div>
 
                     {/* SECTION 3: DATA IBU */}
@@ -439,6 +471,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                         <FormField label=" - Pekerjaan" value={student.mother.job} fieldKey="mother.job" />
                         <FormField label=" - Pendidikan" value={student.mother.education} fieldKey="mother.education" />
                         <FormField label=" - Penghasilan" value={student.mother.income} fieldKey="mother.income" />
+                        <FormField label=" - No HP" value={student.mother.phone} fieldKey="mother.phone" />
                     </div>
 
                     {/* SECTION 4: DATA WALI */}
@@ -457,21 +490,54 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                     <div className="border border-gray-300 mt-1">
                         <div className="flex border-b border-gray-300 h-6">
                             <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">21. Tinggi Badan</div>
-                            <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-white border-r border-gray-300">{student.height}</div>
+                            <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-white border-r border-gray-300">
+                                <ClickableGrid value={student.height} fieldKey="height" />
+                            </div>
                             <div className="flex-1 px-1.5 py-0.5 text-[9px] flex items-center">cm</div>
                         </div>
                         <div className="flex border-b border-gray-300 h-6">
                             <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">Berat Badan</div>
-                            <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-white border-r border-gray-300">{student.weight}</div>
+                            <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-white border-r border-gray-300">
+                                <ClickableGrid value={student.weight} fieldKey="weight" />
+                            </div>
                             <div className="flex-1 px-1.5 py-0.5 text-[9px] flex items-center">kg</div>
                         </div>
                         <div className="flex border-b border-gray-300 h-6">
+                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">Lingkar Kepala</div>
+                            <div className="w-20 px-1.5 py-0.5 text-[9px] font-bold flex items-center justify-center bg-white border-r border-gray-300">
+                                <ClickableGrid value={student.dapodik.headCircumference} fieldKey="dapodik.headCircumference" />
+                            </div>
+                            <div className="flex-1 px-1.5 py-0.5 text-[9px] flex items-center">cm</div>
+                        </div>
+                        <div className="flex border-b border-gray-300 h-6">
+                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">Golongan Darah</div>
+                            <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">
+                                <ClickableGrid value={student.bloodType} fieldKey="bloodType" />
+                            </div>
+                        </div>
+                        <div className="flex border-b border-gray-300 h-6">
                             <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">22. Jarak Ke Sekolah</div>
-                            <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">{student.dapodik.distanceToSchool} Km</div>
+                            <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">
+                                <ClickableGrid value={student.dapodik.distanceToSchool} fieldKey="dapodik.distanceToSchool" /> Km
+                            </div>
+                        </div>
+                        <div className="flex border-b border-gray-300 h-6">
+                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">23. Waktu Tempuh</div>
+                            <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">
+                                <ClickableGrid value={student.dapodik.travelTimeMinutes} fieldKey="dapodik.travelTimeMinutes" /> Menit
+                            </div>
+                        </div>
+                        <div className="flex border-b border-gray-300 h-6">
+                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">24. Anak ke-</div>
+                            <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">
+                                <ClickableGrid value={student.childOrder} fieldKey="childOrder" />
+                            </div>
                         </div>
                         <div className="flex h-6">
-                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">23. Waktu Tempuh</div>
-                            <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">{student.dapodik.travelTimeMinutes} Menit</div>
+                            <div className="w-1/3 px-1.5 py-0.5 bg-gray-50 border-r border-gray-300 text-[9px] flex items-center">25. Jumlah Saudara</div>
+                            <div className="flex-1 px-1.5 py-0.5 text-[9px] font-bold bg-white">
+                                <ClickableGrid value={student.siblingCount} fieldKey="siblingCount" />
+                            </div>
                         </div>
                     </div>
                 </div>
