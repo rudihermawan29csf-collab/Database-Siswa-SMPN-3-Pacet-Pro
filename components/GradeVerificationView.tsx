@@ -181,7 +181,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
   const filteredStudents = useMemo(() => {
       let filtered = students;
-      if (selectedClassFilter) filtered = filtered.filter(s => s.className === selectedClassFilter);
+      if (selectedClassFilter !== 'ALL') filtered = filtered.filter(s => s.className === selectedClassFilter);
       if (searchTerm) filtered = filtered.filter(s => s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || s.nisn.includes(searchTerm));
       return filtered.sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [students, searchTerm, selectedClassFilter]);
@@ -195,12 +195,16 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
               setSelectedClassFilter(target.className);
               setSelectedStudentId(target.id);
           }
-      } else if (filteredStudents.length > 0 && !selectedStudentId) {
-          setSelectedStudentId(filteredStudents[0].id);
-      } else if (filteredStudents.length === 0) {
+      } else if (filteredStudents.length > 0) {
+          // Check if current selection is valid within the new filtered list
+          const isCurrentValid = filteredStudents.some(s => s.id === selectedStudentId);
+          if (!isCurrentValid) {
+              setSelectedStudentId(filteredStudents[0].id);
+          }
+      } else {
           setSelectedStudentId('');
       }
-  }, [filteredStudents, selectedStudentId, targetStudentId]);
+  }, [filteredStudents, targetStudentId]); // Removed selectedStudentId from deps to fix loop, relies on filteredStudents change
 
   const currentStudent = students.find(s => s.id === selectedStudentId);
   const currentRecord = currentStudent?.academicRecords?.[activeSemester];
