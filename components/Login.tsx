@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { GraduationCap, Loader2, UserCog, User, ChevronDown, School, ArrowRight, BookOpen, Lock } from 'lucide-react';
 import { Student } from '../types';
@@ -5,10 +6,11 @@ import { api } from '../services/api';
 
 interface LoginProps {
   onLogin: (role: 'ADMIN' | 'GURU' | 'STUDENT', studentData?: Student) => void;
-  students: Student[]; 
+  students: Student[];
+  schoolName?: string; // Add schoolName prop
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
+const Login: React.FC<LoginProps> = ({ onLogin, students, schoolName = 'SMPN 3 Pacet' }) => {
   const [loading, setLoading] = useState(false);
   const [loadingTeachers, setLoadingTeachers] = useState(false);
   const [loginMode, setLoginMode] = useState<'ADMIN' | 'GURU' | 'STUDENT'>('ADMIN');
@@ -22,9 +24,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
   // Student Form States
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState('');
-  // Added separate password state for student login
-  const [studentPassword, setStudentPassword] = useState('');
-
+  
   // Teachers List
   const [teachers, setTeachers] = useState<any[]>([]);
 
@@ -54,8 +54,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
       if (loginMode === 'ADMIN') {
           setUsername('admin');
           setPassword('');
-      } else if (loginMode === 'STUDENT') {
-          setStudentPassword('');
       } else {
           setUsername('');
           setPassword('');
@@ -132,23 +130,12 @@ const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
                  return;
             }
 
-            if (!studentPassword) {
-                setLoading(false);
-                setError('Mohon masukkan Password (NIS)');
-                return;
-            }
-
             const student = students.find(s => s.id === selectedStudentId);
             
             if (student) {
-                // Validate Password = NIS
-                if (student.nis === studentPassword) {
-                    setLoading(false);
-                    onLogin('STUDENT', student);
-                } else {
-                    setLoading(false);
-                    setError('Password salah! Gunakan NIS Anda sebagai password.');
-                }
+                // Direct Login without password check
+                setLoading(false);
+                onLogin('STUDENT', student);
             } else {
                 setLoading(false);
                 setError('Data siswa tidak ditemukan');
@@ -180,7 +167,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
                 </div>
                 <h1 className="text-3xl font-bold tracking-tight mb-2 text-white drop-shadow-md">SiData</h1>
                 <p className="text-blue-100 font-medium text-sm leading-relaxed opacity-90">
-                    Sistem Informasi Database Terpadu <br/> SMPN 3 Pacet
+                    Sistem Informasi Database Terpadu <br/> {schoolName}
                 </p>
             </div>
             <div className="relative z-10 mt-8 md:mt-0">
@@ -280,20 +267,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
                                 {studentsInClass.map(s => <option key={s.id as string} value={s.id as string}>{s.fullName}</option>)}
                             </select>
                             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                        </div>
-                    </div>
-                    <div className="group">
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1 ml-1">Password</label>
-                        <div className="relative">
-                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                            <input 
-                                type="password" 
-                                value={studentPassword} 
-                                onChange={(e) => setStudentPassword(e.target.value)} 
-                                disabled={!selectedStudentId}
-                                className={`w-full pl-10 pr-4 py-3 rounded-xl border focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all text-sm font-medium ${!selectedStudentId ? 'bg-gray-100 border-transparent text-gray-400 cursor-not-allowed' : 'bg-white/50 border-gray-200 focus:bg-white'}`}
-                                placeholder="Masukkan Password (NIS)" 
-                            />
                         </div>
                     </div>
                 </div>

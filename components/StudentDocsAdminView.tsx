@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Student, DocumentFile } from '../types';
 import { Search, Filter, FolderOpen, FileText, Loader2 } from 'lucide-react';
@@ -21,6 +22,7 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [activeTab, setActiveTab] = useState<'DOCS' | 'RAPOR'>('DOCS');
   const [isUploading, setIsUploading] = useState(false);
+  const [studentVisibleDocs, setStudentVisibleDocs] = useState<string[] | undefined>(undefined);
 
   // Set default class saat data dimuat pertama kali
   useEffect(() => {
@@ -28,6 +30,19 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
           setSelectedClass(uniqueClasses[0]);
       }
   }, [uniqueClasses, selectedClass]);
+
+  // Load Settings for Doc Visibility
+  useEffect(() => {
+      const loadSettings = async () => {
+          try {
+              const settings = await api.getAppSettings();
+              if (settings && settings.docConfig && settings.docConfig.studentVisible) {
+                  setStudentVisibleDocs(settings.docConfig.studentVisible);
+              }
+          } catch(e) { console.error("Failed loading settings"); }
+      };
+      loadSettings();
+  }, []);
 
   // Filter Students based on selected Class
   const filteredStudents = useMemo(() => {
@@ -177,6 +192,7 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
                             onUpload={handleUpload}
                             onDelete={handleDelete}
                             allowDeleteApproved={true} // Allow admin to delete
+                            allowedCategories={studentVisibleDocs}
                         />
                     ) : (
                         <UploadRaporView 

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Student, CorrectionRequest } from '../types';
 import { 
@@ -112,30 +113,53 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   // Load Config
   useEffect(() => {
-      try {
-          // 1. Get Master List
-          const savedDocDefs = localStorage.getItem('sys_doc_definitions');
-          const masterList = savedDocDefs ? JSON.parse(savedDocDefs) : [
-              { id: 'IJAZAH', label: 'Ijazah SD' }, { id: 'AKTA', label: 'Akta Kelahiran' }, { id: 'KK', label: 'Kartu Keluarga' },
-              { id: 'KTP_AYAH', label: 'KTP Ayah' }, { id: 'KTP_IBU', label: 'KTP Ibu' }, { id: 'FOTO', label: 'Pas Foto' }
-          ];
+      const loadConfig = async () => {
+          try {
+              // Master Docs
+              const MASTER_LIST = [
+                  { id: 'IJAZAH', label: 'Ijazah SD' }, 
+                  { id: 'AKTA', label: 'Akta Kelahiran' }, 
+                  { id: 'KK', label: 'Kartu Keluarga' },
+                  { id: 'KTP_AYAH', label: 'KTP Ayah' }, 
+                  { id: 'KTP_IBU', label: 'KTP Ibu' }, 
+                  { id: 'FOTO', label: 'Pas Foto' },
+                  { id: 'NISN', label: 'Bukti NISN' },
+                  { id: 'KIP', label: 'KIP/PKH' },
+                  { id: 'SKL', label: 'Surat Ket. Lulus' },
+                  { id: 'KARTU_PELAJAR', label: 'Kartu Pelajar' },
+                  { id: 'PIAGAM', label: 'Piagam' }
+              ];
 
-          // 2. Get Verification Map for Buku Induk
-          const savedVerifMap = localStorage.getItem('sys_verification_map');
-          const map = savedVerifMap ? JSON.parse(savedVerifMap) : { bukuInduk: ['AKTA', 'KK', 'FOTO', 'KTP_AYAH', 'KTP_IBU'] };
-          
-          // Filter MASTER_LIST based on Buku Induk Map
-          const filtered = masterList.filter((d: any) => map.bukuInduk.includes(d.id));
-          setAvailableDocTypes(filtered);
-          
-          if (filtered.length > 0 && !activeDocType) {
-              setActiveDocType(filtered[0].id);
+              // Try fetch settings
+              const settings = await api.getAppSettings();
+              let allowedDocs = ['AKTA', 'KK', 'FOTO', 'IJAZAH', 'KTP_AYAH', 'KTP_IBU']; // Default
+
+              if (settings && settings.docConfig && settings.docConfig.indukVerification) {
+                  allowedDocs = settings.docConfig.indukVerification;
+              }
+
+              // Filter MASTER_LIST based on allowedDocs
+              const filtered = MASTER_LIST.filter(d => allowedDocs.includes(d.id));
+              
+              // If filtered is empty (edge case), use default
+              if (filtered.length === 0) {
+                  setAvailableDocTypes([{ id: 'AKTA', label: 'Akta Kelahiran' }, { id: 'KK', label: 'Kartu Keluarga' }]);
+              } else {
+                  setAvailableDocTypes(filtered);
+              }
+              
+              if (filtered.length > 0 && !activeDocType) {
+                  setActiveDocType(filtered[0].id);
+              }
+          } catch (e) {
+              console.error("Config load error", e);
+              // Fallback
+              setAvailableDocTypes([{ id: 'AKTA', label: 'Akta Kelahiran' }, { id: 'KK', label: 'Kartu Keluarga' }]);
+              setActiveDocType('AKTA');
           }
-      } catch (e) {
-          // Fallback
-          setAvailableDocTypes([{ id: 'AKTA', label: 'Akta Kelahiran' }, { id: 'KK', label: 'Kartu Keluarga' }]);
-          setActiveDocType('AKTA');
-      }
+      };
+      
+      loadConfig();
   }, []);
 
   // Memoized Data

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student } from '../types';
 import { Search, FileSpreadsheet, FileText, Calculator } from 'lucide-react';
@@ -27,6 +28,15 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
       { key: 'Seni dan Prakarya', label: 'SENI', full: 'Seni dan Prakarya' },
       { key: 'Bahasa Jawa', label: 'B.JAWA', full: 'Bahasa Jawa' },
   ];
+
+  // Helper for Score Color
+  const getScoreColor = (score: number) => {
+      if (!score && score !== 0) return '';
+      if (score === 0) return 'text-gray-400';
+      if (score < 70) return 'bg-red-100 text-red-700 font-bold';
+      if (score < 85) return 'bg-yellow-100 text-yellow-800 font-bold';
+      return 'bg-green-100 text-green-700 font-bold';
+  };
 
   useEffect(() => {
       const initConfig = async () => {
@@ -210,14 +220,16 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
                                         const avg = calculate5SemAvg(student, key);
                                         return (
                                             <td key={key} className="px-2 py-2 text-center border border-purple-100">
-                                                <span className={`font-semibold ${avg < 75 ? 'text-red-500' : 'text-gray-700'}`}>
+                                                <span className={`px-2 py-1 rounded text-xs ${getScoreColor(avg)}`}>
                                                     {avg > 0 ? avg : '-'}
                                                 </span>
                                             </td>
                                         );
                                     })}
                                     <td className="px-4 py-2 text-center font-bold text-purple-700 bg-purple-50/30 border border-purple-100">
-                                        {totalAvg > 0 ? totalAvg : '-'}
+                                        <span className={`px-2 py-1 rounded ${getScoreColor(totalAvg)}`}>
+                                            {totalAvg > 0 ? totalAvg : '-'}
+                                        </span>
                                     </td>
                                 </tr>
                             );

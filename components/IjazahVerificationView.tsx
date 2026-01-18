@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Student, CorrectionRequest } from '../types';
 import { 
@@ -74,20 +75,10 @@ const PDFPageCanvas: React.FC<{ pdf: any; pageNum: number; scale: number }> = ({
 };
 
 const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ students, onUpdate, currentUser, onSave }) => {
-  // ... (States remain the same) ...
-  const IJAZAH_DOC_TYPES = [
-      { id: 'IJAZAH', label: 'Ijazah SD' },
-      { id: 'SKL', label: 'Surat Ket. Lulus' },
-      { id: 'AKTA', label: 'Akta Kelahiran' },
-      { id: 'KK', label: 'Kartu Keluarga' },
-      { id: 'NISN', label: 'Bukti NISN' },
-      { id: 'FOTO', label: 'Pas Foto' },
-      { id: 'KTP_AYAH', label: 'KTP Ayah' },
-      { id: 'KTP_IBU', label: 'KTP Ibu' },
-      { id: 'KIP', label: 'KIP / PKH' }
-  ];
-
+  // Configurable Docs State
+  const [availableDocTypes, setAvailableDocTypes] = useState<any[]>([]);
   const [activeDocType, setActiveDocType] = useState<string>('IJAZAH');
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('ALL'); 
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
@@ -107,6 +98,53 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [numPages, setNumPages] = useState(0);
   const [useFallbackViewer, setUseFallbackViewer] = useState(false);
+
+  // Load Config
+  useEffect(() => {
+      const loadConfig = async () => {
+          try {
+              const MASTER_LIST = [
+                  { id: 'IJAZAH', label: 'Ijazah SD' },
+                  { id: 'SKL', label: 'Surat Ket. Lulus' },
+                  { id: 'AKTA', label: 'Akta Kelahiran' },
+                  { id: 'KK', label: 'Kartu Keluarga' },
+                  { id: 'NISN', label: 'Bukti NISN' },
+                  { id: 'FOTO', label: 'Pas Foto' },
+                  { id: 'KTP_AYAH', label: 'KTP Ayah' },
+                  { id: 'KTP_IBU', label: 'KTP Ibu' },
+                  { id: 'KIP', label: 'KIP / PKH' },
+                  { id: 'KARTU_PELAJAR', label: 'Kartu Pelajar' },
+                  { id: 'PIAGAM', label: 'Piagam' }
+              ];
+
+              const settings = await api.getAppSettings();
+              let allowedDocs = ['IJAZAH', 'SKL', 'AKTA', 'KK', 'NISN', 'FOTO']; // Default
+
+              if (settings && settings.docConfig && settings.docConfig.ijazahVerification) {
+                  allowedDocs = settings.docConfig.ijazahVerification;
+              }
+
+              const filtered = MASTER_LIST.filter(d => allowedDocs.includes(d.id));
+              
+              if (filtered.length === 0) {
+                  setAvailableDocTypes([{ id: 'IJAZAH', label: 'Ijazah SD' }]);
+              } else {
+                  setAvailableDocTypes(filtered);
+              }
+              
+              if (filtered.length > 0 && !activeDocType) {
+                  setActiveDocType(filtered[0].id);
+              } else if (filtered.length > 0 && !filtered.find(d => d.id === activeDocType)) {
+                  setActiveDocType(filtered[0].id);
+              }
+          } catch (e) {
+              console.error("Config load error", e);
+              setAvailableDocTypes([{ id: 'IJAZAH', label: 'Ijazah SD' }]);
+              setActiveDocType('IJAZAH');
+          }
+      };
+      loadConfig();
+  }, []);
 
   // ... (Effects and Helper functions for sorting/filtering/PDF loading remain the same) ...
   const uniqueClasses = useMemo(() => Array.from(new Set(students.map(s => s.className))).sort(), [students]);
@@ -134,7 +172,6 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
     let isMounted = true;
     const controller = new AbortController();
     const loadPdf = async () => {
-        // ... (Keep existing PDF load logic)
         if (!isMounted) return;
         setPdfDoc(null); setIsPdfLoading(false); setPdfError(false); setUseFallbackViewer(false); setZoomLevel(1.0);
         if (!currentStudent || !currentDoc) return;
@@ -362,7 +399,7 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
                 <div className="relative flex-1 md:w-64"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" /><input type="text" placeholder="Cari Siswa..." className="w-full pl-9 pr-4 py-2 bg-gray-50 rounded-lg text-sm border border-gray-200 focus:bg-white transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
                 <select className="pl-3 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-bold text-gray-700 w-full md:w-auto" value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>{filteredStudents.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}</select>
             </div>
-            <div className="flex gap-1 overflow-x-auto max-w-full pb-1 no-scrollbar">{IJAZAH_DOC_TYPES.map(type => { const doc = currentStudent?.documents.find(d => d.category === type.id); let colorClass = 'bg-white text-gray-600 border-gray-200'; if (doc?.status === 'APPROVED') colorClass = 'bg-green-50 text-green-700 border-green-200'; if (doc?.status === 'REVISION') colorClass = 'bg-red-50 text-red-700 border-red-200'; if (doc?.status === 'PENDING') colorClass = 'bg-yellow-50 text-yellow-700 border-yellow-200'; return (<button key={type.id} onClick={() => setActiveDocType(type.id)} className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors border ${activeDocType === type.id ? 'ring-2 ring-blue-500 border-blue-500 z-10' : ''} ${colorClass} hover:shadow-sm`}>{type.label}</button>); })}</div>
+            <div className="flex gap-1 overflow-x-auto max-w-full pb-1 no-scrollbar">{availableDocTypes.map(type => { const doc = currentStudent?.documents.find(d => d.category === type.id); let colorClass = 'bg-white text-gray-600 border-gray-200'; if (doc?.status === 'APPROVED') colorClass = 'bg-green-50 text-green-700 border-green-200'; if (doc?.status === 'REVISION') colorClass = 'bg-red-50 text-red-700 border-red-200'; if (doc?.status === 'PENDING') colorClass = 'bg-yellow-50 text-yellow-700 border-yellow-200'; return (<button key={type.id} onClick={() => setActiveDocType(type.id)} className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors border ${activeDocType === type.id ? 'ring-2 ring-blue-500 border-blue-500 z-10' : ''} ${colorClass} hover:shadow-sm`}>{type.label}</button>); })}</div>
         </div>
 
         {currentStudent ? (
@@ -370,7 +407,7 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
                 {/* Document Viewer */}
                 <div className={`flex flex-col bg-gray-800 rounded-xl overflow-hidden shadow-lg transition-all duration-300 ${layoutMode === 'full-doc' ? 'w-full absolute inset-0 z-20' : 'w-full lg:w-3/5 h-full'}`}>
                     {/* ... (Viewer implementation same as original) ... */}
-                    <div className="h-14 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-4 text-gray-300"><span className="font-bold text-white text-sm hidden md:block">{IJAZAH_DOC_TYPES.find(t => t.id === activeDocType)?.label}</span><div className="flex items-center gap-2"><button onClick={()=>setZoomLevel(z=>Math.max(0.5, z-0.2))} className="p-1 hover:bg-gray-700 rounded"><ZoomOut className="w-4 h-4" /></button><span className="text-xs w-8 text-center">{Math.round(zoomLevel*100)}%</span><button onClick={()=>setZoomLevel(z=>Math.min(3, z+0.2))} className="p-1 hover:bg-gray-700 rounded"><ZoomIn className="w-4 h-4" /></button><button onClick={()=>setLayoutMode(m=>m==='full-doc'?'split':'full-doc')} className="p-1 hover:bg-gray-700 rounded ml-2"><Maximize2 className="w-4 h-4" /></button></div></div>
+                    <div className="h-14 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-4 text-gray-300"><span className="font-bold text-white text-sm hidden md:block">{availableDocTypes.find(t => t.id === activeDocType)?.label}</span><div className="flex items-center gap-2"><button onClick={()=>setZoomLevel(z=>Math.max(0.5, z-0.2))} className="p-1 hover:bg-gray-700 rounded"><ZoomOut className="w-4 h-4" /></button><span className="text-xs w-8 text-center">{Math.round(zoomLevel*100)}%</span><button onClick={()=>setZoomLevel(z=>Math.min(3, z+0.2))} className="p-1 hover:bg-gray-700 rounded"><ZoomIn className="w-4 h-4" /></button><button onClick={()=>setLayoutMode(m=>m==='full-doc'?'split':'full-doc')} className="p-1 hover:bg-gray-700 rounded ml-2"><Maximize2 className="w-4 h-4" /></button></div></div>
                     <div className="flex-1 overflow-auto p-4 bg-gray-900/50 flex items-start justify-center pb-32 relative">
                         <div style={{ transform: `scale(${useFallbackViewer || (isDriveUrl && !isImageFile(currentDoc)) ? 1 : zoomLevel})`, transformOrigin: 'top center', width: '100%', display: 'flex', justifyContent: 'center' }}>
                             {currentDoc ? ((useFallbackViewer || (isDriveUrl && !isImageFile(currentDoc))) ? (<iframe src={getDriveUrl(currentDoc.url, 'preview')} className="w-full min-h-[1100px] border-none rounded bg-white shadow-lg" title="Document Viewer" allow="autoplay" />) : (isImageFile(currentDoc) ? (<img src={isDriveUrl ? getDriveUrl(currentDoc.url, 'direct') : currentDoc.url} className="w-full h-auto object-contain bg-white shadow-sm rounded" alt="Document" onError={() => setUseFallbackViewer(true)} />) : (<div className="bg-white min-h-[600px] w-full max-w-[900px] flex flex-col items-center justify-start relative overflow-auto p-4 rounded shadow-lg">{isPdfLoading ? (<div className="flex flex-col items-center justify-center h-full pt-20"><Loader2 className="animate-spin w-10 h-10 text-blue-500 mb-2" /><p className="text-xs text-gray-500">Memuat PDF...</p></div>) : (pdfDoc ? (Array.from(new Array(numPages), (el, index) => (<PDFPageCanvas key={`page_${index + 1}`} pdf={pdfDoc} pageNum={index + 1} scale={zoomLevel} />))) : (<div className="text-red-500 flex flex-col items-center justify-center h-full pt-20"><AlertCircle className="w-8 h-8 mb-2" /><p>{pdfError ? 'Gagal memuat PDF' : 'PDF Viewer Error'}</p><button onClick={() => setUseFallbackViewer(true)} className="mt-2 text-xs underline text-blue-600">Coba Mode Alternatif</button></div>))}</div>))) : (<div className="flex flex-col items-center justify-center h-full text-gray-400"><ScrollText className="w-16 h-16 mb-4 opacity-20" /><p>Dokumen {activeDocType} belum diupload.</p></div>)}

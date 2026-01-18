@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Student, CorrectionRequest } from '../types';
 import { 
   CheckCircle2, FileText, Maximize2, ZoomIn, ZoomOut, Save, 
-  FileCheck2, Loader2, Pencil, Search, Filter, ExternalLink, RefreshCw, AlertCircle, Eye, File, ImageIcon, FileType, X, Send, XCircle, ListChecks, History
+  FileCheck2, Loader2, Pencil, Search, Filter, ExternalLink, RefreshCw, AlertCircle, Eye, File, ImageIcon, FileType, X, Send, XCircle, ListChecks, History, ScrollText
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -16,6 +17,15 @@ interface GradeVerificationViewProps {
 }
 
 const CLASS_LIST = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
+
+// NEW: Helper for Score Color
+const getScoreColor = (score: number) => {
+    if (!score && score !== 0) return '';
+    if (score === 0) return 'text-gray-400';
+    if (score < 70) return 'bg-red-100 text-red-700 font-bold';
+    if (score < 85) return 'bg-yellow-100 text-yellow-800 font-bold';
+    return 'bg-green-100 text-green-700 font-bold';
+};
 
 // ... (Helper functions getDriveUrl, PDFPageCanvas remain) ...
 const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
@@ -76,11 +86,18 @@ const PDFPageCanvas: React.FC<{ pdf: any; pageNum: number; scale: number }> = ({
 };
 
 const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students, onUpdate, currentUser, userRole = 'ADMIN', targetStudentId, onSave }) => {
+  // ... (All existing state and effects logic remains identical) ...
   const [activeSemester, setActiveSemester] = useState<number>(1);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedClassFilter, setSelectedClassFilter] = useState<string>(''); 
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('ALL'); 
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
-  const [activePage, setActivePage] = useState<number>(1);
+  
+  // Document Viewer State
+  const [viewerMode, setViewerMode] = useState<'RAPOR' | 'DOCS'>('RAPOR');
+  const [activePage, setActivePage] = useState<number>(1); // For Rapor
+  const [activeDocType, setActiveDocType] = useState<string>(''); // For Extra Docs
+  const [availableGradeDocs, setAvailableGradeDocs] = useState<any[]>([]);
+
   const [zoomLevel, setZoomLevel] = useState<number>(1.0); 
   const [layoutMode, setLayoutMode] = useState<'split' | 'full-doc'>('split');
   const [isEditing, setIsEditing] = useState(false);
@@ -127,6 +144,20 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
               if (settings) {
                   setAppSettings(settings);
                   if (settings.raporPageCount) setRaporPageCount(Number(settings.raporPageCount));
+                  
+                  // Setup Extra Docs based on Config
+                  const MASTER_LIST = [
+                      { id: 'PIAGAM', label: 'Piagam' }, 
+                      { id: 'SKL', label: 'SKL' }, 
+                      { id: 'KARTU_PELAJAR', label: 'Kartu Pelajar' }
+                  ];
+                  
+                  if (settings.docConfig && settings.docConfig.gradeVerification) {
+                      const configured = settings.docConfig.gradeVerification;
+                      const filtered = MASTER_LIST.filter(d => configured.includes(d.id));
+                      setAvailableGradeDocs(filtered);
+                      if (filtered.length > 0) setActiveDocType(filtered[0].id);
+                  }
               }
               // Local fallback for page count
               const localPageCount = localStorage.getItem('sys_rapor_config');
@@ -174,13 +205,18 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   const currentStudent = students.find(s => s.id === selectedStudentId);
   const currentRecord = currentStudent?.academicRecords?.[activeSemester];
   
+  // Dynamic Document Selection
   const currentDoc = useMemo(() => {
-      return currentStudent?.documents.find(d => 
-          d.category === 'RAPOR' && 
-          d.subType?.semester == activeSemester && 
-          d.subType?.page == activePage
-      );
-  }, [currentStudent, activeSemester, activePage, forceUpdate]);
+      if (viewerMode === 'RAPOR') {
+          return currentStudent?.documents.find(d => 
+              d.category === 'RAPOR' && 
+              d.subType?.semester == activeSemester && 
+              d.subType?.page == activePage
+          );
+      } else {
+          return currentStudent?.documents.find(d => d.category === activeDocType);
+      }
+  }, [currentStudent, activeSemester, activePage, activeDocType, viewerMode, forceUpdate]);
 
   // Enhanced File Type Detection
   const isImageFile = (doc: any) => {
@@ -525,7 +561,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
   return (
     <div className="flex flex-col h-full animate-fade-in relative">
-        {/* REJECT DOCUMENT MODAL */}
+        {/* ... (Modal sections remain same) ... */}
         {rejectModalOpen && (
             <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col">
@@ -539,6 +575,8 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
             </div>
         )}
 
+        {/* ... (Admin Verify Modal & Student Correction Modal remain the same) ... */}
+        {/* Skipping repetitive code for brevity, assuming standard modals are kept as is */}
         {/* CORRECTION MODAL (STUDENT) */}
         {correctionModalOpen && targetCorrection && (
             <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
@@ -711,18 +749,38 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
             <div className="flex-1 flex flex-col lg:flex-row gap-4 overflow-hidden relative">
                 {!isStudent && (
                     <div className={`flex flex-col bg-gray-800 rounded-xl overflow-hidden shadow-lg transition-all duration-300 ${layoutMode === 'full-doc' ? 'w-full absolute inset-0 z-20' : 'w-full lg:w-1/2 h-full'}`}>
-                        <div className="h-14 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-4 text-gray-300">
-                            <div className="flex gap-2">
-                                {Array.from({length: raporPageCount}, (_, i) => i + 1).map(p => (
-                                    <button key={p} onClick={() => setActivePage(p)} className={`px-3 py-1 rounded text-xs font-bold ${activePage === p ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}>Hal {p}</button>
-                                ))}
+                        {/* Improved Header for Doc Switching */}
+                        <div className="bg-gray-900 border-b border-gray-700 px-4 py-2">
+                            <div className="flex gap-2 mb-2 justify-center">
+                                <button onClick={() => setViewerMode('RAPOR')} className={`px-3 py-1 rounded text-xs font-bold ${viewerMode === 'RAPOR' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                                    File Rapor
+                                </button>
+                                {availableGradeDocs.length > 0 && (
+                                    <button onClick={() => setViewerMode('DOCS')} className={`px-3 py-1 rounded text-xs font-bold ${viewerMode === 'DOCS' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                                        Dokumen Lain
+                                    </button>
+                                )}
                             </div>
+                            
+                            <div className="flex items-center justify-between text-gray-300">
+                                <div className="flex gap-1 overflow-x-auto max-w-[200px] no-scrollbar">
+                                    {viewerMode === 'RAPOR' ? (
+                                        Array.from({length: raporPageCount}, (_, i) => i + 1).map(p => (
+                                            <button key={p} onClick={() => setActivePage(p)} className={`px-2 py-0.5 rounded text-[10px] font-bold ${activePage === p ? 'bg-blue-500 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}>Hal {p}</button>
+                                        ))
+                                    ) : (
+                                        availableGradeDocs.map(d => (
+                                            <button key={d.id} onClick={() => setActiveDocType(d.id)} className={`px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${activeDocType === d.id ? 'bg-blue-500 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}>{d.label}</button>
+                                        ))
+                                    )}
+                                </div>
 
-                            <div className="flex items-center gap-2">
-                                <button onClick={()=>setZoomLevel(z=>Math.max(0.5, z-0.2))} className="p-1 hover:bg-gray-700 rounded"><ZoomOut className="w-4 h-4" /></button>
-                                <span className="text-xs w-8 text-center">{Math.round(zoomLevel*100)}%</span>
-                                <button onClick={()=>setZoomLevel(z=>Math.min(3, z+0.2))} className="p-1 hover:bg-gray-700 rounded"><ZoomIn className="w-4 h-4" /></button>
-                                <button onClick={()=>setLayoutMode(m=>m==='full-doc'?'split':'full-doc')} className="p-1 hover:bg-gray-700 rounded ml-2"><Maximize2 className="w-4 h-4" /></button>
+                                <div className="flex items-center gap-1">
+                                    <button onClick={()=>setZoomLevel(z=>Math.max(0.5, z-0.2))} className="p-1 hover:bg-gray-700 rounded"><ZoomOut className="w-3 h-3" /></button>
+                                    <span className="text-[10px] w-6 text-center">{Math.round(zoomLevel*100)}%</span>
+                                    <button onClick={()=>setZoomLevel(z=>Math.min(3, z+0.2))} className="p-1 hover:bg-gray-700 rounded"><ZoomIn className="w-3 h-3" /></button>
+                                    <button onClick={()=>setLayoutMode(m=>m==='full-doc'?'split':'full-doc')} className="p-1 hover:bg-gray-700 rounded ml-1"><Maximize2 className="w-3 h-3" /></button>
+                                </div>
                             </div>
                         </div>
                         
@@ -769,8 +827,8 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                                     )
                                 ) : (
                                     <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                                        <FileText className="w-16 h-16 mb-4 opacity-20" />
-                                        <p>Halaman {activePage} Semester {activeSemester} belum diupload.</p>
+                                        {viewerMode === 'RAPOR' ? <FileText className="w-16 h-16 mb-4 opacity-20" /> : <ScrollText className="w-16 h-16 mb-4 opacity-20" />}
+                                        <p className="text-sm">{viewerMode === 'RAPOR' ? `Halaman ${activePage} belum diupload.` : `Dokumen ${activeDocType} tidak ditemukan.`}</p>
                                     </div>
                                 )}
                             </div>
@@ -944,7 +1002,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                                                             <div 
                                                                 className={`
                                                                     inline-flex items-center gap-1 px-2 py-1 rounded transition-colors
-                                                                    ${sub.score < 75 ? 'text-red-600' : ''}
+                                                                    ${getScoreColor(sub.score)}
                                                                     ${isStudent ? 'cursor-pointer hover:bg-blue-50 border border-transparent hover:border-blue-200' : ''}
                                                                     ${isAdmin && gradePending ? 'bg-yellow-200 border border-yellow-300 cursor-pointer animate-pulse' : ''}
                                                                     ${gradePending && !isAdmin ? 'bg-yellow-100 text-yellow-800 border-yellow-200' : ''}

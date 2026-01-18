@@ -1,9 +1,10 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, Database, Book, ClipboardList, Calculator, 
   FileBadge, Award, ClipboardCheck, ScrollText, FileCheck2, 
   FileInput, History, LayoutTemplate, Settings, LogOut, Menu,
-  User, Camera, Bell, Loader2
+  User, Bell, Loader2, Calendar
 } from 'lucide-react';
 
 // Components
@@ -20,7 +21,6 @@ import VerificationView from './components/VerificationView';
 import IjazahVerificationView from './components/IjazahVerificationView';
 import GradeVerificationView from './components/GradeVerificationView';
 import StudentDocsAdminView from './components/StudentDocsAdminView';
-import AccessDataView from './components/AccessDataView';
 import HistoryView from './components/HistoryView';
 import MonitoringView from './components/MonitoringView';
 import SettingsView from './components/SettingsView';
@@ -69,64 +69,73 @@ const getPhotoUrl = (url: string | undefined | null) => {
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState<'ADMIN' | 'GURU' | 'STUDENT' | null>(null);
-  const [currentUser, setCurrentUser] = useState<{id: string, name: string, photoUrl?: string} | null>(null);
+  const [currentUser, setCurrentUser] = useState<{id: string, name: string} | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null); 
   
   const [currentView, setCurrentView] = useState('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
-  // Profile State
-  const [adminProfile, setAdminProfile] = useState({ name: 'Administrator', photo: '' });
-  const [guruPhoto, setGuruPhoto] = useState('');
-  const profileInputRef = useRef<HTMLInputElement>(null);
+  // Profile & School Data State
+  const [adminProfile, setAdminProfile] = useState({ name: 'Administrator' });
+  const [schoolName, setSchoolName] = useState('SMPN 3 Pacet'); // Default fallback
+  const [studentVisibleDocs, setStudentVisibleDocs] = useState<string[] | undefined>(undefined);
+  const [academicInfo, setAcademicInfo] = useState({ year: '2024/2025', semester: 1 }); // New State
   
-  // Image Load Error State
-  const [profileImgError, setProfileImgError] = useState(false);
-
   // TRIGGER RE-FETCH PROFILE (Callback from SettingsView)
   const refreshProfile = async () => {
-      // Re-fetch Settings
+      // Re-fetch Settings for Name & School Name
       try {
           const settings = await api.getAppSettings();
           if (settings) {
               setAdminProfile({
                   name: settings.adminName || 'Administrator',
-                  photo: settings.adminPhotoUrl || ''
               });
+              if (settings.schoolData && settings.schoolData.name) {
+                  setSchoolName(settings.schoolData.name);
+              }
+              // Refresh doc settings too
+              if (settings.docConfig && settings.docConfig.studentVisible) {
+                  setStudentVisibleDocs(settings.docConfig.studentVisible);
+              }
+              // Refresh Academic Info
+              if (settings.academicData) {
+                  setAcademicInfo({
+                      year: settings.academicData.activeYear || '2024/2025',
+                      semester: Number(settings.academicData.activeSemester) || 1
+                  });
+              }
           }
       } catch (e) {}
-
-      // Re-fetch Guru if needed
-      if (userRole === 'GURU' && currentUser) {
-          try {
-              const users = await api.getUsers();
-              const me = users.find((u: any) => u.id === currentUser.id);
-              if (me && me.photoUrl) setGuruPhoto(me.photoUrl);
-          } catch (e) {}
-      }
   };
 
-  // INITIAL LOAD: Fetch Admin Profile from Cloud Settings
+  // INITIAL LOAD: Fetch Admin Profile & School Data from Cloud Settings
   useEffect(() => {
       const fetchProfile = async () => {
           try {
               const settings = await api.getAppSettings();
               if (settings) {
-                  // Prioritize Cloud Settings
                   setAdminProfile({
                       name: settings.adminName || 'Administrator',
-                      photo: settings.adminPhotoUrl || '' // Use Cloud URL
                   });
+                  if (settings.schoolData && settings.schoolData.name) {
+                      setSchoolName(settings.schoolData.name);
+                  }
+                  if (settings.docConfig && settings.docConfig.studentVisible) {
+                      setStudentVisibleDocs(settings.docConfig.studentVisible);
+                  }
+                  if (settings.academicData) {
+                      setAcademicInfo({
+                          year: settings.academicData.activeYear || '2024/2025',
+                          semester: Number(settings.academicData.activeSemester) || 1
+                      });
+                  }
               } else {
-                  // Fallback to LocalStorage if offline/fail
+                  // Fallback
                   const savedAdminName = localStorage.getItem('admin_name');
-                  const savedAdminPhoto = localStorage.getItem('admin_photo');
                   setAdminProfile({
                       name: savedAdminName || 'Administrator',
-                      photo: savedAdminPhoto || ''
                   });
               }
           } catch (e) {
@@ -136,29 +145,6 @@ function App() {
       
       fetchProfile();
   }, []);
-
-  // Update Guru Data when user changes (Fetch latest from User DB)
-  useEffect(() => {
-      const fetchGuruProfile = async () => {
-          if (userRole === 'GURU' && currentUser) {
-              try {
-                  const users = await api.getUsers();
-                  const me = users.find((u: any) => u.id === currentUser.id);
-                  if (me && me.photoUrl) {
-                      setGuruPhoto(me.photoUrl);
-                  } else {
-                      // Fallback
-                      const savedPhoto = localStorage.getItem(`guru_photo_${currentUser.id}`);
-                      setGuruPhoto(savedPhoto || '');
-                  }
-              } catch (e) {
-                  console.error("Failed to fetch guru profile");
-              }
-          }
-      };
-      
-      if (userRole === 'GURU') fetchGuruProfile();
-  }, [userRole, currentUser]);
 
   // --- DATA FETCHING ---
   const fetchStudents = async () => {
@@ -184,8 +170,8 @@ function App() {
     }
   }, [isLoggedIn]);
 
-  // ... (Notification Logic remains same - removed for brevity) ...
-  const notifications = useMemo(() => { return []; }, []); // Placeholder to keep XML concise
+  // Placeholder notifications
+  const notifications = useMemo(() => { return []; }, []);
 
   // --- HANDLERS ---
   const handleLogin = (role: 'ADMIN' | 'GURU' | 'STUDENT', studentData?: Student) => {
@@ -195,7 +181,6 @@ function App() {
       setSelectedStudent(studentData);
       setCurrentUser({ id: studentData.id, name: studentData.fullName });
     } else if (role === 'GURU') {
-        // Typically name is passed from Login component, simplified here
         setCurrentUser({ id: 'guru-1', name: 'Bapak/Ibu Guru' });
     } else {
         setCurrentUser({ id: 'admin', name: adminProfile.name });
@@ -254,71 +239,6 @@ function App() {
       }
   };
 
-  // --- ONLINE PROFILE UPLOAD HANDLER ---
-  const handleProfileClick = () => {
-      if (userRole === 'ADMIN' || userRole === 'GURU') {
-          profileInputRef.current?.click();
-      }
-  };
-
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file || !currentUser) return;
-
-      setIsUploadingPhoto(true);
-      try {
-          // 1. Upload to Drive using 'PROFILE_PHOTO' category
-          // Note: 'PROFILE_PHOTO' is a logical category, the API handles it
-          const driveUrl = await api.uploadFile(file, currentUser.id, 'PROFILE_PHOTO');
-          
-          if (driveUrl) {
-              // Add timestamp to force refresh
-              const uniqueUrl = `${driveUrl}&t=${new Date().getTime()}`;
-
-              if (userRole === 'ADMIN') {
-                  // A. Admin: Save to App Settings
-                  setAdminProfile(prev => ({ ...prev, photo: uniqueUrl }));
-                  
-                  // Get current settings to prevent overwrite, then update photo
-                  const currentSettings = await api.getAppSettings() || {};
-                  await api.saveAppSettings({
-                      ...currentSettings,
-                      adminPhotoUrl: uniqueUrl
-                  });
-                  
-                  // Also save local for offline fallback
-                  localStorage.setItem('admin_photo', uniqueUrl);
-
-              } else if (userRole === 'GURU') {
-                  // B. Guru: Save to Users List
-                  setGuruPhoto(uniqueUrl);
-                  
-                  const allUsers = await api.getUsers();
-                  const updatedUsers = allUsers.map((u: any) => {
-                      if (u.id === currentUser.id) {
-                          return { ...u, photoUrl: uniqueUrl };
-                      }
-                      return u;
-                  });
-                  
-                  await api.updateUsers(updatedUsers);
-                  // Local fallback
-                  localStorage.setItem(`guru_photo_${currentUser.id}`, uniqueUrl);
-              }
-              alert("Foto profil berhasil diperbarui!");
-          } else {
-              alert("Gagal mengupload foto ke Cloud.");
-          }
-      } catch (e) {
-          console.error("Profile Upload Error:", e);
-          alert("Terjadi kesalahan saat upload.");
-      } finally {
-          setIsUploadingPhoto(false);
-          // Clear input
-          if (profileInputRef.current) profileInputRef.current.value = '';
-      }
-  };
-
   // --- TOP BAR DISPLAY INFO ---
   const getProfileInfo = () => {
       if (userRole === 'STUDENT' && selectedStudent) {
@@ -335,23 +255,18 @@ function App() {
           return {
               name: currentUser?.name || 'Guru Pengajar',
               role: 'Guru Wali Kelas',
-              photo: getPhotoUrl(guruPhoto)
+              photo: null // Guru uses default icon
           };
       } else {
           return {
               name: adminProfile.name,
               role: 'Administrator',
-              photo: getPhotoUrl(adminProfile.photo)
+              photo: null // Admin uses default icon
           };
       }
   };
 
   const profile = getProfileInfo();
-
-  // Reset error when photo URL changes
-  useEffect(() => {
-      setProfileImgError(false);
-  }, [profile.photo]);
 
   // --- RENDER CONTENT SWITCHER ---
   const renderContent = () => {
@@ -361,7 +276,7 @@ function App() {
 
     switch (currentView) {
       case 'dashboard':
-        return <Dashboard notifications={notifications} userRole={userRole || 'ADMIN'} students={students} />;
+        return <Dashboard notifications={notifications} userRole={userRole || 'ADMIN'} students={students} schoolName={schoolName} />;
       
       // ADMIN VIEWS
       case 'database':
@@ -378,8 +293,6 @@ function App() {
         return <GradeVerificationView students={students} onUpdate={refreshData} currentUser={{name: profile.name, role: 'ADMIN'}} />;
       case 'settings':
         return <SettingsView onProfileUpdate={refreshProfile} />;
-      case 'access-data': 
-        return <AccessDataView students={students} />;
       
       // SHARED VIEWS (Different props based on role)
       case 'grades':
@@ -417,6 +330,7 @@ function App() {
                     <FileManager 
                         documents={studentContext.documents} 
                         onUpload={handleStudentUpload}
+                        allowedCategories={studentVisibleDocs}
                     />
                 </div>
             </div>
@@ -428,25 +342,16 @@ function App() {
         ) : null;
 
       default:
-        return <Dashboard notifications={notifications} userRole={userRole || 'ADMIN'} students={students} />;
+        return <Dashboard notifications={notifications} userRole={userRole || 'ADMIN'} students={students} schoolName={schoolName} />;
     }
   };
 
   if (!isLoggedIn) {
-    return <Login onLogin={handleLogin} students={students} />;
+    return <Login onLogin={handleLogin} students={students} schoolName={schoolName} />;
   }
 
   return (
     <div className="flex h-screen bg-mac-bg overflow-hidden font-sans text-mac-text">
-      {/* Hidden Input for Profile Photo Upload */}
-      <input 
-          type="file" 
-          ref={profileInputRef} 
-          className="hidden" 
-          accept="image/*" 
-          onChange={handlePhotoUpload} 
-      />
-
       {!isSidebarCollapsed && (
         <div 
           className="fixed inset-0 bg-black/20 z-20 md:hidden backdrop-blur-sm"
@@ -461,6 +366,7 @@ function App() {
         isCollapsed={isSidebarCollapsed}
         toggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         userRole={userRole || 'ADMIN'}
+        schoolName={schoolName}
       />
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative transition-all duration-300">
@@ -471,24 +377,20 @@ function App() {
                 <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg">
                     <Menu className="w-6 h-6" />
                 </button>
-                <span className="font-bold text-gray-800">SiData SMPN 3 Pacet</span>
+                <span className="font-bold text-gray-800">SiData {schoolName}</span>
             </div>
             {/* Mobile Profile Icon */}
             <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-300 relative">
-                {profile.photo && !profileImgError ? (
+                {profile.photo ? (
                     <img 
                         src={profile.photo} 
                         className="w-full h-full object-cover" 
                         alt="Profile" 
                         referrerPolicy="no-referrer" 
-                        onError={(e) => {
-                            console.warn("Mobile profile image load failed", e);
-                            setProfileImgError(true);
-                        }}
                     />
                 ) : (
-                    <div className="w-full h-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs">
-                        {profile.name.charAt(0)}
+                    <div className="w-full h-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold">
+                        <User className="w-5 h-5" />
                     </div>
                 )}
             </div>
@@ -505,6 +407,17 @@ function App() {
 
              {/* Right Section */}
              <div className="flex items-center gap-6">
+                
+                {/* NEW: ACADEMIC INFO */}
+                <div className="hidden lg:flex flex-col items-end justify-center">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                        <Calendar className="w-3 h-3" /> Tahun Pelajaran
+                    </span>
+                    <span className="text-sm font-bold text-blue-700">
+                        {academicInfo.year} - Sem {academicInfo.semester}
+                    </span>
+                </div>
+
                 {/* Notification Bell */}
                 <div className="relative cursor-pointer group">
                    <div className="p-2 rounded-full hover:bg-gray-100 transition-colors">
@@ -518,42 +431,23 @@ function App() {
                 <div className="h-8 w-px bg-gray-300"></div>
 
                 {/* Profile Section */}
-                <div 
-                    className="flex items-center gap-3 cursor-pointer group" 
-                    onClick={handleProfileClick}
-                    title={userRole !== 'STUDENT' ? "Klik untuk ganti foto profil (Online)" : ""}
-                >
+                <div className="flex items-center gap-3">
                     <div className="text-right">
                         <p className="text-sm font-bold text-gray-800 leading-none mb-1">{profile.name}</p>
                         <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">{profile.role}</p>
                     </div>
                     <div className="w-10 h-10 rounded-full bg-gray-100 overflow-hidden border-2 border-white shadow-sm ring-1 ring-gray-200 relative group-hover:ring-blue-300 transition-all">
-                        {isUploadingPhoto ? (
-                            <div className="w-full h-full flex items-center justify-center bg-gray-200">
-                                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                            </div>
-                        ) : profile.photo && !profileImgError ? (
+                        {profile.photo ? (
                             <img 
                                 src={profile.photo} 
                                 className="w-full h-full object-cover" 
                                 alt="Profile" 
                                 referrerPolicy="no-referrer"
-                                onError={(e) => {
-                                    console.warn("Desktop profile image load failed", e);
-                                    setProfileImgError(true);
-                                }}
                             />
                         ) : (
                             <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-50">
                                 <User className="w-5 h-5" />
                             </div>
-                        )}
-                        
-                        {/* Hover Overlay for Upload (Admin/Guru) */}
-                        {(userRole === 'ADMIN' || userRole === 'GURU') && !isUploadingPhoto && (
-                           <div className="absolute inset-0 bg-black/40 hidden group-hover:flex items-center justify-center transition-opacity backdrop-blur-[1px]">
-                              <Camera className="w-4 h-4 text-white" />
-                           </div>
                         )}
                     </div>
                 </div>

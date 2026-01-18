@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Users, FileCheck, School, AlertCircle, FileText, CheckCircle2, Clock, AlertTriangle, ArrowRight, BookOpen, FileCheck2, Files, ClipboardList, Filter, Award } from 'lucide-react';
@@ -22,6 +23,7 @@ interface DashboardProps {
     onNotificationClick?: (notification: DashboardNotification) => void;
     userRole?: 'ADMIN' | 'STUDENT' | 'GURU';
     students?: Student[]; // Add students prop for calculation
+    schoolName?: string; // Added schoolName prop
 }
 
 const StatCard: React.FC<{ title: string; value: string | number; icon: React.ReactNode; color: string; subtext?: string }> = ({ title, value, icon, color, subtext }) => (
@@ -100,7 +102,7 @@ const NotificationCard: React.FC<{ notification: DashboardNotification; onClick:
     );
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ notifications = [], onNotificationClick, userRole = 'ADMIN', students = [] }) => {
+const Dashboard: React.FC<DashboardProps> = ({ notifications = [], onNotificationClick, userRole = 'ADMIN', students = [], schoolName = 'SMPN 3 Pacet' }) => {
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('ALL');
 
   const uniqueClasses = useMemo(() => {
@@ -181,7 +183,7 @@ const Dashboard: React.FC<DashboardProps> = ({ notifications = [], onNotificatio
                 <div className="flex justify-between items-start">
                     <div>
                         <h2 className="text-3xl font-bold mb-2">Selamat Datang, {userRole === 'ADMIN' ? 'Administrator' : (userRole === 'GURU' ? 'Bapak/Ibu Guru' : 'Siswa')}!</h2>
-                        <p className="text-blue-100 text-lg">Sistem Informasi Database Siswa SMPN 3 Pacet</p>
+                        <p className="text-blue-100 text-lg">Sistem Informasi Database Siswa {schoolName}</p>
                     </div>
                     {userRole !== 'STUDENT' && (
                         <div className="flex items-center gap-2 bg-white/20 backdrop-blur-md p-1 rounded-lg border border-white/20">

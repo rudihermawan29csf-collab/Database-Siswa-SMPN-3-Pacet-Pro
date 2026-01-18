@@ -1,21 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Save, School, Calendar, Users, Lock, Check, UploadCloud, Loader2, BookOpen, Plus, Trash2, LayoutList, Calculator, Pencil, X, Eye, EyeOff, RefreshCw, Cloud, FileText, FolderOpen, FileBadge, Database, ListChecks, UserCircle, Camera, Settings } from 'lucide-react';
-import { api } from '../services/api';
-import { MOCK_STUDENTS } from '../services/mockData';
 
-// Default constants used as fallback
-const DEFAULT_CLASS_LIST = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
-const LEVEL_LIST = ['VII', 'VIII', 'IX']; 
-const THEMES_LIST = [
-    'Gaya Hidup Berkelanjutan',
-    'Kearifan Lokal',
-    'Bhinneka Tunggal Ika',
-    'Bangunlah Jiwa dan Raganya',
-    'Suara Demokrasi',
-    'Berekayasa dan Berteknologi untuk Membanguan NKRI',
-    'Kewirausahaan',
-    'Kebekerjaan'
-];
+import React, { useState, useEffect } from 'react';
+import { Save, School, Calendar, Users, Check, Loader2, Plus, Trash2, Eye, EyeOff, FolderOpen, UserCircle, Settings, FileText, ListChecks, CheckSquare, Square, AlertCircle, FileBadge, ChevronDown, ChevronRight, Palette, X, Calculator, ToggleLeft, ToggleRight } from 'lucide-react';
+import { api } from '../services/api';
+
+// --- CONSTANTS ---
+// Default classes if none exist
+const DEFAULT_CLASSES = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
 
 const SUBJECT_MAP_CONFIG = [
     { key: 'PAI', label: 'PAI', full: 'Pendidikan Agama dan Budi Pekerti' },
@@ -31,51 +21,31 @@ const SUBJECT_MAP_CONFIG = [
     { key: 'Bahasa Jawa', label: 'B.JAWA', full: 'Bahasa Jawa' },
 ];
 
-const DEFAULT_DOCS = [
-    { id: 'IJAZAH', label: 'Ijazah SD', desc: 'Ijazah Asli' },
-    { id: 'AKTA', label: 'Akta Kelahiran', desc: 'Scan Asli' },
-    { id: 'KK', label: 'Kartu Keluarga', desc: 'Terbaru' },
-    { id: 'KTP_AYAH', label: 'KTP Ayah', desc: 'Scan KTP' },
-    { id: 'KTP_IBU', label: 'KTP Ibu', desc: 'Scan KTP' },
-    { id: 'FOTO', label: 'Pas Foto Siswa', desc: '3x4 Warna' },
+const DEFAULT_MASTER_DOCS = [
+    { id: 'IJAZAH', label: 'Ijazah SD/MI' },
+    { id: 'AKTA', label: 'Akta Kelahiran' },
+    { id: 'KK', label: 'Kartu Keluarga' },
+    { id: 'KTP_AYAH', label: 'KTP Ayah' },
+    { id: 'KTP_IBU', label: 'KTP Ibu' },
+    { id: 'NISN', label: 'Bukti NISN' },
+    { id: 'KIP', label: 'KIP / PKH' },
+    { id: 'FOTO', label: 'Pas Foto' },
+    { id: 'SKL', label: 'Surat Ket. Lulus' },
+    { id: 'KARTU_PELAJAR', label: 'Kartu Pelajar' },
+    { id: 'PIAGAM', label: 'Piagam/Prestasi' },
 ];
 
 interface SettingsViewProps {
     onProfileUpdate?: () => void;
 }
 
-// Helper to convert Drive URLs (Improved logic)
-const getPhotoUrl = (url: string | undefined | null) => {
-    if (!url) return '';
-    if (url.startsWith('data:') || url.startsWith('blob:')) return url;
-    
-    if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
-        let id = '';
-        const parts = url.split(/\/d\//);
-        if (parts.length > 1) {
-            id = parts[1].split('/')[0];
-        }
-        if (!id) {
-            const match = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-            if (match) id = match[1];
-        }
-
-        if (id) {
-            const tMatch = url.match(/[?&]t=([0-9]+)/);
-            const tParam = tMatch ? `&t=${tMatch[1]}` : '';
-            return `https://drive.google.com/uc?export=view&id=${id}${tParam}`;
-        }
-    }
-    return url;
-};
-
 const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
-  const [activeTab, setActiveTab] = useState<'GENERAL' | 'ACADEMIC' | 'USERS' | 'DOCS'>('GENERAL');
-  const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'GENERAL' | 'ACADEMIC' | 'CLASSES' | 'SKL' | 'DOCS' | 'P5' | 'USERS'>('GENERAL');
   const [isSaving, setIsSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
-  // --- GENERAL SETTINGS STATE ---
+  // 1. GENERAL & PROFILE
   const [schoolData, setSchoolData] = useState({
       name: 'SMP Negeri 3 Pacet',
       address: 'Jl. Raya Pacet No. 12',
@@ -83,61 +53,126 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
       nip: '19660518 198901 1 002'
   });
   const [adminName, setAdminName] = useState('Administrator');
-  const [adminPhoto, setAdminPhoto] = useState(''); // Stores URL (Local/Cloud)
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+
+  // 2. ACADEMIC 
+  const [activeAcademicYear, setActiveAcademicYear] = useState('2024/2025'); 
+  const [activeSemester, setActiveSemester] = useState(1); 
+  const [availableYears, setAvailableYears] = useState<string[]>(['2024/2025', '2023/2024', '2022/2023']);
+  const [newYearInput, setNewYearInput] = useState('');
   
-  // Image Error state
-  const [imgError, setImgError] = useState(false);
+  const [semesterYears, setSemesterYears] = useState<Record<string, Record<number, string>>>({
+      'VII': { 1: '2024/2025', 2: '2024/2025' },
+      'VIII': { 3: '2023/2024', 4: '2023/2024' },
+      'IX': { 5: '2022/2023', 6: '2022/2023' }
+  });
+  const [semesterDates, setSemesterDates] = useState<Record<string, Record<number, string>>>({}); 
 
-  // --- ACADEMIC SETTINGS STATE ---
-  const [academicYear, setAcademicYear] = useState('2024/2025');
-  const [semesterYears, setSemesterYears] = useState<any>({}); // { 1: '2024/2025', ... }
-  const [semesterDates, setSemesterDates] = useState<any>({}); // { 1: '2024-12-20', ... }
-  const [classList, setClassList] = useState<string[]>(DEFAULT_CLASS_LIST);
-  const [classConfig, setClassConfig] = useState<any>({}); 
-  const [subjects, setSubjects] = useState(SUBJECT_MAP_CONFIG);
-  const [recapSubjects, setRecapSubjects] = useState<string[]>([]); 
-  const [raporPageCount, setRaporPageCount] = useState(3);
+  // 3. CLASSES
+  const [classList, setClassList] = useState<string[]>(DEFAULT_CLASSES);
+  const [newClassName, setNewClassName] = useState('');
+  const [waliContext, setWaliContext] = useState({ year: '2024/2025', semester: 1 });
+  const [classConfig, setClassConfig] = useState<Record<string, { teacher: string, nip: string }>>({});
 
-  // --- USER SETTINGS STATE ---
+  // 4. SKL CONFIG
+  const [sklConfig, setSklConfig] = useState({
+      nomorSurat: '421.3/ 1457 /416-101.64/2025',
+      nomorSK: '421.3/1456/416-101.64/2025',
+      tanggalKeputusan: '2 Juni 2025',
+      tanggalSurat: '2 Juni 2025',
+      titimangsa: 'Mojokerto',
+      logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/e/eb/Lambang_Kabupaten_Mojokerto.png',
+      headerLine1: 'Jl. Tirtawening Ds. Kembangbelor Kec. Pacet Kab. Mojokerto Kode Pos 61374',
+      headerLine2: 'NSS: 201050314970 NIS: 200970 NPSN: 20555784',
+      headerLine3: 'Email : smpn3pacet2007@gmail.com, HP: 0815 5386 0273'
+  });
+
+  // 5. DOCS & P5 & RECAP
+  const [availableDocs, setAvailableDocs] = useState<{id: string, label: string}[]>(DEFAULT_MASTER_DOCS);
+  const [newDocName, setNewDocName] = useState('');
+
+  const [docConfig, setDocConfig] = useState<{
+      studentVisible: string[];
+      indukVerification: string[];
+      ijazahVerification: string[];
+      gradeVerification: string[];
+      raporPageCount: number;
+      showParentOnIjazah: boolean; // New Config
+  }>({
+      studentVisible: ['IJAZAH', 'AKTA', 'KK', 'KTP_AYAH', 'KTP_IBU', 'NISN', 'FOTO'],
+      indukVerification: ['AKTA', 'KK', 'FOTO', 'IJAZAH'],
+      ijazahVerification: ['IJAZAH', 'AKTA', 'KK', 'NISN', 'FOTO', 'SKL'],
+      gradeVerification: ['PIAGAM'],
+      raporPageCount: 3,
+      showParentOnIjazah: false
+  });
+  
+  // State for Recap 5 Semester Subjects
+  const [recapSubjects, setRecapSubjects] = useState<string[]>(SUBJECT_MAP_CONFIG.map(s => s.key));
+  
+  const [p5Themes, setP5Themes] = useState<{theme: string, description: string}[]>([
+      { theme: "Gaya Hidup Berkelanjutan", description: "Peserta didik memahami dampak aktivitas manusia terhadap lingkungan." },
+      { theme: "Kearifan Lokal", description: "Peserta didik membangun rasa ingin tahu dan kemampuan inkuiri melalui eksplorasi budaya." },
+      { theme: "Bhinneka Tunggal Ika", description: "Peserta didik mengenal dan mempromosikan budaya perdamaian dan anti kekerasan." }
+  ]);
+
+  // 6. USERS
   const [users, setUsers] = useState<any[]>([]);
-  const [showPasswordId, setShowPasswordId] = useState<string | null>(null);
   const [newUser, setNewUser] = useState({ name: '', username: '', password: '', role: 'GURU' });
+  const [showPasswordId, setShowPasswordId] = useState<string | null>(null);
 
-  // --- DOC SETTINGS STATE ---
-  const [docDefinitions, setDocDefinitions] = useState(DEFAULT_DOCS);
-  const [requiredDocs, setRequiredDocs] = useState<string[]>(['IJAZAH', 'AKTA', 'KK']);
-  const [verificationMap, setVerificationMap] = useState<any>({ bukuInduk: ['AKTA', 'KK', 'FOTO'] });
-
-  // INITIAL LOAD
+  // --- INITIAL LOAD ---
   useEffect(() => {
       const loadSettings = async () => {
           setLoading(true);
           try {
-              // 1. App Settings
               const settings = await api.getAppSettings();
               if (settings) {
-                  if(settings.schoolData) setSchoolData(settings.schoolData);
-                  if(settings.adminName) setAdminName(settings.adminName);
-                  if(settings.adminPhotoUrl) setAdminPhoto(settings.adminPhotoUrl);
-                  
-                  if(settings.academicData) {
-                      setAcademicYear(settings.academicData.year || '2024/2025');
-                      setSemesterYears(settings.academicData.semesterYears || {});
-                      setSemesterDates(settings.academicData.semesterDates || {});
+                  if (settings.schoolData) setSchoolData(settings.schoolData);
+                  if (settings.adminName) setAdminName(settings.adminName);
+                  if (settings.academicData) {
+                      if (settings.academicData.semesterYears) setSemesterYears(settings.academicData.semesterYears);
+                      if (settings.academicData.semesterDates) setSemesterDates(settings.academicData.semesterDates);
+                      if (settings.academicData.activeYear) setActiveAcademicYear(settings.academicData.activeYear);
+                      if (settings.academicData.activeSemester) setActiveSemester(settings.academicData.activeSemester);
+                      if (settings.academicData.availableYears) setAvailableYears(settings.academicData.availableYears);
                   }
-                  if(settings.classConfig) setClassConfig(settings.classConfig);
-                  if(settings.recapSubjects) setRecapSubjects(settings.recapSubjects);
-                  if(settings.raporPageCount) setRaporPageCount(settings.raporPageCount);
+                  if (settings.classConfig) setClassConfig(settings.classConfig);
+                  if (settings.classList && Array.isArray(settings.classList)) setClassList(settings.classList);
+                  if (settings.sklConfig) setSklConfig(prev => ({ ...prev, ...settings.sklConfig }));
+                  
+                  // Initialize Doc List & Config
+                  if (settings.availableDocs && Array.isArray(settings.availableDocs)) {
+                      setAvailableDocs(settings.availableDocs);
+                  }
+                  if (settings.docConfig) {
+                      setDocConfig(prev => ({
+                          ...prev,
+                          ...settings.docConfig,
+                          gradeVerification: settings.docConfig.gradeVerification || [],
+                          showParentOnIjazah: settings.docConfig.showParentOnIjazah || false
+                      }));
+                  }
+                  
+                  // Initialize Recap Subjects
+                  if (settings.recapSubjects && Array.isArray(settings.recapSubjects)) {
+                      setRecapSubjects(settings.recapSubjects);
+                  }
+                  
+                  if (settings.p5Themes) {
+                      if (typeof settings.p5Themes[0] === 'string') {
+                          setP5Themes(settings.p5Themes.map((t: string) => ({ theme: t, description: '' })));
+                      } else {
+                          setP5Themes(settings.p5Themes);
+                      }
+                  }
+                  if (settings.academicData && settings.academicData.activeYear) {
+                      setWaliContext(prev => ({ ...prev, year: settings.academicData.activeYear }));
+                  }
               }
-
-              // 2. Users
               const fetchedUsers = await api.getUsers();
               setUsers(fetchedUsers);
-
           } catch (e) {
-              console.error("Failed to load settings", e);
+              console.error("Failed load settings", e);
           } finally {
               setLoading(false);
           }
@@ -145,95 +180,148 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
       loadSettings();
   }, []);
 
-  // Reset img error when photo changes
-  useEffect(() => {
-      setImgError(false);
-  }, [adminPhoto]);
-
-  // --- HANDLERS: GENERAL ---
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-          setIsUploadingPhoto(true);
-          try {
-              // Upload to Cloud directly
-              const url = await api.uploadFile(file, 'ADMIN', 'PROFILE_PHOTO');
-              if (url) {
-                  // Add timestamp to force update
-                  const uniqueUrl = `${url}&t=${new Date().getTime()}`;
-                  setAdminPhoto(uniqueUrl);
-                  // Auto save URL to settings immediately for better UX
-                  await handleSaveSettings(true, uniqueUrl); 
-              } else {
-                  alert("Gagal upload foto");
-              }
-          } catch (e) {
-              console.error(e);
-              alert("Error upload foto");
-          } finally {
-              setIsUploadingPhoto(false);
-          }
-      }
-  };
-
-  const handleSaveSettings = async (silent = false, newPhotoUrl?: string) => {
-      if (!silent) setIsSaving(true);
-      
+  const handleSaveSettings = async () => {
+      setIsSaving(true);
       const payload = {
           schoolData,
           adminName,
-          adminPhotoUrl: newPhotoUrl || adminPhoto,
           academicData: {
-              year: academicYear,
+              activeYear: activeAcademicYear,
+              activeSemester: activeSemester,
+              availableYears: availableYears,
+              year: activeAcademicYear, 
               semesterYears,
               semesterDates
           },
           classConfig,
-          recapSubjects,
-          raporPageCount,
-          // Save Doc configs too if changed
+          classList,
+          sklConfig,
+          docConfig,
+          availableDocs, // Save the dynamic list of docs
+          recapSubjects, 
+          p5Themes,
+          raporPageCount: docConfig.raporPageCount
       };
 
       try {
+          localStorage.setItem('admin_name', adminName);
+          localStorage.setItem('sys_rapor_config', String(docConfig.raporPageCount));
           const success = await api.saveAppSettings(payload);
           if (success) {
-              if (!silent) {
-                  setSuccessMsg("Pengaturan berhasil disimpan!");
-                  setTimeout(() => setSuccessMsg(''), 3000);
-              }
-              // Also update localStorage for immediate fallback
-              localStorage.setItem('admin_name', adminName);
-              if (newPhotoUrl || adminPhoto) localStorage.setItem('admin_photo', newPhotoUrl || adminPhoto);
-              
-              // CALLBACK: Update parent App state
+              setSuccessMsg("Pengaturan berhasil disimpan!");
+              setTimeout(() => setSuccessMsg(''), 3000);
               if (onProfileUpdate) onProfileUpdate();
-
           } else {
-              if (!silent) alert("Gagal menyimpan pengaturan.");
+              alert("Gagal menyimpan ke server.");
           }
       } catch (e) {
           console.error(e);
-          if (!silent) alert("Terjadi kesalahan.");
+          alert("Terjadi kesalahan.");
       } finally {
           setIsSaving(false);
       }
   };
 
-  // --- HANDLERS: USERS ---
+  const updateSemesterData = (level: string, sem: number, field: 'year' | 'date', value: string) => {
+      if (field === 'year') {
+          setSemesterYears(prev => ({ ...prev, [level]: { ...prev[level], [sem]: value } }));
+      } else {
+          setSemesterDates(prev => ({ ...prev, [level]: { ...prev[level], [sem]: value } }));
+      }
+  };
+
+  const addAcademicYear = () => {
+      const trimmedInput = newYearInput.trim();
+      if (!trimmedInput) { alert("Mohon masukkan tahun pelajaran."); return; }
+      const yearRegex = /^\d{4}\/\d{4}$/;
+      if (!yearRegex.test(trimmedInput)) { alert("Format salah! Gunakan format YYYY/YYYY"); return; }
+      if (availableYears.includes(trimmedInput)) { alert("Tahun Pelajaran sudah ada."); return; }
+      setAvailableYears(prev => [trimmedInput, ...prev].sort((a, b) => b.localeCompare(a)));
+      setNewYearInput('');
+  };
+
+  const removeAcademicYear = (year: string) => {
+      if (confirm(`Hapus tahun pelajaran ${year}?`)) {
+          setAvailableYears(prev => prev.filter(y => y !== year));
+          if (activeAcademicYear === year) {
+              const remaining = availableYears.filter(y => y !== year);
+              setActiveAcademicYear(remaining.length > 0 ? remaining[0] : '');
+          }
+      }
+  };
+
+  const addClass = () => {
+      if (newClassName && !classList.includes(newClassName)) {
+          setClassList(prev => [...prev, newClassName].sort());
+          setNewClassName('');
+      } else { alert("Nama kelas kosong atau sudah ada."); }
+  };
+
+  const removeClass = (cls: string) => {
+      if (confirm(`Hapus Kelas ${cls}?`)) { setClassList(prev => prev.filter(c => c !== cls)); }
+  };
+
+  const updateWaliKelas = (className: string, field: 'teacher' | 'nip', value: string) => {
+      const key = `${waliContext.year}-${waliContext.semester}-${className}`;
+      setClassConfig(prev => ({ ...prev, [key]: { ...(prev[key] || { teacher: '', nip: '' }), [field]: value } }));
+  };
+
+  // --- DOC MANAGEMENT HANDLERS ---
+  
+  const addDocumentType = () => {
+      if (!newDocName.trim()) {
+          alert("Nama dokumen tidak boleh kosong.");
+          return;
+      }
+      
+      const newId = newDocName.trim().toUpperCase().replace(/[^A-Z0-9]/g, '_');
+      
+      if (availableDocs.some(d => d.id === newId)) {
+          alert("Dokumen dengan ID tersebut (atau nama mirip) sudah ada.");
+          return;
+      }
+
+      setAvailableDocs(prev => [...prev, { id: newId, label: newDocName.trim() }]);
+      setNewDocName('');
+  };
+
+  const removeDocumentType = (id: string) => {
+      if (window.confirm(`Hapus jenis dokumen ini? Dokumen yang sudah diupload siswa dengan kategori ini mungkin tidak akan tampil dengan benar.`)) {
+          setAvailableDocs(prev => prev.filter(d => d.id !== id));
+          
+          // Cleanup from configs
+          setDocConfig(prev => ({
+              ...prev,
+              studentVisible: prev.studentVisible.filter(x => x !== id),
+              indukVerification: prev.indukVerification.filter(x => x !== id),
+              ijazahVerification: prev.ijazahVerification.filter(x => x !== id),
+              gradeVerification: prev.gradeVerification.filter(x => x !== id),
+          }));
+      }
+  };
+
+  const toggleDoc = (listKey: 'studentVisible' | 'indukVerification' | 'ijazahVerification' | 'gradeVerification', docId: string) => {
+      setDocConfig(prev => {
+          const list = prev[listKey] || []; // Ensure array exists
+          const newList = list.includes(docId) ? list.filter(id => id !== docId) : [...list, docId];
+          return { ...prev, [listKey]: newList };
+      });
+  };
+
+  const toggleRecapSubject = (subjectKey: string) => {
+      setRecapSubjects(prev => {
+          if (prev.includes(subjectKey)) return prev.filter(k => k !== subjectKey);
+          return [...prev, subjectKey];
+      });
+  };
+
   const handleAddUser = async () => {
       if (!newUser.name || !newUser.username || !newUser.password) return;
       const newUserData = { ...newUser, id: Math.random().toString(36).substr(2, 9) };
       const updatedUsers = [...users, newUserData];
-      
       setIsSaving(true);
-      try {
-          const success = await api.updateUsers(updatedUsers);
-          if (success) {
-              setUsers(updatedUsers);
-              setNewUser({ name: '', username: '', password: '', role: 'GURU' });
-              alert("User berhasil ditambahkan.");
-          }
-      } catch (e) { alert("Gagal update user"); }
+      try { await api.updateUsers(updatedUsers); setUsers(updatedUsers); setNewUser({ name: '', username: '', password: '', role: 'GURU' }); } 
+      catch (e) { alert("Gagal update user"); }
       finally { setIsSaving(false); }
   };
 
@@ -241,32 +329,32 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
       if (window.confirm("Hapus user ini?")) {
           const updatedUsers = users.filter(u => u.id !== id);
           setIsSaving(true);
-          try {
-              await api.updateUsers(updatedUsers);
-              setUsers(updatedUsers);
-          } catch(e) { alert("Gagal hapus user"); }
+          try { await api.updateUsers(updatedUsers); setUsers(updatedUsers); } 
+          catch(e) { alert("Gagal hapus user"); }
           finally { setIsSaving(false); }
       }
   };
 
-  if (loading) {
-      return <div className="flex h-full items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
-  }
+  if (loading) return <div className="flex h-full items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
 
   return (
     <div className="flex flex-col h-full space-y-6 animate-fade-in pb-32">
+        {/* Header */}
         <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-            <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                <Settings className="w-6 h-6 text-gray-600" /> Pengaturan Sistem
-            </h2>
+            <div className="flex items-center gap-4">
+                <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                    <Settings className="w-6 h-6 text-gray-600" /> Pengaturan Sistem
+                </h2>
+                {/* Active Year Display in Header */}
+                <div className="hidden md:flex items-center gap-2 bg-blue-50 text-blue-800 px-3 py-1 rounded-full border border-blue-100 shadow-sm">
+                    <Calendar className="w-3 h-3" />
+                    <span className="text-xs font-bold uppercase">{activeAcademicYear} - Sem {activeSemester}</span>
+                </div>
+            </div>
+            
             <div className="flex gap-2">
-                <button 
-                    onClick={() => handleSaveSettings()} 
-                    disabled={isSaving}
-                    className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all disabled:opacity-50"
-                >
-                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    Simpan Perubahan
+                <button onClick={handleSaveSettings} disabled={isSaving} className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all disabled:opacity-50">
+                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Simpan Perubahan
                 </button>
             </div>
         </div>
@@ -278,182 +366,260 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
         )}
 
         <div className="flex flex-col lg:flex-row gap-6">
-            {/* Sidebar Tabs */}
             <div className="w-full lg:w-64 bg-white rounded-xl border border-gray-200 shadow-sm h-fit overflow-hidden">
                 <div className="p-4 border-b border-gray-100 bg-gray-50">
-                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Menu Pengaturan</h3>
+                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Menu Konfigurasi</h3>
                 </div>
                 <div className="flex flex-col p-2 gap-1">
-                    <button onClick={() => setActiveTab('GENERAL')} className={`text-left px-4 py-3 rounded-lg text-sm font-bold flex items-center gap-3 transition-colors ${activeTab === 'GENERAL' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>
-                        <School className="w-4 h-4" /> Umum & Profil
-                    </button>
-                    <button onClick={() => setActiveTab('ACADEMIC')} className={`text-left px-4 py-3 rounded-lg text-sm font-bold flex items-center gap-3 transition-colors ${activeTab === 'ACADEMIC' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>
-                        <Calendar className="w-4 h-4" /> Tahun Ajaran
-                    </button>
-                    <button onClick={() => setActiveTab('USERS')} className={`text-left px-4 py-3 rounded-lg text-sm font-bold flex items-center gap-3 transition-colors ${activeTab === 'USERS' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>
-                        <Users className="w-4 h-4" /> Manajemen User
-                    </button>
-                    <button onClick={() => setActiveTab('DOCS')} className={`text-left px-4 py-3 rounded-lg text-sm font-bold flex items-center gap-3 transition-colors ${activeTab === 'DOCS' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>
-                        <FolderOpen className="w-4 h-4" /> Dokumen & Rapor
-                    </button>
+                    {[
+                        { id: 'GENERAL', label: 'Umum & Profil', icon: School },
+                        { id: 'ACADEMIC', label: 'Tahun Ajaran', icon: Calendar },
+                        { id: 'CLASSES', label: 'Kelas & Wali', icon: Users },
+                        { id: 'SKL', label: 'Pengaturan SKL', icon: FileBadge },
+                        { id: 'DOCS', label: 'Dokumen & Rapor', icon: FolderOpen },
+                        { id: 'P5', label: 'Tema Projek P5', icon: Palette },
+                        { id: 'USERS', label: 'Manajemen Guru', icon: UserCircle },
+                    ].map(item => (
+                        <button key={item.id} onClick={() => setActiveTab(item.id as any)} className={`text-left px-4 py-3 rounded-lg text-sm font-bold flex items-center gap-3 transition-colors ${activeTab === item.id ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>
+                            <item.icon className="w-4 h-4" /> {item.label}
+                        </button>
+                    ))}
                 </div>
             </div>
 
-            {/* Content Area */}
             <div className="flex-1 bg-white rounded-xl border border-gray-200 shadow-sm p-6">
                 
-                {/* --- TAB GENERAL --- */}
+                {/* --- 1. GENERAL --- */}
                 {activeTab === 'GENERAL' && (
                     <div className="space-y-6">
                         <div className="border-b pb-4 mb-4">
                             <h3 className="text-lg font-bold text-gray-800 mb-1">Profil Sekolah & Admin</h3>
-                            <p className="text-sm text-gray-500">Informasi dasar sekolah dan akun administrator.</p>
+                            <p className="text-sm text-gray-500">Informasi ini akan tampil di KOP Surat dan Laporan.</p>
+                        </div>
+                        <div className="flex flex-col md:flex-row gap-8">
+                            <div className="w-full md:w-1/3 flex flex-col items-center p-6 border rounded-xl bg-gray-50">
+                                <div className="w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center mb-4"><UserCircle className="w-16 h-16 text-gray-400" /></div>
+                                <div className="text-center w-full"><label className="text-xs font-bold text-gray-500 uppercase">Nama Administrator</label><input type="text" className="w-full mt-1 text-center p-2 border rounded-lg font-bold" value={adminName} onChange={(e) => setAdminName(e.target.value)} /></div>
+                            </div>
+                            <div className="flex-1 space-y-4">
+                                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nama Sekolah</label><input type="text" className="w-full p-2.5 border rounded-lg" value={schoolData.name} onChange={e => setSchoolData({...schoolData, name: e.target.value})} /></div>
+                                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Alamat Sekolah</label><textarea className="w-full p-2.5 border rounded-lg" rows={2} value={schoolData.address} onChange={e => setSchoolData({...schoolData, address: e.target.value})} /></div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Kepala Sekolah</label><input type="text" className="w-full p-2.5 border rounded-lg" value={schoolData.headmaster} onChange={e => setSchoolData({...schoolData, headmaster: e.target.value})} /></div>
+                                    <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">NIP Kepala Sekolah</label><input type="text" className="w-full p-2.5 border rounded-lg" value={schoolData.nip} onChange={e => setSchoolData({...schoolData, nip: e.target.value})} /></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* --- 2. ACADEMIC --- */}
+                {activeTab === 'ACADEMIC' && (
+                    <div className="space-y-8">
+                        <div className="border-b pb-4"><h3 className="text-lg font-bold text-gray-800 mb-1">Pengaturan Tahun Pelajaran</h3><p className="text-sm text-gray-500">Atur tahun pelajaran aktif dan manajemen data semester.</p></div>
+                        <div className="bg-blue-50 p-5 rounded-xl border border-blue-100 grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div><label className="block text-xs font-bold text-blue-800 uppercase mb-2">Tahun Pelajaran Aktif</label><div className="flex gap-2"><select className="flex-1 p-2 border border-blue-200 rounded text-blue-900 font-bold bg-white" value={activeAcademicYear} onChange={e => setActiveAcademicYear(e.target.value)}>{availableYears.map(y => <option key={y} value={y}>{y}</option>)}</select></div></div>
+                            <div><label className="block text-xs font-bold text-blue-800 uppercase mb-2">Semester Aktif</label><select className="w-full p-2 border border-blue-200 rounded text-blue-900 font-bold bg-white" value={activeSemester} onChange={e => setActiveSemester(Number(e.target.value))}>{[1, 2, 3, 4, 5, 6].map(s => <option key={s} value={s}>Semester {s}</option>)}</select></div>
+                        </div>
+                        <div>
+                            <div className="flex justify-between items-end mb-3"><h4 className="text-sm font-bold text-gray-700 uppercase">Manajemen Daftar Tahun Pelajaran</h4><div className="flex gap-2 items-center"><input type="text" placeholder="Contoh: 2025/2026" className="p-1.5 border border-gray-300 rounded text-sm w-40" value={newYearInput} onChange={(e) => setNewYearInput(e.target.value)} /><button onClick={addAcademicYear} className="text-xs bg-green-600 text-white px-3 py-2 rounded flex items-center gap-1 hover:bg-green-700"><Plus className="w-3 h-3" /> Tambah</button></div></div>
+                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 max-h-40 overflow-y-auto"><div className="grid grid-cols-2 md:grid-cols-4 gap-2">{availableYears.map(year => (<div key={year} className="bg-white px-3 py-2 rounded border border-gray-200 flex justify-between items-center shadow-sm"><span className="text-sm font-bold text-gray-700">{year}</span>{year !== activeAcademicYear && (<button onClick={() => removeAcademicYear(year)} className="text-red-400 hover:text-red-600"><X className="w-3 h-3" /></button>)}</div>))}</div></div>
+                        </div>
+                        <div><h4 className="text-sm font-bold text-gray-700 uppercase mb-3 flex items-center gap-2"><Calendar className="w-4 h-4"/> Tanggal Rapor (Histori)</h4><div className="overflow-x-auto"><table className="w-full text-sm border-collapse border border-gray-200 rounded-lg overflow-hidden"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3 border text-left w-24">Semester</th><th className="p-3 border text-left">Jenjang</th><th className="p-3 border text-left">Tahun Pelajaran (Histori)</th><th className="p-3 border text-left">Tanggal Rapor</th></tr></thead><tbody>{['VII', 'VIII', 'IX'].map(level => ([1, 2, 3, 4, 5, 6].map(sem => (<tr key={`${level}-${sem}`} className="hover:bg-gray-50"><td className="p-2 border font-bold text-center bg-gray-50">Sem {sem}</td><td className="p-2 border font-bold text-center text-gray-500">{level}</td><td className="p-2 border"><input type="text" className="w-full p-1.5 border rounded text-xs" placeholder="Contoh: 2022/2023" value={semesterYears[level]?.[sem] || ''} onChange={(e) => updateSemesterData(level, sem, 'year', e.target.value)} /></td><td className="p-2 border"><input type="date" className="w-full p-1.5 border rounded text-xs" value={semesterDates[level]?.[sem] || ''} onChange={(e) => updateSemesterData(level, sem, 'date', e.target.value)} /></td></tr>))))}</tbody></table></div></div>
+                    </div>
+                )}
+
+                {/* --- 3. CLASSES --- */}
+                {activeTab === 'CLASSES' && (
+                    <div className="space-y-6">
+                        <div className="border-b pb-4 mb-4"><h3 className="text-lg font-bold text-gray-800 mb-1">Wali Kelas per Semester</h3><p className="text-sm text-gray-500">Pilih Tahun Ajaran dan Semester untuk mengatur Wali Kelas.</p></div>
+                        <div className="flex gap-4 p-4 bg-blue-50 rounded-lg border border-blue-100 mb-6 items-end"><div className="flex-1"><label className="block text-xs font-bold text-blue-800 uppercase mb-1">Tahun Pelajaran</label><select className="w-full p-2 border border-blue-200 rounded font-bold text-blue-900 bg-white" value={waliContext.year} onChange={(e) => setWaliContext({...waliContext, year: e.target.value})}>{availableYears.map(y => <option key={y} value={y}>{y}</option>)}</select></div><div className="w-32"><label className="block text-xs font-bold text-blue-800 uppercase mb-1">Semester</label><select className="w-full p-2 border border-blue-200 rounded font-bold text-blue-900 bg-white" value={waliContext.semester} onChange={(e) => setWaliContext({...waliContext, semester: Number(e.target.value)})}>{[1,2,3,4,5,6].map(s => <option key={s} value={s}>{s}</option>)}</select></div></div>
+                        <div className="grid grid-cols-1 gap-4 mb-6">{classList.map(cls => { const key = `${waliContext.year}-${waliContext.semester}-${cls}`; const data = classConfig[key] || { teacher: '', nip: '' }; return (<div key={cls} className="flex flex-col md:flex-row items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200 group"><div className="w-24 flex items-center gap-2"><button onClick={() => removeClass(cls)} className="p-1 text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4"/></button><div className="font-bold text-gray-700 bg-white p-2 rounded border text-center w-full">{cls}</div></div><div className="flex-1 w-full"><label className="text-[10px] uppercase font-bold text-gray-400">Nama Wali Kelas</label><input type="text" className="w-full p-2 border rounded text-sm focus:border-blue-500 outline-none" value={data.teacher} onChange={(e) => updateWaliKelas(cls, 'teacher', e.target.value)} /></div><div className="flex-1 w-full"><label className="text-[10px] uppercase font-bold text-gray-400">NIP Wali Kelas</label><input type="text" className="w-full p-2 border rounded text-sm focus:border-blue-500 outline-none" value={data.nip} onChange={(e) => updateWaliKelas(cls, 'nip', e.target.value)} /></div></div>); })}</div>
+                        <div className="flex gap-2 items-center pt-4 border-t border-gray-100"><input type="text" placeholder="Tambah Kelas Baru (Contoh: VII D)" className="p-2 border rounded-lg text-sm w-64" value={newClassName} onChange={(e) => setNewClassName(e.target.value)} /><button onClick={addClass} className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-green-700"><Plus className="w-4 h-4" /> Tambah Kelas</button></div>
+                    </div>
+                )}
+
+                {/* --- 4. SKL CONFIG --- */}
+                {activeTab === 'SKL' && (
+                    <div className="space-y-6">
+                        <div className="border-b pb-4 mb-4"><h3 className="text-lg font-bold text-gray-800 mb-1">Pengaturan SKL</h3><p className="text-sm text-gray-500">Konfigurasi format surat keterangan lulus.</p></div>
+                        <div className="grid grid-cols-1 gap-4"><div><label className="text-xs font-bold text-gray-500 uppercase">Logo URL</label><input type="text" className="w-full p-2 border rounded" value={sklConfig.logoUrl} onChange={e => setSklConfig({...sklConfig, logoUrl: e.target.value})} /></div><div><label className="text-xs font-bold text-gray-500 uppercase">Header Baris 1 (Alamat)</label><input type="text" className="w-full p-2 border rounded" value={sklConfig.headerLine1} onChange={e => setSklConfig({...sklConfig, headerLine1: e.target.value})} /></div><div><label className="text-xs font-bold text-gray-500 uppercase">Header Baris 2 (NSS/NPSN)</label><input type="text" className="w-full p-2 border rounded" value={sklConfig.headerLine2} onChange={e => setSklConfig({...sklConfig, headerLine2: e.target.value})} /></div><div><label className="text-xs font-bold text-gray-500 uppercase">Header Baris 3 (Kontak)</label><input type="text" className="w-full p-2 border rounded" value={sklConfig.headerLine3} onChange={e => setSklConfig({...sklConfig, headerLine3: e.target.value})} /></div><div className="grid grid-cols-2 gap-4 mt-4"><div><label className="text-xs font-bold text-gray-500 uppercase">Nomor Surat</label><input type="text" className="w-full p-2 border rounded" value={sklConfig.nomorSurat} onChange={e => setSklConfig({...sklConfig, nomorSurat: e.target.value})} /></div><div><label className="text-xs font-bold text-gray-500 uppercase">Nomor SK Kepala Sekolah</label><input type="text" className="w-full p-2 border rounded" value={sklConfig.nomorSK} onChange={e => setSklConfig({...sklConfig, nomorSK: e.target.value})} /></div><div><label className="text-xs font-bold text-gray-500 uppercase">Tanggal Keputusan</label><input type="text" className="w-full p-2 border rounded" value={sklConfig.tanggalKeputusan} onChange={e => setSklConfig({...sklConfig, tanggalKeputusan: e.target.value})} /></div><div><label className="text-xs font-bold text-gray-500 uppercase">Tanggal Surat (Titimangsa)</label><input type="text" className="w-full p-2 border rounded" value={sklConfig.tanggalSurat} onChange={e => setSklConfig({...sklConfig, tanggalSurat: e.target.value})} /></div><div><label className="text-xs font-bold text-gray-500 uppercase">Tempat (Titimangsa)</label><input type="text" className="w-full p-2 border rounded" value={sklConfig.titimangsa} onChange={e => setSklConfig({...sklConfig, titimangsa: e.target.value})} /></div></div></div>
+                    </div>
+                )}
+
+                {/* --- 5. DOCS & P5 CONFIG --- */}
+                {activeTab === 'DOCS' && (
+                    <div className="space-y-8">
+                        {/* REKAP 5 SEMESTER CONFIG - ADDED BACK */}
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-800 mb-2 flex items-center gap-2"><Calculator className="w-5 h-5"/> Konfigurasi Rekap 5 Semester</h3>
+                            <p className="text-sm text-gray-500 mb-3">Pilih mata pelajaran yang akan ditampilkan pada menu Rekap 5 Semester.</p>
+                            <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                    {SUBJECT_MAP_CONFIG.map(sub => (
+                                        <button 
+                                            key={sub.key}
+                                            onClick={() => toggleRecapSubject(sub.key)}
+                                            className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-bold transition-all ${recapSubjects.includes(sub.key) ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-300 hover:border-purple-400'}`}
+                                        >
+                                            {recapSubjects.includes(sub.key) ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                                            {sub.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
 
-                        <div className="flex flex-col md:flex-row gap-8">
-                            {/* Admin Profile Card */}
-                            <div className="w-full md:w-1/3 flex flex-col items-center p-6 border rounded-xl bg-gray-50">
-                                <div className="relative w-32 h-32 mb-4 group">
-                                    <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-lg bg-gray-200">
-                                        {adminPhoto && !imgError ? (
-                                            <img 
-                                                src={getPhotoUrl(adminPhoto)} 
-                                                alt="Admin" 
-                                                className="w-full h-full object-cover" 
-                                                referrerPolicy="no-referrer"
-                                                onError={(e) => {
-                                                    console.warn("Settings image load failed", e);
-                                                    setImgError(true);
-                                                }}
-                                            />
-                                        ) : (
-                                            <div className="w-full h-full flex items-center justify-center text-gray-400">
-                                                <UserCircle className="w-16 h-16" />
-                                            </div>
-                                        )}
-                                    </div>
-                                    <button 
-                                        onClick={() => fileInputRef.current?.click()}
-                                        disabled={isUploadingPhoto}
-                                        className="absolute bottom-0 right-0 bg-blue-600 text-white p-2.5 rounded-full shadow-lg hover:bg-blue-700 transition-transform active:scale-95 disabled:opacity-70"
-                                        title="Ganti Foto (Online)"
-                                    >
-                                        {isUploadingPhoto ? <Loader2 className="w-4 h-4 animate-spin"/> : <Camera className="w-4 h-4" />}
-                                    </button>
-                                    <input 
-                                        type="file" 
-                                        ref={fileInputRef} 
-                                        className="hidden" 
-                                        accept="image/*" 
-                                        onChange={handlePhotoUpload} 
-                                    />
+                        {/* NEW: PARENT ON IJAZAH CONFIG */}
+                        <div className="border-t pt-4">
+                            <h3 className="text-lg font-bold text-gray-800 mb-2">Konfigurasi Data Ijazah</h3>
+                            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 flex items-center justify-between">
+                                <div>
+                                    <h4 className="text-sm font-bold text-blue-900">Tampilkan Nama Orang Tua (Ayah)</h4>
+                                    <p className="text-xs text-blue-700">Jika aktif, kolom nama ayah akan muncul di tabel data ijazah.</p>
                                 </div>
-                                <div className="text-center w-full">
-                                    <label className="text-xs font-bold text-gray-500 uppercase">Nama Administrator</label>
+                                <button 
+                                    onClick={() => setDocConfig({...docConfig, showParentOnIjazah: !docConfig.showParentOnIjazah})}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${docConfig.showParentOnIjazah ? 'bg-blue-600' : 'bg-gray-200'}`}
+                                >
+                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${docConfig.showParentOnIjazah ? 'translate-x-6' : 'translate-x-1'}`} />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="border-t pt-4">
+                            <h3 className="text-lg font-bold text-gray-800 mb-2">Konfigurasi Upload Rapor</h3>
+                            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 flex items-center gap-4">
+                                <label className="text-sm font-bold text-blue-800">Jumlah Halaman Rapor per Semester:</label>
+                                <input 
+                                    type="number" 
+                                    min={1} 
+                                    max={10} 
+                                    className="w-20 p-2 border border-blue-300 rounded font-bold text-center"
+                                    value={docConfig.raporPageCount} 
+                                    onChange={e => setDocConfig({...docConfig, raporPageCount: Number(e.target.value)})}
+                                />
+                                <span className="text-xs text-blue-600">(Default: 3 Halaman)</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div className="flex justify-between items-end mb-4 border-b pb-2">
+                                <h3 className="text-lg font-bold text-gray-800">Konfigurasi Tampilan Dokumen</h3>
+                                
+                                {/* ADD NEW DOCUMENT UI */}
+                                <div className="flex gap-2 items-center">
                                     <input 
                                         type="text" 
-                                        className="w-full mt-1 text-center p-2 border border-gray-300 rounded-lg font-bold text-gray-800 focus:ring-2 focus:ring-blue-500 outline-none"
-                                        value={adminName}
-                                        onChange={(e) => setAdminName(e.target.value)}
+                                        placeholder="Nama Dokumen Baru" 
+                                        className="p-1.5 border border-gray-300 rounded text-sm w-48"
+                                        value={newDocName}
+                                        onChange={(e) => setNewDocName(e.target.value)}
                                     />
-                                    <p className="text-[10px] text-green-600 mt-2 flex items-center justify-center gap-1">
-                                        <Cloud className="w-3 h-3" /> Foto tersimpan di Cloud
-                                    </p>
+                                    <button onClick={addDocumentType} className="text-xs bg-blue-600 text-white px-3 py-2 rounded flex items-center gap-1 hover:bg-blue-700">
+                                        <Plus className="w-3 h-3" /> Tambah
+                                    </button>
                                 </div>
                             </div>
 
-                            {/* School Data Form */}
-                            <div className="flex-1 space-y-4">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="md:col-span-2">
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nama Sekolah</label>
-                                        <input type="text" className="w-full p-2.5 border rounded-lg" value={schoolData.name} onChange={e => setSchoolData({...schoolData, name: e.target.value})} />
-                                    </div>
-                                    <div className="md:col-span-2">
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Alamat Sekolah</label>
-                                        <textarea className="w-full p-2.5 border rounded-lg" rows={2} value={schoolData.address} onChange={e => setSchoolData({...schoolData, address: e.target.value})} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nama Kepala Sekolah</label>
-                                        <input type="text" className="w-full p-2.5 border rounded-lg" value={schoolData.headmaster} onChange={e => setSchoolData({...schoolData, headmaster: e.target.value})} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">NIP Kepala Sekolah</label>
-                                        <input type="text" className="w-full p-2.5 border rounded-lg" value={schoolData.nip} onChange={e => setSchoolData({...schoolData, nip: e.target.value})} />
-                                    </div>
-                                </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm border border-gray-200 rounded-lg">
+                                    <thead className="bg-gray-100 text-gray-700">
+                                        <tr>
+                                            <th className="p-3 text-left border-b w-64">Nama Dokumen</th>
+                                            <th className="p-3 text-center border-b bg-blue-50">Tampil ke Siswa</th>
+                                            <th className="p-3 text-center border-b bg-yellow-50">Verifikasi Buku Induk</th>
+                                            <th className="p-3 text-center border-b bg-purple-50">Verifikasi Ijazah</th>
+                                            <th className="p-3 text-center border-b bg-green-50">Verifikasi Nilai</th>
+                                            <th className="p-3 text-center border-b w-16">Hapus</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {availableDocs.map(doc => (
+                                            <tr key={doc.id} className="hover:bg-gray-50">
+                                                <td className="p-3 font-bold text-gray-700">{doc.label}</td>
+                                                
+                                                <td className="p-3 text-center bg-blue-50/20">
+                                                    <button onClick={() => toggleDoc('studentVisible', doc.id)} className={`p-1 rounded ${docConfig.studentVisible.includes(doc.id) ? 'text-blue-600 bg-blue-100' : 'text-gray-300'}`}>
+                                                        {docConfig.studentVisible.includes(doc.id) ? <CheckSquare className="w-5 h-5"/> : <Square className="w-5 h-5"/>}
+                                                    </button>
+                                                </td>
+                                                
+                                                <td className="p-3 text-center bg-yellow-50/20">
+                                                    <button onClick={() => toggleDoc('indukVerification', doc.id)} className={`p-1 rounded ${docConfig.indukVerification.includes(doc.id) ? 'text-yellow-600 bg-yellow-100' : 'text-gray-300'}`}>
+                                                        {docConfig.indukVerification.includes(doc.id) ? <CheckSquare className="w-5 h-5"/> : <Square className="w-5 h-5"/>}
+                                                    </button>
+                                                </td>
+                                                
+                                                <td className="p-3 text-center bg-purple-50/20">
+                                                    <button onClick={() => toggleDoc('ijazahVerification', doc.id)} className={`p-1 rounded ${docConfig.ijazahVerification.includes(doc.id) ? 'text-purple-600 bg-purple-100' : 'text-gray-300'}`}>
+                                                        {docConfig.ijazahVerification.includes(doc.id) ? <CheckSquare className="w-5 h-5"/> : <Square className="w-5 h-5"/>}
+                                                    </button>
+                                                </td>
+
+                                                <td className="p-3 text-center bg-green-50/20">
+                                                    <button onClick={() => toggleDoc('gradeVerification', doc.id)} className={`p-1 rounded ${docConfig.gradeVerification?.includes(doc.id) ? 'text-green-600 bg-green-100' : 'text-gray-300'}`}>
+                                                        {docConfig.gradeVerification?.includes(doc.id) ? <CheckSquare className="w-5 h-5"/> : <Square className="w-5 h-5"/>}
+                                                    </button>
+                                                </td>
+
+                                                <td className="p-3 text-center">
+                                                    <button onClick={() => removeDocumentType(doc.id)} className="text-gray-300 hover:text-red-500 transition-colors p-1">
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* --- OTHER TABS (SIMPLIFIED FOR BREVITY, LOGIC REMAINS SAME) --- */}
-                {activeTab === 'ACADEMIC' && (
+                {activeTab === 'P5' && (
                     <div className="space-y-6">
-                        <h3 className="text-lg font-bold text-gray-800">Tahun Ajaran & Kelas</h3>
-                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                            <label className="block text-xs font-bold text-blue-800 uppercase mb-2">Tahun Pelajaran Aktif (Global)</label>
-                            <input type="text" className="w-full p-2 border border-blue-200 rounded text-blue-900 font-bold" value={academicYear} onChange={e => setAcademicYear(e.target.value)} />
+                        <h3 className="text-lg font-bold text-gray-800 mb-2">Tema Projek Penguatan Profil Pelajar Pancasila (P5)</h3>
+                        <div className="space-y-4">
+                            {p5Themes.map((theme, idx) => (
+                                <div key={idx} className="bg-gray-50 p-4 rounded-xl border border-gray-200 relative group">
+                                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => { const newThemes = [...p5Themes]; newThemes.splice(idx, 1); setP5Themes(newThemes); }} className="p-1 text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                                    </div>
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase">Tema {idx + 1}</label>
+                                    <input type="text" className="w-full p-2 border rounded mb-2 font-bold text-sm" value={theme.theme} onChange={(e) => { const newThemes = [...p5Themes]; newThemes[idx].theme = e.target.value; setP5Themes(newThemes); }} placeholder="Judul Tema" />
+                                    <textarea className="w-full p-2 border rounded text-xs" rows={2} value={theme.description} onChange={(e) => { const newThemes = [...p5Themes]; newThemes[idx].description = e.target.value; setP5Themes(newThemes); }} placeholder="Deskripsi Tema" />
+                                </div>
+                            ))}
+                            <button onClick={() => setP5Themes([...p5Themes, { theme: '', description: '' }])} className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 font-bold hover:border-blue-400 hover:text-blue-500 transition-colors flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Tambah Tema P5</button>
                         </div>
-                        {/* More detailed academic settings... */}
                     </div>
                 )}
 
+                {/* --- 6. USERS --- */}
                 {activeTab === 'USERS' && (
                     <div className="space-y-6">
-                        <h3 className="text-lg font-bold text-gray-800">Manajemen Pengguna (Guru)</h3>
-                        
-                        {/* Add User Form */}
-                        <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-                            <div><label className="text-xs font-bold text-gray-500">Nama Lengkap</label><input className="w-full p-2 border rounded" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} placeholder="Nama Guru" /></div>
-                            <div><label className="text-xs font-bold text-gray-500">Username/ID</label><input className="w-full p-2 border rounded" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} placeholder="NIP / Kode" /></div>
-                            <div><label className="text-xs font-bold text-gray-500">Password</label><input className="w-full p-2 border rounded" type="text" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} placeholder="Password" /></div>
-                            <button onClick={handleAddUser} className="bg-green-600 text-white p-2 rounded font-bold hover:bg-green-700 flex items-center justify-center gap-1"><Plus className="w-4 h-4"/> Tambah</button>
+                        <div className="flex justify-between items-center border-b pb-4"><div><h3 className="text-lg font-bold text-gray-800">Manajemen Pengguna (Guru)</h3><p className="text-sm text-gray-500">Tambahkan akun guru untuk akses wali kelas.</p></div></div>
+                        <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6">
+                            <h4 className="text-sm font-bold text-gray-700 mb-3">Tambah Guru Baru</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                                <input type="text" placeholder="Nama Lengkap" className="p-2 border rounded text-sm" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
+                                <input type="text" placeholder="Username (NIP/Kode)" className="p-2 border rounded text-sm" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} />
+                                <input type="text" placeholder="Password" className="p-2 border rounded text-sm" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
+                            </div>
+                            <button onClick={handleAddUser} className="bg-green-600 text-white px-4 py-2 rounded text-sm font-bold hover:bg-green-700 flex items-center gap-2"><Plus className="w-4 h-4" /> Tambah User</button>
                         </div>
-
-                        {/* User List */}
-                        <div className="border rounded-xl overflow-hidden">
-                            <table className="w-full text-sm text-left">
-                                <thead className="bg-gray-100 text-gray-600 uppercase text-xs">
-                                    <tr><th className="p-3">Nama</th><th className="p-3">Username</th><th className="p-3">Password</th><th className="p-3 text-center">Aksi</th></tr>
-                                </thead>
-                                <tbody className="divide-y">
-                                    {users.filter(u => u.role === 'GURU').map(u => (
-                                        <tr key={u.id}>
-                                            <td className="p-3 font-bold">{u.name}</td>
-                                            <td className="p-3 font-mono text-gray-600">{u.username || u.id}</td>
-                                            <td className="p-3 font-mono">
-                                                <div className="flex items-center gap-2">
-                                                    {showPasswordId === u.id ? u.password : '••••••'}
-                                                    <button onClick={() => setShowPasswordId(showPasswordId === u.id ? null : u.id)} className="text-gray-400 hover:text-blue-600">
-                                                        {showPasswordId === u.id ? <EyeOff className="w-3 h-3"/> : <Eye className="w-3 h-3"/>}
-                                                    </button>
-                                                </div>
-                                            </td>
-                                            <td className="p-3 text-center">
-                                                <button onClick={() => handleDeleteUser(u.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded"><Trash2 className="w-4 h-4"/></button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                )}
-
-                {activeTab === 'DOCS' && (
-                    <div className="space-y-6">
-                        <h3 className="text-lg font-bold text-gray-800">Konfigurasi Dokumen</h3>
-                        <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-                            <label className="block text-xs font-bold text-yellow-800 uppercase mb-2">Jumlah Halaman Rapor per Semester</label>
-                            <input 
-                                type="number" 
-                                min="1" max="10" 
-                                className="w-20 p-2 border border-yellow-300 rounded font-bold text-center"
-                                value={raporPageCount} 
-                                onChange={e => setRaporPageCount(Number(e.target.value))} 
-                            />
-                            <p className="text-xs text-yellow-700 mt-1">Default: 3 Halaman (Halaman Identitas/Nilai/Catatan)</p>
+                        <div className="space-y-2">
+                            {users.filter(u => u.role === 'GURU').map(u => (
+                                <div key={u.id} className="flex justify-between items-center p-3 border rounded-lg bg-white hover:shadow-sm">
+                                    <div><p className="font-bold text-gray-800 text-sm">{u.name}</p><p className="text-xs text-gray-500">User: {u.username}</p></div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="text-xs font-mono bg-gray-100 px-2 py-1 rounded flex items-center gap-2">{showPasswordId === u.id ? u.password : '••••••'}<button onClick={() => setShowPasswordId(showPasswordId === u.id ? null : u.id)} className="text-gray-400 hover:text-gray-600">{showPasswordId === u.id ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}</button></div>
+                                        <button onClick={() => handleDeleteUser(u.id)} className="text-red-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4" /></button>
+                                    </div>
+                                </div>
+                            ))}
+                            {users.filter(u => u.role === 'GURU').length === 0 && <p className="text-center text-gray-400 text-sm py-4">Belum ada data guru.</p>}
                         </div>
                     </div>
                 )}

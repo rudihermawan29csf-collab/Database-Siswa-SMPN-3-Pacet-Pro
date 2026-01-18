@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { LayoutDashboard, Users, FileText, Settings, LogOut, GraduationCap, Database, ClipboardCheck, PanelLeftClose, PanelLeft, UserCircle, History, Book, ClipboardList, FolderOpen, Upload, FileCheck2, Calculator, Award, FileInput, LayoutTemplate, ScrollText, FileBadge, KeyRound } from 'lucide-react';
 
@@ -8,9 +9,10 @@ interface SidebarProps {
   isCollapsed: boolean;
   toggleSidebar: () => void;
   userRole?: 'ADMIN' | 'STUDENT' | 'GURU';
+  schoolName?: string; // Add schoolName prop
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, onLogout, isCollapsed, toggleSidebar, userRole = 'ADMIN' }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, onLogout, isCollapsed, toggleSidebar, userRole = 'ADMIN', schoolName = 'SMPN 3 Pacet' }) => {
   
   // Logic to show/hide items based on Role
   const showDatabase = userRole === 'ADMIN'; 
@@ -34,9 +36,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, onLogout, isCol
     { id: 'grade-verification', label: 'Verifikasi Nilai', icon: FileCheck2, visible: true },
     { id: 'student-docs', label: 'Dokumen Siswa', icon: FileInput, visible: true },
     
-    // NEW: Access Data Menu
-    { id: 'access-data', label: 'Data Akses & Kartu', icon: KeyRound, visible: showDatabase },
-
+    // Removed Access Data Menu as requested
+    
     { id: 'history', label: 'Riwayat Verifikasi', icon: History, visible: true },
     { id: 'monitoring', label: 'Monitoring', icon: LayoutTemplate, visible: true }, 
   ];
@@ -76,7 +77,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, onLogout, isCol
         </div>
         <div className={`transition-all duration-300 ${isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'} text-white`}>
           <h1 className="text-base font-bold leading-none tracking-tight drop-shadow-md">SiData</h1>
-          <p className="text-[10px] text-blue-100 font-medium tracking-wide uppercase mt-1 opacity-80">SMPN 3 Pacet</p>
+          <p className="text-[10px] text-blue-100 font-medium tracking-wide uppercase mt-1 opacity-80 truncate max-w-[150px]">{schoolName}</p>
         </div>
       </div>
 

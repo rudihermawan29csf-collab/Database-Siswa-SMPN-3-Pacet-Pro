@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Student } from '../types';
 import { Search, FileDown, FileBadge, Filter, Loader2, Files } from 'lucide-react';
@@ -291,8 +292,8 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
       }).sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [students, searchTerm, selectedClass, userRole, loggedInStudent]);
 
-  // Dynamic Data Sources
-  const activeYear = appSettings?.academicData?.year || new Date().getFullYear();
+  // Dynamic Data Sources - Prioritize activeYear from new structure
+  const activeYear = appSettings?.academicData?.activeYear || appSettings?.academicData?.year || new Date().getFullYear();
   const headmasterName = appSettings?.schoolData?.headmaster || 'DIDIK SULISTYO, M.M.Pd';
   const headmasterNip = appSettings?.schoolData?.nip || '19660518 198901 1 002';
 
