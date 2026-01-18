@@ -453,7 +453,8 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                                             {student.birthPlace ? student.birthPlace : '-'}, {formatDateIndo(student.birthDate)}
                                         </span>
                                     </td>
-                                    <td className="px-4 py-3"><span className="font-medium text-gray-700 uppercase">{student.father.name || '-'}</span></td>
+                                    {/* Parent Name: Title Case */}
+                                    <td className="px-4 py-3"><span className="font-medium text-gray-700">{formatNameTitleCase(student.father.name) || '-'}</span></td>
                                     <td className="px-4 py-3"><span className={`font-mono font-medium ${student.diplomaNumber ? 'text-blue-700' : 'text-gray-400 italic'}`}>{student.diplomaNumber || 'Belum diisi'}</span></td>
                                     <td className="px-4 py-3 text-center"><span className={`px-2 py-1 rounded text-[10px] font-bold ${student.status === 'LULUS' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>{student.status}</span></td>
                                     <td className="px-4 py-3 text-center">
@@ -612,8 +613,9 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                                 <p className="mb-6 text-sm">Dengan ini menyatakan bahwa:</p>
 
                                 <div className="mb-6">
-                                    <h2 className="text-3xl font-bold uppercase font-serif tracking-wide border-b-2 border-transparent inline-block pb-1 px-4">
-                                        <InteractiveField value={selectedStudent.fullName} fieldKey="fullName" />
+                                    {/* Student Name: Title Case */}
+                                    <h2 className="text-3xl font-bold font-serif tracking-wide border-b-2 border-transparent inline-block pb-1 px-4">
+                                        <InteractiveField value={formatNameTitleCase(selectedStudent.fullName)} fieldKey="fullName" />
                                     </h2>
                                 </div>
 
@@ -622,9 +624,10 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                                     <div className="flex justify-center gap-2">
                                         <span className="w-48 text-right">tempat, tanggal lahir</span>
                                         <span>:</span>
-                                        <span className="w-64 text-left font-bold capitalize">
+                                        {/* Place, Date: Title Case */}
+                                        <span className="w-64 text-left font-bold">
                                             <InteractiveField 
-                                                value={`${selectedStudent.birthPlace || '...'}, ${formatDateIndo(selectedStudent.birthDate)}`} 
+                                                value={`${formatNameTitleCase(selectedStudent.birthPlace) || '...'}, ${formatDateIndo(selectedStudent.birthDate)}`} 
                                                 fieldKey="birthPlace" 
                                             />
                                         </span>
@@ -632,8 +635,9 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                                     <div className="flex justify-center gap-2">
                                         <span className="w-48 text-right">nama orang tua/wali</span>
                                         <span>:</span>
-                                        <span className="w-64 text-left font-bold uppercase">
-                                            <InteractiveField value={selectedStudent.father.name} fieldKey="father.name" />
+                                        {/* Parent Name: Title Case */}
+                                        <span className="w-64 text-left font-bold">
+                                            <InteractiveField value={formatNameTitleCase(selectedStudent.father.name)} fieldKey="father.name" />
                                         </span>
                                     </div>
                                     <div className="flex justify-center gap-2">
@@ -689,8 +693,9 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                                 
                                 <table className="w-full mb-6 text-sm">
                                     <tbody>
-                                        <tr><td className="w-40 font-bold">Nama</td><td>: {selectedStudent.fullName}</td></tr>
-                                        <tr><td className="font-bold">Tempat, Tanggal Lahir</td><td>: {selectedStudent.birthPlace}, {formatDateIndo(selectedStudent.birthDate)}</td></tr>
+                                        {/* Transcript Name and Birth Place: Title Case */}
+                                        <tr><td className="w-40 font-bold">Nama</td><td>: {formatNameTitleCase(selectedStudent.fullName)}</td></tr>
+                                        <tr><td className="font-bold">Tempat, Tanggal Lahir</td><td>: {formatNameTitleCase(selectedStudent.birthPlace)}, {formatDateIndo(selectedStudent.birthDate)}</td></tr>
                                         <tr><td className="font-bold">NIS / NISN</td><td>: {selectedStudent.nis} / {selectedStudent.nisn}</td></tr>
                                     </tbody>
                                 </table>
