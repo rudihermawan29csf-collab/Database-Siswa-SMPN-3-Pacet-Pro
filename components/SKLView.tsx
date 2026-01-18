@@ -33,11 +33,25 @@ const formatDateIndo = (dateStr: string) => {
     return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 };
 
-const toTitleCase = (str: string) => {
-    let converted = str.replace(/\w\S*/g, (txt) => {
-        return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+// HELPER: Format Nama Kepala Sekolah & Gelar
+const formatHeadmasterName = (name: string) => {
+    if (!name) return '';
+    
+    // 1. Ubah semua ke lowercase dulu, lalu Capitalize setiap awal kata
+    let formatted = name.toLowerCase().replace(/(?:^|\s)\S/g, function(a) { 
+        return a.toUpperCase(); 
     });
-    return converted.replace(/M\.m\.pd/gi, 'M.M.Pd');
+    
+    // 2. Perbaikan Khusus Gelar (Hardcoded fixes)
+    // Menangani M.M.Pd. (d kecil)
+    formatted = formatted.replace(/M\.m\.pd\.?/gi, 'M.M.Pd.');
+    
+    // Gelar umum lainnya (opsional, untuk jaga-jaga)
+    formatted = formatted.replace(/S\.pd\.?/gi, 'S.Pd.');
+    formatted = formatted.replace(/M\.pd\.?/gi, 'M.Pd.');
+    formatted = formatted.replace(/S\.ag\.?/gi, 'S.Ag.');
+    
+    return formatted;
 };
 
 const calculateAverageScore = (student: Student, subjectKey: string) => {
@@ -81,6 +95,9 @@ const calculateTotalAverage = (student: Student) => {
 
 // --- REUSABLE SKL TEMPLATE COMPONENT ---
 const SKLTemplate = ({ student, config, activeYear, headmasterName, headmasterNip }: { student: Student, config: any, activeYear: string, headmasterName: string, headmasterNip: string }) => {
+    // Pastikan Logo URL ada isinya
+    const logoUrl = config.logoUrl || 'https://upload.wikimedia.org/wikipedia/commons/e/eb/Lambang_Kabupaten_Mojokerto.png';
+
     return (
         /* 
            UKURAN F4: 215mm x 330mm
@@ -92,15 +109,15 @@ const SKLTemplate = ({ student, config, activeYear, headmasterName, headmasterNi
                 {/* --- KOP SURAT --- */}
                 <div className="border-b-4 border-double border-black mb-4 pb-2 relative">
                     <div className="absolute left-0 top-0 w-24 h-24 flex items-center justify-center -ml-2">
-                        {/* Fallback image handling */}
                         <img 
-                            src={config.logoUrl} 
+                            src={logoUrl} 
                             alt="Logo" 
                             className="w-20 h-auto object-contain"
                             crossOrigin="anonymous"
                             onError={(e) => { 
-                                // Hide broken image to prevent PDF generation error
-                                (e.target as HTMLImageElement).style.visibility = 'hidden'; 
+                                // Fallback jika gambar gagal load (opsional: ganti ke placeholder atau hide)
+                                // (e.target as HTMLImageElement).style.visibility = 'hidden'; 
+                                console.warn("Logo failed to load");
                             }}
                         />
                     </div>
@@ -206,7 +223,8 @@ const SKLTemplate = ({ student, config, activeYear, headmasterName, headmasterNi
                 <div className="text-center w-64 relative">
                     <p className="mb-1">{config.titimangsa}, {config.tanggalSurat}</p>
                     <p className="mb-20">Kepala SMPN 3 Pacet</p>
-                    <p className="font-bold underline uppercase">{toTitleCase(headmasterName)}</p>
+                    {/* Menggunakan helper baru: Huruf Kapital Depan + Gelar Benar */}
+                    <p className="font-bold underline">{formatHeadmasterName(headmasterName)}</p>
                     <p>NIP. {headmasterNip}</p>
                 </div>
             </div>
