@@ -120,57 +120,82 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
   const [newUser, setNewUser] = useState({ name: '', username: '', password: '', role: 'GURU' });
   const [showPasswordId, setShowPasswordId] = useState<string | null>(null);
 
+  // --- HELPER: APPLY SETTINGS TO STATE ---
+  const applySettingsToState = (settings: any) => {
+      if (!settings) return;
+      
+      if (settings.schoolData) setSchoolData(settings.schoolData);
+      if (settings.adminName) setAdminName(settings.adminName);
+      if (settings.academicData) {
+          if (settings.academicData.semesterYears) setSemesterYears(settings.academicData.semesterYears);
+          if (settings.academicData.semesterDates) setSemesterDates(settings.academicData.semesterDates);
+          if (settings.academicData.activeYear) setActiveAcademicYear(settings.academicData.activeYear);
+          if (settings.academicData.activeSemester) setActiveSemester(settings.academicData.activeSemester);
+          if (settings.academicData.availableYears) setAvailableYears(settings.academicData.availableYears);
+      }
+      if (settings.classConfig) setClassConfig(settings.classConfig);
+      if (settings.classList && Array.isArray(settings.classList)) setClassList(settings.classList);
+      if (settings.sklConfig) setSklConfig(prev => ({ ...prev, ...settings.sklConfig }));
+      
+      // Initialize Doc List & Config
+      if (settings.availableDocs && Array.isArray(settings.availableDocs)) {
+          setAvailableDocs(settings.availableDocs);
+      }
+      if (settings.docConfig) {
+          setDocConfig(prev => ({
+              ...prev,
+              ...settings.docConfig,
+              gradeVerification: settings.docConfig.gradeVerification || [],
+              showParentOnIjazah: settings.docConfig.showParentOnIjazah || false
+          }));
+      }
+      
+      // Initialize Recap Subjects
+      if (settings.recapSubjects && Array.isArray(settings.recapSubjects)) {
+          setRecapSubjects(settings.recapSubjects);
+      }
+      
+      if (settings.p5Themes) {
+          if (typeof settings.p5Themes[0] === 'string') {
+              setP5Themes(settings.p5Themes.map((t: string) => ({ theme: t, description: '' })));
+          } else {
+              setP5Themes(settings.p5Themes);
+          }
+      }
+      if (settings.academicData && settings.academicData.activeYear) {
+          setWaliContext(prev => ({ ...prev, year: settings.academicData.activeYear }));
+      }
+  };
+
   // --- INITIAL LOAD ---
   useEffect(() => {
       const loadSettings = async () => {
           setLoading(true);
           try {
+              // 1. Try to load from LocalStorage first (Fastest & Guaranteed Persistence)
+              const localSettings = localStorage.getItem('app_full_settings_v2');
+              if (localSettings) {
+                  const parsedSettings = JSON.parse(localSettings);
+                  applySettingsToState(parsedSettings);
+              }
+
+              // 2. Then try to load from API (Cloud)
               const settings = await api.getAppSettings();
               if (settings) {
-                  if (settings.schoolData) setSchoolData(settings.schoolData);
-                  if (settings.adminName) setAdminName(settings.adminName);
-                  if (settings.academicData) {
-                      if (settings.academicData.semesterYears) setSemesterYears(settings.academicData.semesterYears);
-                      if (settings.academicData.semesterDates) setSemesterDates(settings.academicData.semesterDates);
-                      if (settings.academicData.activeYear) setActiveAcademicYear(settings.academicData.activeYear);
-                      if (settings.academicData.activeSemester) setActiveSemester(settings.academicData.activeSemester);
-                      if (settings.academicData.availableYears) setAvailableYears(settings.academicData.availableYears);
-                  }
-                  if (settings.classConfig) setClassConfig(settings.classConfig);
-                  if (settings.classList && Array.isArray(settings.classList)) setClassList(settings.classList);
-                  if (settings.sklConfig) setSklConfig(prev => ({ ...prev, ...settings.sklConfig }));
-                  
-                  // Initialize Doc List & Config
-                  if (settings.availableDocs && Array.isArray(settings.availableDocs)) {
-                      setAvailableDocs(settings.availableDocs);
-                  }
-                  if (settings.docConfig) {
-                      setDocConfig(prev => ({
-                          ...prev,
-                          ...settings.docConfig,
-                          gradeVerification: settings.docConfig.gradeVerification || [],
-                          showParentOnIjazah: settings.docConfig.showParentOnIjazah || false
-                      }));
-                  }
-                  
-                  // Initialize Recap Subjects
-                  if (settings.recapSubjects && Array.isArray(settings.recapSubjects)) {
-                      setRecapSubjects(settings.recapSubjects);
-                  }
-                  
-                  if (settings.p5Themes) {
-                      if (typeof settings.p5Themes[0] === 'string') {
-                          setP5Themes(settings.p5Themes.map((t: string) => ({ theme: t, description: '' })));
-                      } else {
-                          setP5Themes(settings.p5Themes);
-                      }
-                  }
-                  if (settings.academicData && settings.academicData.activeYear) {
-                      setWaliContext(prev => ({ ...prev, year: settings.academicData.activeYear }));
-                  }
+                  applySettingsToState(settings);
+                  // Update local storage to match cloud
+                  localStorage.setItem('app_full_settings_v2', JSON.stringify(settings));
               }
+              
               const fetchedUsers = await api.getUsers();
-              setUsers(fetchedUsers);
+              if (fetchedUsers && fetchedUsers.length > 0) {
+                  setUsers(fetchedUsers);
+              } else {
+                  // Fallback load users from storage
+                  const localUsers = localStorage.getItem('app_users_v2');
+                  if (localUsers) setUsers(JSON.parse(localUsers));
+              }
+
           } catch (e) {
               console.error("Failed load settings", e);
           } finally {
@@ -204,19 +229,27 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
       };
 
       try {
+          // 1. Save to Local Storage (Immediate Persistence)
+          localStorage.setItem('app_full_settings_v2', JSON.stringify(payload));
           localStorage.setItem('admin_name', adminName);
           localStorage.setItem('sys_rapor_config', String(docConfig.raporPageCount));
+
+          // 2. Try Save to API
           const success = await api.saveAppSettings(payload);
+          
           if (success) {
-              setSuccessMsg("Pengaturan berhasil disimpan!");
-              setTimeout(() => setSuccessMsg(''), 3000);
-              if (onProfileUpdate) onProfileUpdate();
+              setSuccessMsg("Pengaturan berhasil disimpan ke Server & Lokal!");
           } else {
-              alert("Gagal menyimpan ke server.");
+              setSuccessMsg("Disimpan ke Lokal (Server tidak merespon/mock mode).");
           }
+          
+          setTimeout(() => setSuccessMsg(''), 3000);
+          if (onProfileUpdate) onProfileUpdate();
+
       } catch (e) {
           console.error(e);
-          alert("Terjadi kesalahan.");
+          setSuccessMsg("Disimpan ke Lokal (Mode Offline).");
+          setTimeout(() => setSuccessMsg(''), 3000);
       } finally {
           setIsSaving(false);
       }
@@ -319,8 +352,16 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
       if (!newUser.name || !newUser.username || !newUser.password) return;
       const newUserData = { ...newUser, id: Math.random().toString(36).substr(2, 9) };
       const updatedUsers = [...users, newUserData];
+      
       setIsSaving(true);
-      try { await api.updateUsers(updatedUsers); setUsers(updatedUsers); setNewUser({ name: '', username: '', password: '', role: 'GURU' }); } 
+      try { 
+          // Save Local
+          localStorage.setItem('app_users_v2', JSON.stringify(updatedUsers));
+          
+          await api.updateUsers(updatedUsers); 
+          setUsers(updatedUsers); 
+          setNewUser({ name: '', username: '', password: '', role: 'GURU' }); 
+      } 
       catch (e) { alert("Gagal update user"); }
       finally { setIsSaving(false); }
   };
@@ -329,7 +370,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onProfileUpdate }) => {
       if (window.confirm("Hapus user ini?")) {
           const updatedUsers = users.filter(u => u.id !== id);
           setIsSaving(true);
-          try { await api.updateUsers(updatedUsers); setUsers(updatedUsers); } 
+          try { 
+              localStorage.setItem('app_users_v2', JSON.stringify(updatedUsers));
+              await api.updateUsers(updatedUsers); 
+              setUsers(updatedUsers); 
+          } 
           catch(e) { alert("Gagal hapus user"); }
           finally { setIsSaving(false); }
       }

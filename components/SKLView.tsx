@@ -45,7 +45,8 @@ const calculateAverageScore = (student: Student, subjectKey: string) => {
     let count = 0;
     
     for (let i = 1; i <= 6; i++) {
-        const record = student.academicRecords?.[i];
+        // Access safely with string or number key
+        const record = student.academicRecords?.[i] || student.academicRecords?.[String(i)];
         if (record) {
             const subj = record.subjects.find(s => 
                 s.subject === subjectKey || 
@@ -82,140 +83,131 @@ const calculateTotalAverage = (student: Student) => {
 const SKLTemplate = ({ student, config, activeYear, headmasterName, headmasterNip }: { student: Student, config: any, activeYear: string, headmasterName: string, headmasterNip: string }) => {
     return (
         /* 
-           FIXED HEIGHT REDUCED TO 329mm (F4 is 330mm) 
-           Reducing 1mm prevents browser sub-pixel rounding errors that create a blank 2nd page 
+           UKURAN F4: 215mm x 330mm
+           Using h-[328mm] (slightly less than 330) to prevent page break overflow
         */
-        <div className="w-[215mm] h-[329mm] bg-white p-[20mm] text-black font-serif relative box-border overflow-hidden page-break-inside-avoid">
+        <div className="w-[215mm] h-[328mm] bg-white p-[15mm] text-black font-serif relative box-border flex flex-col justify-between overflow-hidden page-break-after-always">
             
-            {/* --- KOP SURAT --- */}
-            <div className="border-b-4 border-double border-black mb-6 pb-2 relative">
-                <div className="absolute left-0 top-0 w-24 h-24 flex items-center justify-center -ml-4">
-                    <img 
-                        src={config.logoUrl} 
-                        alt="Logo Kabupaten" 
-                        className="w-20 h-auto object-contain"
-                        onError={(e) => { (e.target as HTMLImageElement).src = "https://upload.wikimedia.org/wikipedia/commons/e/eb/Lambang_Kabupaten_Mojokerto.png"; }}
-                    />
+            <div>
+                {/* --- KOP SURAT --- */}
+                <div className="border-b-4 border-double border-black mb-4 pb-2 relative">
+                    <div className="absolute left-0 top-0 w-24 h-24 flex items-center justify-center -ml-2">
+                        {/* Fallback image handling */}
+                        <img 
+                            src={config.logoUrl} 
+                            alt="Logo" 
+                            className="w-20 h-auto object-contain"
+                            crossOrigin="anonymous"
+                            onError={(e) => { 
+                                // Hide broken image to prevent PDF generation error
+                                (e.target as HTMLImageElement).style.visibility = 'hidden'; 
+                            }}
+                        />
+                    </div>
+                    
+                    <div className="text-center px-12">
+                        <h3 className="text-lg font-bold font-serif leading-tight">PEMERINTAH KABUPATEN MOJOKERTO</h3>
+                        <h3 className="text-lg font-bold font-serif leading-tight">DINAS PENDIDIKAN</h3>
+                        <h1 className="text-2xl font-black font-serif leading-tight mt-1">SMPN 3 PACET</h1>
+                        <p className="text-xs font-serif mt-1 leading-tight">
+                            {config.headerLine1}<br/>
+                            {config.headerLine2}<br/>
+                            {config.headerLine3}
+                        </p>
+                    </div>
                 </div>
-                
-                <div className="text-center px-16">
-                    <h3 className="text-lg font-bold font-serif leading-tight">PEMERINTAH KABUPATEN MOJOKERTO</h3>
-                    <h3 className="text-lg font-bold font-serif leading-tight">DINAS PENDIDIKAN</h3>
-                    <h1 className="text-2xl font-black font-serif leading-tight mt-1">SMPN 3 PACET</h1>
-                    <p className="text-xs font-serif mt-1 leading-tight">
-                        {config.headerLine1}<br/>
-                        {config.headerLine2}<br/>
-                        {config.headerLine3}
+
+                {/* --- JUDUL SURAT --- */}
+                <div className="text-center mb-4">
+                    <h2 className="text-lg font-bold underline decoration-1 underline-offset-2 mb-1">SURAT KETERANGAN LULUS</h2>
+                    <p className="text-sm">NOMOR: {config.nomorSurat}</p>
+                </div>
+
+                {/* --- ISI SURAT --- */}
+                <div className="text-sm font-serif leading-relaxed text-justify mb-2">
+                    <p className="mb-2">
+                        Yang bertanda tangan di bawah ini, Kepala SMPN 3 Pacet Kabupaten Mojokerto, Provinsi Jawa Timur menerangkan bahwa
+                    </p>
+                    
+                    <table className="w-full mb-2 ml-4">
+                        <tbody>
+                            <tr>
+                                <td className="w-48 py-0.5 align-top">nama</td>
+                                <td className="w-4 align-top">:</td>
+                                <td className="font-bold uppercase align-top">{student.fullName}</td>
+                            </tr>
+                            <tr>
+                                <td className="w-48 py-0.5 align-top">tempat, tanggal lahir</td>
+                                <td className="w-4 align-top">:</td>
+                                <td className="capitalize align-top">{student.birthPlace}, {formatDateIndo(student.birthDate)}</td>
+                            </tr>
+                            <tr>
+                                <td className="w-48 py-0.5 align-top">nomor induk siswa</td>
+                                <td className="w-4 align-top">:</td>
+                                <td className="align-top">{student.nis}</td>
+                            </tr>
+                            <tr>
+                                <td className="w-48 py-0.5 align-top">NISN</td>
+                                <td className="w-4 align-top">:</td>
+                                <td className="align-top">{student.nisn}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <p className="mb-2">
+                        Berdasarkan Keputusan Kepala SMPN 3 Pacet Nomor: {config.nomorSK} tanggal {config.tanggalKeputusan} telah memenuhi seluruh Kriteria Kelulusan dinyatakan:
+                    </p>
+
+                    <div className="text-center my-4">
+                        <h1 className="text-2xl font-black uppercase tracking-widest border-2 border-black inline-block px-8 py-1">LULUS</h1>
+                    </div>
+
+                    <p className="mb-2">Dengan nilai sebagai berikut:</p>
+
+                    {/* --- TABEL NILAI --- */}
+                    <table className="w-full border-collapse border border-black text-sm mb-4">
+                        <thead>
+                            <tr>
+                                <th className="border border-black p-1 w-10 text-center">No</th>
+                                <th className="border border-black p-1 text-center">Mata Pelajaran</th>
+                                <th className="border border-black p-1 w-24 text-center">Nilai</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {SKL_SUBJECTS.map((sub, index) => {
+                                const score = calculateAverageScore(student, sub.key);
+                                return (
+                                    <tr key={sub.key}>
+                                        <td className="border border-black p-1 text-center">{index + 1}</td>
+                                        <td className="border border-black p-1 pl-2">{sub.label}</td>
+                                        <td className="border border-black p-1 text-center font-bold">
+                                            {score > 0 ? score.toFixed(2).replace('.', ',') : '-'}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                            <tr>
+                                <td className="border border-black p-1 pl-2 font-bold text-center" colSpan={2}>Rata-Rata</td>
+                                <td className="border border-black p-1 text-center font-bold bg-gray-100">
+                                    {calculateTotalAverage(student).toFixed(2).replace('.', ',')}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <p className="mb-4">
+                        Surat Keterangan Lulus ini berlaku sementara sampai diterbitkannya Ijazah tahun pelajaran {activeYear}.
                     </p>
                 </div>
             </div>
 
-            {/* --- JUDUL SURAT --- */}
-            <div className="text-center mb-6">
-                <h2 className="text-lg font-bold underline decoration-1 underline-offset-2 mb-1">SURAT KETERANGAN LULUS</h2>
-                <p className="text-sm">NOMOR: {config.nomorSurat}</p>
-            </div>
-
-            {/* --- ISI SURAT --- */}
-            <div className="text-sm font-serif leading-relaxed text-justify mb-4">
-                <p className="mb-4">
-                    Yang bertanda tangan di bawah ini, Kepala SMPN 3 Pacet Kabupaten Mojokerto, Provinsi Jawa Timur menerangkan bahwa
-                </p>
-                
-                <table className="w-full mb-4">
-                    <tbody>
-                        <tr>
-                            <td className="w-52 py-0.5 align-top">nama</td>
-                            <td className="w-4 align-top">:</td>
-                            <td className="font-bold uppercase align-top">{student.fullName}</td>
-                        </tr>
-                        <tr>
-                            <td className="w-52 py-0.5 align-top">tempat, tanggal lahir</td>
-                            <td className="w-4 align-top">:</td>
-                            <td className="capitalize align-top">{student.birthPlace}, {formatDateIndo(student.birthDate)}</td>
-                        </tr>
-                        <tr>
-                            <td className="w-52 py-0.5 align-top">nomor induk siswa</td>
-                            <td className="w-4 align-top">:</td>
-                            <td className="align-top">{student.nis}</td>
-                        </tr>
-                        <tr>
-                            <td className="w-52 py-0.5 align-top">NISN</td>
-                            <td className="w-4 align-top">:</td>
-                            <td className="align-top">{student.nisn}</td>
-                        </tr>
-                    </tbody>
-                </table>
-
-                <p className="mb-4">
-                    Berdasarkan Keputusan Kepala SMPN 3 Pacet Nomor: {config.nomorSK} tanggal {config.tanggalKeputusan} telah memenuhi seluruh Kriteria Kelulusan dinyatakan:
-                </p>
-
-                <div className="text-center my-6">
-                    <h1 className="text-2xl font-black uppercase tracking-widest">LULUS</h1>
-                    <p className="text-sm mt-2">dari:</p>
-                </div>
-
-                <table className="w-full mb-4">
-                    <tbody>
-                        <tr>
-                            <td className="w-52 py-0.5 align-top">Satuan Pendidikan</td>
-                            <td className="w-4 align-top">:</td>
-                            <td className="align-top">SMPN 3 Pacet</td>
-                        </tr>
-                        <tr>
-                            <td className="w-52 py-0.5 align-top">NPSN</td>
-                            <td className="w-4 align-top">:</td>
-                            <td className="align-top">20555784</td>
-                        </tr>
-                    </tbody>
-                </table>
-
-                <p className="mb-2">Dengan nilai sebagai berikut:</p>
-
-                {/* --- TABEL NILAI --- */}
-                <table className="w-full border-collapse border border-black text-sm mb-4">
-                    <thead>
-                        <tr>
-                            <th className="border border-black p-1 w-10 text-center">No</th>
-                            <th className="border border-black p-1 text-center">Mata Pelajaran</th>
-                            <th className="border border-black p-1 w-24 text-center">Nilai</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {SKL_SUBJECTS.map((sub, index) => {
-                            const score = calculateAverageScore(student, sub.key);
-                            return (
-                                <tr key={sub.key}>
-                                    <td className="border border-black p-1 text-center">{index + 1}</td>
-                                    <td className="border border-black p-1 pl-2">{sub.label}</td>
-                                    <td className="border border-black p-1 text-center">
-                                        {score > 0 ? score.toFixed(2).replace('.', ',') : ''}
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                        <tr>
-                            <td className="border border-black p-1 pl-2 font-bold text-center" colSpan={2}>Rata-Rata</td>
-                            <td className="border border-black p-1 text-center font-bold">
-                                {calculateTotalAverage(student).toFixed(2).replace('.', ',')}
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-
-                <p className="mb-8">
-                    Surat Keterangan Lulus ini berlaku sementara sampai diterbitkannya Ijazah tahun pelajaran {activeYear}.
-                </p>
-
-                {/* --- FOOTER TTD --- */}
-                <div className="flex justify-end mt-8">
-                    <div className="text-center w-64 relative">
-                        <p className="mb-1">{config.titimangsa}, {config.tanggalSurat}</p>
-                        <p className="mb-24">Kepala SMPN 3 Pacet</p>
-                        <p className="font-bold underline">{toTitleCase(headmasterName)}</p>
-                        <p>NIP. {headmasterNip}</p>
-                    </div>
+            {/* --- FOOTER TTD --- */}
+            <div className="flex justify-end pb-10">
+                <div className="text-center w-64 relative">
+                    <p className="mb-1">{config.titimangsa}, {config.tanggalSurat}</p>
+                    <p className="mb-20">Kepala SMPN 3 Pacet</p>
+                    <p className="font-bold underline uppercase">{toTitleCase(headmasterName)}</p>
+                    <p>NIP. {headmasterNip}</p>
                 </div>
             </div>
         </div>
@@ -263,7 +255,6 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
   const uniqueClasses = useMemo(() => {
       const classes = Array.from(new Set(students.map(s => s.className))).filter(Boolean) as string[];
       return ['ALL', ...classes.sort((a, b) => {
-          // Sort logic: VII < VIII < IX, then alphabetically
           const levelA = a.split(' ')[0];
           const levelB = b.split(' ')[0];
           const romanMap: Record<string, number> = { 'VII': 7, 'VIII': 8, 'IX': 9 };
@@ -292,7 +283,6 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
       }).sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [students, searchTerm, selectedClass, userRole, loggedInStudent]);
 
-  // Dynamic Data Sources - Prioritize activeYear from new structure
   const activeYear = appSettings?.academicData?.activeYear || appSettings?.academicData?.year || new Date().getFullYear();
   const headmasterName = appSettings?.schoolData?.headmaster || 'DIDIK SULISTYO, M.M.Pd';
   const headmasterNip = appSettings?.schoolData?.nip || '19660518 198901 1 002';
@@ -302,7 +292,7 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
       setIsGenerating(true);
 
       setTimeout(() => {
-          const element = document.getElementById('skl-content');
+          const element = document.getElementById('skl-content-print');
           const filename = `SKL_${selectedStudent.fullName.replace(/\s+/g, '_')}.pdf`;
 
           const opt = {
@@ -310,8 +300,8 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
             filename: filename,
             image: { type: 'jpeg', quality: 0.98 },
             html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
-            jsPDF: { unit: 'mm', format: [215, 330], orientation: 'portrait' },
-            pagebreak: { mode: 'avoid-all' } // Prevent breaking inside the container
+            jsPDF: { unit: 'mm', format: [215, 330], orientation: 'portrait' }, // F4 Size
+            pagebreak: { mode: 'avoid-all' }
           };
 
           // @ts-ignore
@@ -329,7 +319,7 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
               setIsGenerating(false);
               alert("Library PDF belum siap.");
           }
-      }, 500);
+      }, 1000);
   };
 
   const handleDownloadAll = () => {
@@ -344,7 +334,6 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
       setIsBatchGenerating(true);
 
       setTimeout(() => {
-          // Use visible overlay container ID
           const element = document.getElementById('batch-skl-container');
           const className = selectedClass === 'ALL' ? 'Semua_Kelas' : selectedClass.replace(/\s+/g, '_');
           const filename = `SKL_Batch_${className}.pdf`;
@@ -352,11 +341,10 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
           const opt = {
             margin: 0,
             filename: filename,
-            image: { type: 'jpeg', quality: 0.95 },
-            html2canvas: { scale: 1.5, useCORS: true, scrollY: 0 },
-            // Strict page breaking for batch
-            pagebreak: { mode: ['css', 'legacy'] },
-            jsPDF: { unit: 'mm', format: [215, 330], orientation: 'portrait' }
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
+            jsPDF: { unit: 'mm', format: [215, 330], orientation: 'portrait' }, // F4 Size
+            pagebreak: { mode: ['css', 'legacy'] }
           };
 
           // @ts-ignore
@@ -371,7 +359,7 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
                   alert("Gagal melakukan batch download.");
               });
           }
-      }, 3000); // 3 seconds to ensure rendering of all items
+      }, 5000); // Increased timeout to 5s for reliable rendering
   };
 
   return (
@@ -468,7 +456,7 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
             {/* Document Preview */}
             <div className="flex-1 bg-gray-100 overflow-auto flex justify-center p-8">
                 {selectedStudent ? (
-                    <div id="skl-content" className="shadow-2xl">
+                    <div id="skl-content-print" className="shadow-2xl">
                         <SKLTemplate 
                             student={selectedStudent} 
                             config={sklConfig} 
@@ -487,14 +475,8 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
         </div>
 
         {/* VISIBLE OVERLAY FOR BATCH DOWNLOAD */}
-        {/* 
-            Update: Changed from 'fixed z-[-50]' to 'fixed inset-0 z-[9999]'. 
-            This forces the container to be the topmost element on the screen so it's fully rendered by the browser.
-            An overlay loading message prevents the user from interacting while generation is in progress.
-        */}
         {isBatchGenerating && (
             <div className="fixed inset-0 z-[9999] bg-gray-900/90 flex flex-col items-center justify-start overflow-auto pt-20 pb-20">
-                {/* Loading Indicator fixed on screen */}
                 <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center animate-bounce-in">
                     <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
                     <h3 className="text-xl font-bold text-gray-900">Memproses PDF...</h3>
@@ -502,7 +484,7 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
                     <p className="text-xs text-gray-400 mt-1">Mohon tunggu, jangan tutup halaman ini.</p>
                 </div>
 
-                {/* The Content to Print - Visibly rendered so html2canvas captures it */}
+                {/* Batch Container - Rendered purely for PDF generation */}
                 <div id="batch-skl-container" className="bg-white w-[215mm]">
                     {filteredStudents.map((student, index) => (
                         <div key={student.id} className="relative">
@@ -513,10 +495,8 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
                                 headmasterName={headmasterName} 
                                 headmasterNip={headmasterNip} 
                             />
-                            {/* Force CSS page break for PDF */}
-                            {index < filteredStudents.length - 1 && (
-                                <div className="html2pdf__page-break" style={{ pageBreakAfter: 'always', height: 0, display: 'block' }}></div>
-                            )}
+                            {/* Manual Page Break div for html2pdf */}
+                            <div className="html2pdf__page-break" style={{ pageBreakAfter: 'always', height: 0, display: 'block' }}></div>
                         </div>
                     ))}
                 </div>

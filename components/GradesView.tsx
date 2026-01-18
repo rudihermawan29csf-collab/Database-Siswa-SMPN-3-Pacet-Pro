@@ -41,33 +41,6 @@ const getCompetencyDescription = (score: number, subjectName: string) => {
     return `${predikat} dalam memahami materi ${subjectName}.`;
 };
 
-// NEW: Helper for Score Color
-const getScoreColor = (score: number) => {
-    if (!score && score !== 0) return '';
-    if (score === 0) return 'text-gray-400';
-    if (score < 70) return 'bg-red-100 text-red-700 font-bold';
-    if (score < 85) return 'bg-yellow-100 text-yellow-800 font-bold';
-    return 'bg-green-100 text-green-700 font-bold';
-};
-
-const getScore = (s: Student, subjKey: string, semesterOverride: number) => {
-    const record = s.academicRecords?.[semesterOverride];
-    if (!record) return 0;
-    
-    const mapItem = SUBJECT_MAP.find(m => m.key === subjKey);
-    const subj = record.subjects.find(sub => {
-         // Robust matching
-         if (mapItem) {
-             return sub.subject === mapItem.full || 
-                    sub.subject === mapItem.key ||
-                    sub.subject.startsWith(mapItem.key) || 
-                    (mapItem.key === 'PAI' && sub.subject.includes('Agama'));
-         }
-         return sub.subject.startsWith(subjKey);
-    });
-    return subj ? subj.score : 0;
-};
-
 // Helper to determine Grade Level from Class Name (e.g. "IX A" -> "IX")
 const getGradeLevel = (className: string) => {
     if (!className) return 'VII'; // Default
@@ -121,8 +94,10 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
     const headmaster = appSettings?.schoolData?.headmaster || 'Didik Sulistyo, M.M.Pd';
     const headmasterNip = appSettings?.schoolData?.nip || '19660518 198901 1 002';
     
-    let record = student.academicRecords?.[semester];
+    // Safety check for academicRecords - Handle String/Number keys
+    let record = student.academicRecords ? (student.academicRecords[semester] || student.academicRecords[String(semester)]) : null;
     
+    // If no record exists, creating a dummy one to ensure layout renders (for batch empty check)
     if (!record) {
         const level = (semester <= 2) ? 'VII' : (semester <= 4) ? 'VIII' : 'IX';
         record = {
@@ -135,6 +110,7 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
             p5Projects: [], extracurriculars: [], teacherNote: '-', attendance: { sick: 0, permitted: 0, noReason: 0 }
         };
     } else {
+        // Ensure all subjects are mapped even if not in DB
         const filledSubjects = SUBJECT_MAP.map((mapItem, idx) => {
             const existingSub = record!.subjects.find(s => 
                 s.subject === mapItem.full || s.subject.startsWith(mapItem.key) || (mapItem.key === 'PAI' && s.subject.includes('Agama'))
@@ -155,8 +131,9 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
     const waliName = waliData?.teacher || '..................................';
     const waliNip = waliData?.nip || '..................................';
 
+    // F4 Size styling (215mm width, 328mm height approx - slightly reduced from 330)
     return (
-        <div className={`bg-white ${isBatch ? '' : 'shadow-xl'} h-[296mm] w-[210mm] mx-auto p-[10mm] text-black font-sans relative print:shadow-none print:w-full print:m-0 print:p-0 box-border overflow-hidden`}>
+        <div className={`bg-white ${isBatch ? '' : 'shadow-xl'} h-[328mm] w-[215mm] mx-auto p-[10mm] text-black font-sans relative print:shadow-none print:w-full print:m-0 print:p-0 box-border overflow-hidden page-break-after-always`}>
             {/* Identity Table */}
             <div className="text-xs mb-4">
                 <table className="w-full">
@@ -181,7 +158,7 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
                             <tr key={idx} className={idx % 2 !== 0 ? 'bg-gray-100' : ''}>
                                 <td className="border border-black p-1 text-center">{idx + 1}</td>
                                 <td className="border border-black p-1">{sub.subject}</td>
-                                <td className="border border-black p-1 text-center font-bold">{sub.score}</td>
+                                <td className="border border-black p-1 text-center font-bold">{sub.score || '-'}</td>
                                 <td className="border border-black p-1 text-[10px] italic text-gray-700">{sub.competency || '-'}</td>
                             </tr>
                         ))}
@@ -203,485 +180,326 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
                 </table>
             </div>
             <div className="mb-4">
-                <h3 className="font-bold text-sm mb-1 pl-1 border-l-4 border-green-600">D. CATATAN WALI KELAS</h3>
-                <div className="border border-black bg-gray-200 p-2 text-xs min-h-[40px]">{record.teacherNote || 'Pertahankan Prestasimu belajarmu!'}</div>
+                <h3 className="font-bold text-sm mb-1">D. KETIDAKHADIRAN</h3>
+                <table className="w-1/2 border-collapse border border-black text-xs">
+                    <tbody>
+                        <tr><td className="border border-black p-1">Sakit</td><td className="border border-black p-1 text-center w-12">{record.attendance.sick || 0}</td><td className="border border-black p-1">Hari</td></tr>
+                        <tr><td className="border border-black p-1">Ijin</td><td className="border border-black p-1 text-center">{record.attendance.permitted || 0}</td><td className="border border-black p-1">Hari</td></tr>
+                        <tr><td className="border border-black p-1">Tanpa Keterangan</td><td className="border border-black p-1 text-center">{record.attendance.noReason || 0}</td><td className="border border-black p-1">Hari</td></tr>
+                    </tbody>
+                </table>
             </div>
-            <div className="grid grid-cols-2 gap-4 mb-8">
-                <div>
-                    <h3 className="font-bold text-sm mb-1">KENAIKAN KELAS</h3>
-                    <div className="border border-black p-2 bg-gray-100 text-xs h-full">{[2, 4, 6].includes(semester) ? (<><p>Naik Kelas : {record.promotionStatus === 'NAIK' ? `YA (Ke Kelas ${student.className.includes('VII') ? 'VIII' : 'IX'})` : '-'}</p><p>Tanggal : {reportDate}</p></>) : (<p className="text-gray-400 italic">Hanya muncul di semester genap</p>)}</div>
+            <div className="mb-4">
+                <h3 className="font-bold text-sm mb-1">E. CATATAN WALI KELAS</h3>
+                <div className="border border-black p-2 text-xs h-16">{record.teacherNote || '-'}</div>
+            </div>
+            <div className="mb-4">
+                <h3 className="font-bold text-sm mb-1">F. KETERANGAN KENAIKAN KELAS</h3>
+                <div className="border border-black p-2 text-xs">{record.promotionStatus || 'Naik ke kelas berikutnya / Lulus'}</div>
+            </div>
+
+            {/* Footer TTD */}
+            <div className="flex justify-between items-end mt-4 text-xs">
+                <div className="text-center w-48">
+                    <p className="mb-16">Mengetahui,<br/>Orang Tua/Wali</p>
+                    <p className="border-t border-black w-32 mx-auto"></p>
                 </div>
-                <div>
-                    <h3 className="font-bold text-sm mb-1">KETIDAKHADIRAN</h3>
-                    <table className="w-full border-collapse border border-black text-xs"><tbody><tr><td className="border border-black p-1 w-8 text-center">1.</td><td className="border border-black p-1">Sakit</td><td className="border border-black p-1 w-10 text-center">{record.attendance.sick}</td><td className="border border-black p-1 w-10">Hari</td></tr><tr><td className="border border-black p-1 w-8 text-center">2.</td><td className="border border-black p-1">Ijin</td><td className="border border-black p-1 w-10 text-center">{record.attendance.permitted}</td><td className="border border-black p-1 w-10">Hari</td></tr><tr><td className="border border-black p-1 w-8 text-center">3.</td><td className="border border-black p-1">Tanpa Keterangan</td><td className="border border-black p-1 w-10 text-center">{record.attendance.noReason}</td><td className="border border-black p-1 w-10">Hari</td></tr></tbody></table>
+                <div className="text-center w-48">
+                    <p className="mb-16">Mojokerto, {reportDate}<br/>Wali Kelas</p>
+                    <p className="font-bold underline uppercase">{waliName}</p>
+                    <p>NIP. {waliNip}</p>
+                </div>
+                <div className="text-center w-48">
+                    <p className="mb-16">Mengetahui,<br/>Kepala Sekolah</p>
+                    <p className="font-bold underline uppercase">{headmaster}</p>
+                    <p>NIP. {headmasterNip}</p>
                 </div>
             </div>
-            <div className="flex justify-between items-start text-xs font-bold mt-8 bg-gray-200 p-4 border border-gray-300"><div className="text-center w-1/3"><p className="mb-16 uppercase">Kepala Sekolah</p><p className="underline uppercase">{headmaster}</p><p>NIP. {headmasterNip}</p></div><div className="text-center w-1/3"><p className="mb-16">Wali Kelas</p><p className="underline uppercase">{waliName}</p><p>NIP. {waliNip}</p></div></div>
         </div>
     );
 };
 
+// --- MAIN COMPONENT ---
 const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', loggedInStudent, onUpdate }) => {
-  const [viewMode, setViewMode] = useState<'REPORT' | 'DATABASE'>('DATABASE');
   const [searchTerm, setSearchTerm] = useState('');
-  const [dbClassFilter, setDbClassFilter] = useState<string>('ALL');
-  const [dbSemester, setDbSemester] = useState<number>(1); 
+  const [selectedClass, setSelectedClass] = useState('ALL');
+  const [selectedSemester, setSelectedSemester] = useState<number>(1);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [renderKey, setRenderKey] = useState(0); 
-  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
-  const [isBatchGenerating, setIsBatchGenerating] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [appSettings, setAppSettings] = useState<any>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isImporting, setIsImporting] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editScores, setEditScores] = useState<Record<string, number>>({});
-  const [editAttendance, setEditAttendance] = useState({ sick: 0, permitted: 0, noReason: 0 });
-  const [editExtra, setEditExtra] = useState('');
-  const [editPromotion, setEditPromotion] = useState('');
   
-  // Correction States
   const [isCorrectionModalOpen, setIsCorrectionModalOpen] = useState(false);
-  const [correctionType, setCorrectionType] = useState<'CLASS' | 'GRADE'>('CLASS');
-  const [proposedClass, setProposedClass] = useState('');
-  const [targetSubject, setTargetSubject] = useState('');
-  const [proposedScore, setProposedScore] = useState('');
-  const [correctionReason, setCorrectionReason] = useState('');
+  const [targetCorrection, setTargetCorrection] = useState<any>(null);
+  const [appSettings, setAppSettings] = useState<any>(null);
+  
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isBatchGenerating, setIsBatchGenerating] = useState(false);
 
   useEffect(() => {
       const fetchSettings = async () => {
-          try { const settings = await api.getAppSettings(); if (settings) setAppSettings(settings); } catch (e) { console.error(e); }
+          try {
+              const settings = await api.getAppSettings();
+              if (settings) {
+                  setAppSettings(settings);
+                  if (settings.academicData?.activeSemester) {
+                      setSelectedSemester(Number(settings.academicData.activeSemester));
+                  }
+              }
+          } catch(e) {}
       };
       fetchSettings();
   }, []);
 
-  useEffect(() => {
-      // IF Student logs in, allow them to view table but default to DATABASE view to see edit buttons
-      if (userRole === 'STUDENT' && loggedInStudent) {
-          setViewMode('DATABASE'); 
-          setSelectedStudent(loggedInStudent);
-      }
-  }, [userRole, loggedInStudent]); 
-
   const uniqueClasses = useMemo(() => {
-      const classes = Array.from(new Set(students.map(s => s.className))).filter(Boolean) as string[];
-      return ['ALL', ...classes.sort()];
+      const classes = Array.from(new Set(students.map(s => s.className))).sort();
+      return ['ALL', ...classes];
   }, [students]);
 
-  const effectiveStudents = (userRole === 'STUDENT' && loggedInStudent) ? [loggedInStudent] : students;
-  const filteredStudents = effectiveStudents.filter(s => {
-      const matchSearch = s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || s.nisn.includes(searchTerm);
-      const matchClass = userRole === 'STUDENT' ? true : (dbClassFilter === 'ALL' || s.className === dbClassFilter);
-      return matchSearch && matchClass;
-  });
+  const filteredStudents = useMemo(() => {
+      if (userRole === 'STUDENT' && loggedInStudent) return [loggedInStudent];
+      
+      return students.filter(s => {
+          const matchSearch = s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || s.nisn.includes(searchTerm);
+          const matchClass = selectedClass === 'ALL' || s.className === selectedClass;
+          return matchSearch && matchClass;
+      }).sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }, [students, searchTerm, selectedClass, userRole, loggedInStudent]);
 
-  const getRecord = (s: Student) => s.academicRecords?.[dbSemester];
+  useEffect(() => {
+      if (userRole === 'STUDENT' && loggedInStudent) {
+          setSelectedStudent(loggedInStudent);
+      }
+  }, [userRole, loggedInStudent]);
 
-  // --- EDIT HANDLERS (ADMIN) ---
-  const startEdit = (s: Student) => {
-      const record = getRecord(s); setEditingId(s.id);
-      const currentScores: Record<string, number> = {};
-      SUBJECT_MAP.forEach(sub => { currentScores[sub.key] = getScore(s, sub.key, dbSemester); });
-      setEditScores(currentScores);
-      setEditAttendance(record?.attendance || { sick: 0, permitted: 0, noReason: 0 });
-      setEditExtra(record?.extracurriculars?.[0]?.name || '');
-      setEditPromotion(record?.promotionStatus || '');
-  };
-
-  const saveEdit = async (s: Student) => {
-      setIsSaving(true);
-      try {
-          if (!s.academicRecords) s.academicRecords = {};
-          if (!s.academicRecords[dbSemester]) {
-              s.academicRecords[dbSemester] = { semester: dbSemester, classLevel: 'VII', className: s.className, phase: 'D', year: '2024', subjects: [], p5Projects: [], extracurriculars: [], teacherNote: '', attendance: { sick: 0, permitted: 0, noReason: 0 } };
-          }
-          const record = s.academicRecords[dbSemester];
-          SUBJECT_MAP.forEach((mapItem, idx) => {
-              const score = editScores[mapItem.key] || 0;
-              const competency = getCompetencyDescription(score, mapItem.full);
-              let subj = record.subjects.find(sub => sub.subject === mapItem.full || sub.subject.startsWith(mapItem.key));
-              if (subj) { subj.score = score; subj.competency = competency; } else { record.subjects.push({ no: idx + 1, subject: mapItem.full, score: score, competency: competency }); }
-          });
-          if (editExtra) record.extracurriculars = [{ name: editExtra, score: 'Baik' }]; else record.extracurriculars = [];
-          record.attendance = editAttendance; record.promotionStatus = editPromotion;
-          await api.updateStudent(s);
-          setEditingId(null); if (onUpdate) onUpdate();
-      } catch (e) { console.error(e); } finally { setIsSaving(false); }
-  };
-
-  // --- CORRECTION HANDLERS (STUDENT) ---
-  const handleOpenClassCorrection = (student: Student) => {
-      setSelectedStudent(student);
-      setCorrectionType('CLASS');
-      setProposedClass(student.className); 
-      setCorrectionReason('');
-      setIsCorrectionModalOpen(true);
-  };
-
-  const handleOpenGradeCorrection = (student: Student, subjKey: string, currentScore: number) => {
-      setSelectedStudent(student);
-      setCorrectionType('GRADE');
-      const subj = SUBJECT_MAP.find(s => s.key === subjKey);
-      setTargetSubject(subj ? subj.full : subjKey);
-      setProposedScore(String(currentScore));
-      setCorrectionReason('');
-      setIsCorrectionModalOpen(true);
-  };
-  
-  const submitCorrection = async () => {
+  // --- PDF GENERATION LOGIC ---
+  const handleDownloadPDF = () => {
       if (!selectedStudent) return;
-      if (!correctionReason.trim()) { alert("Mohon isi alasan revisi."); return; }
+      setIsGenerating(true);
 
-      const fieldKey = correctionType === 'CLASS' 
-          ? `class-${dbSemester}` 
-          : `grade-${dbSemester}-${targetSubject}`;
-      
-      const newRequest: CorrectionRequest = {
-          id: Math.random().toString(36).substr(2, 9),
-          fieldKey: fieldKey,
-          fieldName: correctionType === 'CLASS' ? `Kelas (Sem ${dbSemester})` : `Nilai ${targetSubject} (Sem ${dbSemester})`,
-          originalValue: correctionType === 'CLASS' ? selectedStudent.className : 'current',
-          proposedValue: correctionType === 'CLASS' ? proposedClass : proposedScore,
-          studentReason: correctionReason,
-          status: 'PENDING',
-          requestDate: new Date().toISOString(),
-      };
+      setTimeout(() => {
+          const element = document.getElementById('report-content-print');
+          const filename = `Rapor_${selectedStudent.fullName.replace(/\s+/g, '_')}_S${selectedSemester}.pdf`;
 
-      const updatedStudent = { ...selectedStudent };
-      if (!updatedStudent.correctionRequests) updatedStudent.correctionRequests = [];
-      
-      // Remove existing pending request for same field
-      updatedStudent.correctionRequests = updatedStudent.correctionRequests.filter(r => !(r.fieldKey === fieldKey && r.status === 'PENDING'));
-      
-      updatedStudent.correctionRequests.push(newRequest);
-      await api.updateStudent(updatedStudent);
-      
-      setIsCorrectionModalOpen(false);
-      alert("✅ Pengajuan revisi berhasil dikirim.");
-      if (onUpdate) onUpdate();
+          const opt = {
+            margin: 0,
+            filename: filename,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
+            jsPDF: { unit: 'mm', format: [215, 330], orientation: 'portrait' }, // F4 Size
+            pagebreak: { mode: 'avoid-all' }
+          };
+
+          // @ts-ignore
+          const html2pdf = window.html2pdf;
+          if (html2pdf) {
+              html2pdf().set(opt).from(element).save().then(() => {
+                  setIsGenerating(false);
+              }).catch((err: any) => {
+                  console.error(err);
+                  setIsGenerating(false);
+              });
+          } else {
+              setIsGenerating(false);
+              alert("Library PDF belum siap.");
+          }
+      }, 1000);
   };
 
-  // ... (Excel handlers omitted for brevity) ...
-  const handleDownloadTemplate = () => { /* ... */ };
-  const handleImportExcel = () => { /* ... */ };
-  const handleViewReport = (s: Student) => { setSelectedStudent(s); setViewMode('REPORT'); };
-  const handleDownloadPDF = () => { /* ... */ };
+  const handleDownloadBatch = () => {
+      if (filteredStudents.length === 0) {
+          alert("Tidak ada siswa untuk didownload.");
+          return;
+      }
+      if (selectedClass === 'ALL') {
+          if (!window.confirm("Anda akan mendownload rapor semua kelas? Ini akan memakan waktu lama.")) return;
+      }
 
-  const getPendingRequest = (student: Student, key: string) => {
-      return student.correctionRequests?.find(r => r.fieldKey === key && r.status === 'PENDING');
+      setIsBatchGenerating(true);
+
+      setTimeout(() => {
+          const element = document.getElementById('batch-report-container');
+          const className = selectedClass === 'ALL' ? 'Semua_Kelas' : selectedClass.replace(/\s+/g, '_');
+          const filename = `Rapor_Batch_${className}_S${selectedSemester}.pdf`;
+
+          const opt = {
+            margin: 0,
+            filename: filename,
+            image: { type: 'jpeg', quality: 0.95 },
+            html2canvas: { scale: 1.5, useCORS: true, scrollY: 0 },
+            pagebreak: { mode: ['css', 'legacy'] },
+            jsPDF: { unit: 'mm', format: [215, 330], orientation: 'portrait' }
+          };
+
+          // @ts-ignore
+          const html2pdf = window.html2pdf;
+          if (html2pdf) {
+              html2pdf().set(opt).from(element).save().then(() => {
+                  setIsBatchGenerating(false);
+              }).catch((err: any) => {
+                  console.error(err);
+                  setIsBatchGenerating(false);
+                  alert("Gagal melakukan batch download.");
+              });
+          }
+      }, 5000); // 5 Seconds wait time for huge DOM
   };
 
-  return (
-    <div className="flex flex-col h-full space-y-4 animate-fade-in relative">
-      {/* Correction Modal */}
-      {isCorrectionModalOpen && (
-          <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-              <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 flex flex-col">
-                  <div className="flex justify-between items-center mb-4 border-b pb-2">
-                      <h3 className="font-bold text-gray-800 text-lg">Ajukan Perbaikan</h3>
-                      <button onClick={() => setIsCorrectionModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>
+  // --- CORRECTION HANDLER ---
+  const handleCorrectionRequest = (type: 'CLASS' | 'GRADE', data?: any) => {
+      if (userRole !== 'STUDENT') return;
+      setTargetCorrection({ type, data });
+      setIsCorrectionModalOpen(true);
+  };
+
+  // IF SINGLE STUDENT SELECTED
+  if (selectedStudent) {
+      return (
+          <div className="flex flex-col h-full animate-fade-in space-y-4">
+              <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+                  <div className="flex items-center gap-3">
+                      {userRole !== 'STUDENT' && (
+                          <button onClick={() => setSelectedStudent(null)} className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-blue-600">
+                              <ArrowLeft className="w-4 h-4" /> Kembali
+                          </button>
+                      )}
+                      <h2 className="text-lg font-bold text-gray-800">Rapor Siswa - Semester {selectedSemester}</h2>
                   </div>
                   
-                  <div className="space-y-4">
-                      {correctionType === 'CLASS' ? (
-                          <div>
-                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Kelas yang Benar</label>
-                              <select className="w-full p-2 border rounded font-bold" value={proposedClass} onChange={e => setProposedClass(e.target.value)}>
-                                  {CLASS_LIST.map(c => <option key={c} value={c}>{c}</option>)}
-                              </select>
-                          </div>
-                      ) : (
-                          <div>
-                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nilai yang Benar</label>
-                              <input type="number" className="w-full p-2 border rounded font-bold" value={proposedScore} onChange={e => setProposedScore(e.target.value)} />
-                              <p className="text-xs text-blue-600 mt-1">Mapel: {targetSubject}</p>
-                          </div>
-                      )}
-                      
-                      <div>
-                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Alasan</label>
-                          <textarea className="w-full p-2 border rounded text-sm" rows={2} placeholder="Jelaskan kenapa data ini salah..." value={correctionReason} onChange={e => setCorrectionReason(e.target.value)} />
+                  <div className="flex gap-2 items-center">
+                      <span className="text-xs font-bold text-gray-500 mr-2">Pilih Semester:</span>
+                      <div className="flex bg-gray-100 p-1 rounded-lg">
+                          {[1, 2, 3, 4, 5, 6].map(sem => (
+                              <button 
+                                key={sem} 
+                                onClick={() => setSelectedSemester(sem)}
+                                className={`w-8 h-8 rounded-md text-sm font-bold transition-all ${selectedSemester === sem ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                              >
+                                  {sem}
+                              </button>
+                          ))}
                       </div>
-                  </div>
-
-                  <div className="flex justify-end gap-2 mt-6">
-                      <button onClick={() => setIsCorrectionModalOpen(false)} className="px-4 py-2 bg-gray-100 text-gray-600 font-bold rounded-lg text-sm">Batal</button>
-                      <button onClick={submitCorrection} className="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg text-sm flex items-center gap-2 hover:bg-blue-700">
-                          <Send className="w-3 h-3" /> Kirim
+                      
+                      <button 
+                          onClick={handleDownloadPDF}
+                          disabled={isGenerating}
+                          className="ml-4 flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium shadow-lg shadow-blue-500/30 disabled:opacity-50"
+                      >
+                          {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileDown className="w-4 h-4 mr-2" />}
+                          Download PDF (F4)
                       </button>
                   </div>
               </div>
+
+              {/* PREVIEW CONTAINER */}
+              <div className="bg-white p-4 md:p-8 rounded-xl border border-gray-200 shadow-sm flex-1 overflow-auto flex justify-center bg-gray-50/50 pb-32">
+                  <div id="report-content-print">
+                      <ReportTemplate 
+                          student={selectedStudent} 
+                          semester={selectedSemester} 
+                          appSettings={appSettings} 
+                          userRole={userRole}
+                          onCorrectionRequest={handleCorrectionRequest}
+                      />
+                  </div>
+              </div>
           </div>
-      )}
+      );
+  }
 
-      {/* Toolbar */}
-      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 print:hidden">
-        <div className="flex gap-2 w-full xl:w-auto">
-             <div className="flex flex-col md:flex-row gap-3 w-full xl:w-auto">
-                {userRole === 'ADMIN' && (
-                    <button onClick={() => setViewMode('DATABASE')} className={`flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-sm border transition-colors ${viewMode === 'DATABASE' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-white text-gray-600'}`}>
-                        <FileSpreadsheet className="w-4 h-4" /> <span>Input Nilai</span>
-                    </button>
-                )}
-                {userRole === 'ADMIN' && (
-                    <>
-                        <button onClick={handleDownloadTemplate} className="flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-sm border bg-white text-gray-600 hover:bg-gray-50"><Download className="w-4 h-4" /> Template</button>
-                    </>
-                )}
-                
-                {/* SEMESTER SELECTOR */}
-                <div className="flex items-center gap-2 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200">
-                    <span className="text-xs font-bold text-gray-500 uppercase">Semester:</span>
-                    <select className="bg-transparent text-sm font-bold text-gray-800 outline-none cursor-pointer" value={dbSemester} onChange={(e) => setDbSemester(Number(e.target.value))}>
-                        {[1, 2, 3, 4, 5, 6].map(sem => (<option key={sem} value={sem}>Semester {sem}</option>))}
-                    </select>
+  // LIST VIEW (ADMIN/GURU)
+  return (
+    <div className="flex flex-col h-full animate-fade-in space-y-4 relative">
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col xl:flex-row justify-between items-center gap-4">
+            <div className="flex items-center gap-3 w-full xl:w-auto">
+                <div className="flex items-center gap-2 bg-purple-50 text-purple-700 px-3 py-2 rounded-lg font-bold text-sm border border-purple-100">
+                    <Activity className="w-4 h-4" /> Data Nilai & Rapor
                 </div>
-
-                {(userRole === 'ADMIN' || userRole === 'GURU') && (
-                    <select className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium" value={dbClassFilter} onChange={(e) => setDbClassFilter(e.target.value)}>
-                        <option value="ALL">Semua Kelas</option>
-                        {uniqueClasses.map(c => <option key={c} value={c}>{c === 'ALL' ? '' : `Kelas ${c}`}</option>)}
+                {userRole === 'ADMIN' && (
+                    <select className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium" value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}>
+                        {uniqueClasses.map(c => <option key={c} value={c}>{c === 'ALL' ? 'Semua Kelas' : `Kelas ${c}`}</option>)}
                     </select>
+                )}
+            </div>
+            
+            <div className="flex gap-2 w-full xl:w-auto">
+                <div className="relative flex-1 md:w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input type="text" placeholder="Cari Siswa..." className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-lg text-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                </div>
+                
+                {userRole !== 'STUDENT' && (
+                    <button 
+                        onClick={handleDownloadBatch} 
+                        disabled={isBatchGenerating}
+                        className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-black flex items-center gap-2 shadow-lg disabled:opacity-50 whitespace-nowrap"
+                    >
+                        {isBatchGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Files className="w-4 h-4" />}
+                        {isBatchGenerating ? 'Memproses...' : 'Download Rapor Kelas (F4)'}
+                    </button>
                 )}
             </div>
         </div>
-        {viewMode === 'REPORT' && (
-            <div className="flex items-center gap-2">
-                <button onClick={() => { setViewMode('DATABASE'); setSelectedStudent(null); }} className="p-2 hover:bg-gray-100 rounded text-gray-600"><ArrowLeft className="w-5 h-5" /></button>
-                <button onClick={handleDownloadPDF} disabled={isGeneratingPdf} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50"><FileDown className="w-4 h-4" /> Download PDF</button>
+
+        {/* Table List */}
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex-1 overflow-hidden flex flex-col">
+            <div className="overflow-auto flex-1 w-full pb-32">
+                <table className="w-full text-left border-collapse">
+                    <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-700 uppercase">
+                        <tr>
+                            <th className="px-6 py-4 w-12 text-center">No</th>
+                            <th className="px-6 py-4">Nama Siswa</th>
+                            <th className="px-6 py-4">NISN</th>
+                            <th className="px-6 py-4">Kelas</th>
+                            <th className="px-6 py-4 text-center">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                        {filteredStudents.length > 0 ? filteredStudents.map((s, idx) => (
+                            <tr key={s.id} className="hover:bg-purple-50/30 transition-colors group cursor-pointer" onClick={() => setSelectedStudent(s)}>
+                                <td className="px-6 py-3 text-center text-gray-500">{idx + 1}</td>
+                                <td className="px-6 py-3 font-bold text-gray-800 group-hover:text-purple-600">{s.fullName}</td>
+                                <td className="px-6 py-3 font-mono text-xs text-gray-500">{s.nisn}</td>
+                                <td className="px-6 py-3"><span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-bold">{s.className}</span></td>
+                                <td className="px-6 py-3 text-center">
+                                    <button className="text-xs font-bold text-blue-600 border border-blue-200 px-3 py-1 rounded hover:bg-blue-600 hover:text-white transition-colors">
+                                        Lihat Rapor
+                                    </button>
+                                </td>
+                            </tr>
+                        )) : (
+                            <tr><td colSpan={5} className="p-8 text-center text-gray-500">Tidak ada data siswa.</td></tr>
+                        )}
+                    </tbody>
+                </table>
             </div>
-        )}
-      </div>
+        </div>
 
-      {/* Main Content */}
-      <div className={`bg-white border border-gray-200 rounded-xl shadow-sm flex-1 overflow-hidden flex flex-col relative ${viewMode === 'REPORT' ? 'bg-gray-100' : ''}`}>
-          {viewMode === 'DATABASE' ? (
-              <div className="overflow-auto flex-1 w-full pb-32">
-                  {userRole === 'STUDENT' && loggedInStudent ? (
-                      // --- VERTICAL TABLE LAYOUT FOR STUDENT ---
-                      <div className="p-6 max-w-4xl mx-auto">
-                          {/* Student Header Info */}
-                          <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                              <div>
-                                  <h2 className="text-xl font-bold text-blue-900">{loggedInStudent.fullName}</h2>
-                                  <div className="flex items-center gap-2 mt-1">
-                                      <p className="text-sm text-blue-700 font-medium">NISN: {loggedInStudent.nisn}</p>
-                                      <span className="text-blue-300">•</span>
-                                      <div className="flex items-center gap-2">
-                                          <p className="text-sm text-blue-700 font-bold">Kelas {getRecord(loggedInStudent)?.className || loggedInStudent.className}</p>
-                                          {/* Class Correction Button */}
-                                          <button 
-                                              onClick={() => handleOpenClassCorrection(loggedInStudent)}
-                                              className="p-1.5 bg-white hover:bg-blue-100 rounded-full text-blue-600 shadow-sm border border-blue-200 transition-all"
-                                              title="Koreksi Kelas"
-                                          >
-                                              <Pencil className="w-3 h-3" />
-                                          </button>
-                                          {getPendingRequest(loggedInStudent, `class-${dbSemester}`) && (
-                                              <span className="text-[10px] bg-yellow-300 text-yellow-900 px-2 py-0.5 rounded-full font-bold animate-pulse">
-                                                  Koreksi Menunggu
-                                              </span>
-                                          )}
-                                      </div>
-                                  </div>
-                              </div>
-                              <div className="bg-white px-4 py-2 rounded-xl shadow-sm border border-blue-100">
-                                  <p className="text-[10px] uppercase font-bold text-gray-400">Semester Aktif</p>
-                                  <p className="text-lg font-black text-blue-600">Semester {dbSemester}</p>
-                              </div>
-                          </div>
-
-                          {/* Vertical Grades Table */}
-                          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                              <table className="w-full text-sm text-left">
-                                  <thead className="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase">
-                                      <tr>
-                                          <th className="px-6 py-4 w-16 text-center">No</th>
-                                          <th className="px-6 py-4">Mata Pelajaran</th>
-                                          <th className="px-6 py-4 text-center w-32">Nilai Akhir</th>
-                                          <th className="px-6 py-4">Capaian Kompetensi</th>
-                                          <th className="px-6 py-4 text-center w-24">Aksi</th>
-                                      </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-gray-100">
-                                      {SUBJECT_MAP.map((sub, idx) => {
-                                          const score = getScore(loggedInStudent, sub.key, dbSemester);
-                                          const competency = getCompetencyDescription(score, sub.full);
-                                          const gradeReq = getPendingRequest(loggedInStudent, `grade-${dbSemester}-${sub.full}`);
-
-                                          return (
-                                              <tr key={sub.key} className="hover:bg-blue-50/30 transition-colors group">
-                                                  <td className="px-6 py-4 text-center text-gray-400 font-medium">{idx + 1}</td>
-                                                  <td className="px-6 py-4 font-bold text-gray-700">
-                                                      {sub.full}
-                                                  </td>
-                                                  <td className="px-6 py-4 text-center">
-                                                      <div className="flex justify-center items-center gap-2">
-                                                          <span className={`px-3 py-1 rounded-lg text-sm font-bold ${getScoreColor(score)}`}>
-                                                              {gradeReq ? gradeReq.proposedValue : (score > 0 ? score : '-')}
-                                                          </span>
-                                                          {gradeReq && <span className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" title="Menunggu Verifikasi"></span>}
-                                                      </div>
-                                                  </td>
-                                                  <td className="px-6 py-4 text-xs text-gray-500 italic">
-                                                      {score > 0 ? competency : '-'}
-                                                  </td>
-                                                  <td className="px-6 py-4 text-center">
-                                                      {!gradeReq && (
-                                                          <button 
-                                                              onClick={() => handleOpenGradeCorrection(loggedInStudent, sub.key, score)}
-                                                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg hover:shadow-sm transition-all border border-transparent hover:border-blue-100"
-                                                              title="Ajukan Perbaikan Nilai"
-                                                          >
-                                                              <Pencil className="w-4 h-4" />
-                                                          </button>
-                                                      )}
-                                                      {gradeReq && <span className="text-[10px] text-yellow-600 font-bold bg-yellow-50 px-2 py-1 rounded border border-yellow-100">Pending</span>}
-                                                  </td>
-                                              </tr>
-                                          );
-                                      })}
-                                  </tbody>
-                              </table>
-                          </div>
-
-                          {/* Footer Info (Attendance & Extra) */}
-                          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                              <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-                                  <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Activity className="w-4 h-4 text-purple-500"/> Ketidakhadiran</h3>
-                                  <div className="grid grid-cols-3 gap-2 text-center">
-                                      <div className="bg-purple-50 p-2 rounded-lg">
-                                          <p className="text-[10px] uppercase font-bold text-purple-400">Sakit</p>
-                                          <p className="font-bold text-purple-700">{getRecord(loggedInStudent)?.attendance?.sick || 0}</p>
-                                      </div>
-                                      <div className="bg-blue-50 p-2 rounded-lg">
-                                          <p className="text-[10px] uppercase font-bold text-blue-400">Ijin</p>
-                                          <p className="font-bold text-blue-700">{getRecord(loggedInStudent)?.attendance?.permitted || 0}</p>
-                                      </div>
-                                      <div className="bg-red-50 p-2 rounded-lg">
-                                          <p className="text-[10px] uppercase font-bold text-red-400">Alpha</p>
-                                          <p className="font-bold text-red-700">{getRecord(loggedInStudent)?.attendance?.noReason || 0}</p>
-                                      </div>
-                                  </div>
-                              </div>
-                              <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-                                  <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Award className="w-4 h-4 text-orange-500"/> Ekstrakurikuler</h3>
-                                  {getRecord(loggedInStudent)?.extracurriculars && getRecord(loggedInStudent)!.extracurriculars.length > 0 ? (
-                                      <div className="space-y-2">
-                                          {getRecord(loggedInStudent)!.extracurriculars.map((ex, i) => (
-                                              <div key={i} className="flex justify-between items-center bg-orange-50 p-2 rounded-lg border border-orange-100">
-                                                  <span className="text-sm font-bold text-orange-800">{ex.name}</span>
-                                                  <span className="text-xs font-bold bg-white px-2 py-0.5 rounded text-orange-600">{ex.score}</span>
-                                              </div>
-                                          ))}
-                                      </div>
-                                  ) : (
-                                      <p className="text-sm text-gray-400 italic">Tidak ada data ekstrakurikuler.</p>
-                                  )}
-                              </div>
-                          </div>
-
-                      </div>
-                  ) : (
-                      // --- ADMIN / DEFAULT TABLE LAYOUT ---
-                      <table className="border-collapse w-full text-sm">
-                          <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10 shadow-sm text-gray-600 uppercase text-xs">
-                              <tr>
-                                  <th className="px-4 py-3 text-left w-16 bg-gray-50 sticky left-0 z-20">Aksi</th>
-                                  <th className="px-4 py-3 text-left min-w-[200px] bg-gray-50 sticky left-[64px] z-20">Nama Siswa</th>
-                                  {SUBJECT_MAP.map(sub => <th key={sub.key} className="px-2 py-3 text-center min-w-[50px]">{sub.label}</th>)}
-                                  <th className="px-2 py-3 text-center min-w-[120px]">Ekstrakurikuler</th>
-                                  <th className="px-2 py-3 text-center min-w-[40px]">S</th><th className="px-2 py-3 text-center min-w-[40px]">I</th><th className="px-2 py-3 text-center min-w-[40px]">A</th>
-                                  {[2, 4, 6].includes(dbSemester) && <th className="px-4 py-3 text-center min-w-[120px]">Ket. Naik Kelas</th>}
-                              </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100">
-                              {filteredStudents.length > 0 ? filteredStudents.map((student) => {
-                                  const isEditingRow = editingId === student.id;
-                                  const record = getRecord(student);
-                                  const classReq = getPendingRequest(student, `class-${dbSemester}`);
-                                  
-                                  return (
-                                      <tr key={student.id + renderKey} className="hover:bg-blue-50 transition-colors group">
-                                          <td className="px-4 py-2 flex gap-1 items-center sticky left-0 bg-white z-10 group-hover:bg-blue-50">
-                                              {isEditingRow ? (
-                                                  <><button onClick={() => saveEdit(student)} className="p-1.5 bg-green-100 text-green-700 rounded"><Save className="w-4 h-4" /></button><button onClick={() => setEditingId(null)} className="p-1.5 bg-gray-100 text-gray-600 rounded"><X className="w-4 h-4" /></button></>
-                                              ) : (
-                                                  <>
-                                                    {userRole === 'ADMIN' && <button onClick={() => startEdit(student)} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded" title="Edit"><Pencil className="w-4 h-4" /></button>}
-                                                    <button onClick={() => handleViewReport(student)} className="p-1.5 text-purple-600 hover:bg-purple-100 rounded" title="Lihat Rapor"><LayoutList className="w-4 h-4" /></button>
-                                                  </>
-                                              )}
-                                          </td>
-                                          <td className="px-4 py-2 font-medium text-gray-900 sticky left-[64px] bg-white z-10 group-hover:bg-blue-50">
-                                              <div>{student.fullName}</div>
-                                              <div className="flex items-center gap-2">
-                                                  <span className="text-xs text-gray-400 font-mono">{record?.className || student.className}</span>
-                                                  {classReq && <span className="text-[9px] bg-yellow-200 text-yellow-800 px-1 rounded animate-pulse">Menunggu</span>}
-                                              </div>
-                                          </td>
-                                          
-                                          {SUBJECT_MAP.map(sub => { 
-                                              const score = isEditingRow ? (editScores[sub.key] || 0) : getScore(student, sub.key, dbSemester); 
-                                              const gradeReq = getPendingRequest(student, `grade-${dbSemester}-${sub.full}`);
-                                              return (
-                                                <td key={sub.key} className="px-2 py-2 text-center relative group/cell">
-                                                    {isEditingRow ? (
-                                                        <input type="number" className="w-10 text-center border rounded p-1 text-xs" value={editScores[sub.key] || 0} onChange={(e) => setEditScores({...editScores, [sub.key]: Number(e.target.value)})} />
-                                                    ) : (
-                                                        <div className="flex items-center justify-center gap-1">
-                                                            <span className={`px-2 py-1 rounded text-xs ${getScoreColor(score)}`}>{gradeReq ? gradeReq.proposedValue : (score || '-')}</span>
-                                                            {gradeReq && <span className="absolute top-0 right-0 w-2 h-2 bg-yellow-400 rounded-full animate-ping"></span>}
-                                                        </div>
-                                                    )}
-                                                </td>
-                                              ); 
-                                          })}
-                                          
-                                          {/* Other columns */}
-                                          <td className="px-2 py-2 text-center">{isEditingRow ? <input type="text" className="w-full text-xs border rounded p-1" value={editExtra} onChange={(e)=>setEditExtra(e.target.value)} /> : <span className="text-xs">{record?.extracurriculars?.[0]?.name || '-'}</span>}</td>
-                                          <td className="px-2 py-2 text-center">{isEditingRow ? <input type="number" className="w-8 text-center text-xs border rounded" value={editAttendance.sick} onChange={(e)=>setEditAttendance({...editAttendance, sick: Number(e.target.value)})} /> : record?.attendance?.sick || 0}</td>
-                                          <td className="px-2 py-2 text-center">{isEditingRow ? <input type="number" className="w-8 text-center text-xs border rounded" value={editAttendance.permitted} onChange={(e)=>setEditAttendance({...editAttendance, permitted: Number(e.target.value)})} /> : record?.attendance?.permitted || 0}</td>
-                                          <td className="px-2 py-2 text-center">{isEditingRow ? <input type="number" className="w-8 text-center text-xs border rounded" value={editAttendance.noReason} onChange={(e)=>setEditAttendance({...editAttendance, noReason: Number(e.target.value)})} /> : record?.attendance?.noReason || 0}</td>
-                                          {[2, 4, 6].includes(dbSemester) && <td className="px-2 py-2 text-center">{isEditingRow ? <select className="text-xs border rounded p-1 w-full" value={editPromotion} onChange={(e)=>setEditPromotion(e.target.value)}><option value="">- Pilih -</option><option value="NAIK">Naik Kelas</option><option value="TINGGAL">Tinggal Kelas</option>{dbSemester === 6 && <option value="LULUS">Lulus</option>}</select> : <span className="text-xs font-bold text-blue-600">{record?.promotionStatus || '-'}</span>}</td>}
-                                      </tr>
-                                  );
-                              }) : <tr><td colSpan={20} className="p-8 text-center text-gray-500">Tidak ada data.</td></tr>}
-                          </tbody>
-                      </table>
-                  )}
-              </div>
-          ) : (
-              <div className="overflow-auto flex-1 bg-gray-500/10 p-4 md:p-8 flex justify-center pb-32">
-                  {selectedStudent && (
-                      <div id="report-content" className="shadow-xl">
-                          <ReportTemplate student={selectedStudent} semester={dbSemester} appSettings={appSettings} userRole={userRole} />
-                      </div>
-                  )}
-              </div>
-          )}
-      </div>
-      
-      {isBatchGenerating && createPortal(
-            <div className="fixed inset-0 z-[9999] bg-gray-900 flex flex-col items-center justify-start overflow-auto">
+        {/* BATCH DOWNLOAD OVERLAY */}
+        {isBatchGenerating && (
+            <div className="fixed inset-0 z-[9999] bg-gray-900/90 flex flex-col items-center justify-start overflow-auto pt-20 pb-20">
                 <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center animate-bounce-in">
                     <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
-                    <h3 className="text-xl font-bold text-gray-900">Memproses PDF...</h3>
-                    <p className="text-gray-500 text-sm mt-2">Sedang menggabungkan {filteredStudents.length} rapor siswa.</p>
+                    <h3 className="text-xl font-bold text-gray-900">Memproses Rapor...</h3>
+                    <p className="text-gray-500 text-sm mt-2">Sedang menggabungkan {filteredStudents.length} rapor semester {selectedSemester}.</p>
+                    <p className="text-xs text-gray-400 mt-1">Mohon tunggu, jangan tutup halaman ini.</p>
                 </div>
-                <div className="absolute top-0 left-0 w-full flex flex-col items-center pt-20 pb-20 bg-gray-900 min-h-screen">
-                    <div id="batch-rapor-container" className="bg-white w-[210mm]">
-                        {filteredStudents.map((student, index) => (
-                            <div key={student.id} className="relative">
-                                <ReportTemplate student={student} semester={dbSemester} appSettings={appSettings} userRole={userRole} isBatch={true} />
-                                {index < filteredStudents.length - 1 && <div className="html2pdf__page-break" style={{ pageBreakAfter: 'always', height: 0, display: 'block' }}></div>}
-                            </div>
-                        ))}
-                    </div>
+
+                <div id="batch-report-container" className="bg-white w-[215mm]">
+                    {filteredStudents.map((student, index) => (
+                        <div key={student.id} className="relative">
+                            <ReportTemplate 
+                                student={student} 
+                                semester={selectedSemester} 
+                                appSettings={appSettings} 
+                                userRole={userRole}
+                                isBatch={true}
+                            />
+                            {index < filteredStudents.length - 1 && (
+                                <div className="html2pdf__page-break" style={{ pageBreakAfter: 'always', height: 0, display: 'block' }}></div>
+                            )}
+                        </div>
+                    ))}
                 </div>
-            </div>,
-            document.body
-      )}
+            </div>
+        )}
     </div>
   );
 };
