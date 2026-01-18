@@ -41,6 +41,25 @@ const getCompetencyDescription = (score: number, subjectName: string) => {
     return `${predikat} dalam memahami materi ${subjectName}.`;
 };
 
+// Helper: Format Name Title Case & Gelar Correctly
+const formatNameTitleCase = (name: string) => {
+    if (!name) return '';
+    // 1. Title Case (Capitalize first letter of each word)
+    let formatted = name.toLowerCase().replace(/(?:^|\s)\S/g, function(a) { 
+        return a.toUpperCase(); 
+    });
+    
+    // 2. Fix Academic Titles
+    formatted = formatted.replace(/\bM\.m\.pd\.?/gi, 'M.M.Pd.');
+    formatted = formatted.replace(/\bS\.pd\.?/gi, 'S.Pd.');
+    formatted = formatted.replace(/\bM\.pd\.?/gi, 'M.Pd.');
+    formatted = formatted.replace(/\bS\.ag\.?/gi, 'S.Ag.');
+    formatted = formatted.replace(/\bS\.si\.?/gi, 'S.Si.');
+    formatted = formatted.replace(/\bS\.e\.?/gi, 'S.E.');
+    
+    return formatted;
+};
+
 // Helper to determine Grade Level from Class Name (e.g. "IX A" -> "IX")
 const getGradeLevel = (className: string) => {
     if (!className) return 'VII'; // Default
@@ -198,7 +217,7 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
                 <div className="border border-black p-2 text-xs">{record.promotionStatus || 'Naik ke kelas berikutnya / Lulus'}</div>
             </div>
 
-            {/* Footer TTD */}
+            {/* Footer TTD - Updated with Format */}
             <div className="flex justify-between items-end mt-4 text-xs">
                 <div className="text-center w-48">
                     <p className="mb-16">Mengetahui,<br/>Orang Tua/Wali</p>
@@ -206,12 +225,12 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
                 </div>
                 <div className="text-center w-48">
                     <p className="mb-16">Mojokerto, {reportDate}<br/>Wali Kelas</p>
-                    <p className="font-bold underline uppercase">{waliName}</p>
+                    <p className="font-bold underline">{formatNameTitleCase(waliName)}</p>
                     <p>NIP. {waliNip}</p>
                 </div>
                 <div className="text-center w-48">
                     <p className="mb-16">Mengetahui,<br/>Kepala Sekolah</p>
-                    <p className="font-bold underline uppercase">{headmaster}</p>
+                    <p className="font-bold underline">{formatNameTitleCase(headmaster)}</p>
                     <p>NIP. {headmasterNip}</p>
                 </div>
             </div>

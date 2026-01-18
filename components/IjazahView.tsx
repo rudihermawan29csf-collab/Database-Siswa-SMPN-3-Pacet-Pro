@@ -39,6 +39,25 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
       return 'bg-green-100 text-green-700 font-bold';
   };
 
+  // Helper: Format Name Title Case & Gelar Correctly
+  const formatNameTitleCase = (name: string) => {
+      if (!name) return '';
+      // 1. Title Case
+      let formatted = name.toLowerCase().replace(/(?:^|\s)\S/g, function(a) { 
+          return a.toUpperCase(); 
+      });
+      
+      // 2. Fix Academic Titles
+      formatted = formatted.replace(/\bM\.m\.pd\.?/gi, 'M.M.Pd.');
+      formatted = formatted.replace(/\bS\.pd\.?/gi, 'S.Pd.');
+      formatted = formatted.replace(/\bM\.pd\.?/gi, 'M.Pd.');
+      formatted = formatted.replace(/\bS\.ag\.?/gi, 'S.Ag.');
+      formatted = formatted.replace(/\bS\.si\.?/gi, 'S.Si.');
+      formatted = formatted.replace(/\bS\.e\.?/gi, 'S.E.');
+      
+      return formatted;
+  };
+
   useEffect(() => {
       const fetchSettings = async () => {
           try {
@@ -658,7 +677,7 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                                     </div>
                                     <div className="text-center text-sm">
                                         <p className="mb-20">Mojokerto, ...................... <br/> Kepala Sekolah</p>
-                                        <p className="font-bold underline uppercase">{headmasterName}</p>
+                                        <p className="font-bold underline">{formatNameTitleCase(headmasterName)}</p>
                                         <p>NIP. {headmasterNip}</p>
                                     </div>
                                 </div>
@@ -744,7 +763,7 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                                 </table>
 
                                 <div className="flex justify-end mt-4 px-8">
-                                    <div className="text-center"><p>Mojokerto, ....................</p><p>Kepala Sekolah</p><div className="h-20"></div><p className="font-bold underline uppercase">{headmasterName}</p><p>NIP. {headmasterNip}</p></div>
+                                    <div className="text-center"><p>Mojokerto, ....................</p><p>Kepala Sekolah</p><div className="h-20"></div><p className="font-bold underline">{formatNameTitleCase(headmasterName)}</p><p>NIP. {headmasterNip}</p></div>
                                 </div>
                             </div>
                         )}
