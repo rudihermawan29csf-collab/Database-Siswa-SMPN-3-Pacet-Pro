@@ -1,34 +1,45 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Student, CorrectionRequest } from '../types';
-import { 
-  CheckCircle2, FileText, Maximize2, ZoomIn, ZoomOut, Loader2, Search, Filter, AlertCircle, ScrollText, X, ListChecks, XCircle, Pencil, Save, Activity
-} from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Student, DocumentFile } from '../types';
 import { api } from '../services/api';
+import { CheckCircle2, XCircle, Loader2, AlertCircle, ScrollText, ZoomIn, ZoomOut, RotateCw, FileCheck2, User, Filter, Search, FileBadge, Save } from 'lucide-react';
 
 interface IjazahVerificationViewProps {
   students: Student[];
-  onUpdate?: () => void;
-  currentUser?: { name: string; role: string };
-  onSave?: (student: Student) => void; 
-  targetStudentId?: string; // NEW PROP
+  targetStudentId?: string;
+  onUpdate: () => void;
+  currentUser: { name: string; role: string };
 }
 
-// ... (Helper functions getDriveUrl, PDFPageCanvas remain the same) ...
+// Master mapping for labels
+const DOC_LABELS: Record<string, string> = {
+    'IJAZAH': 'Ijazah SD',
+    'AKTA': 'Akta Kelahiran',
+    'KK': 'Kartu Keluarga',
+    'KTP_AYAH': 'KTP Ayah',
+    'KTP_IBU': 'KTP Ibu',
+    'NISN': 'Bukti NISN',
+    'KIP': 'KIP/PKH',
+    'FOTO': 'Pas Foto',
+    'SKL': 'SKL',
+    'KARTU_PELAJAR': 'Kartu Pelajar',
+    'PIAGAM': 'Piagam',
+    'RAPOR': 'Rapor'
+};
+
 const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
     if (!url) return '';
-    if (url.startsWith('blob:')) return url; 
-
+    if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+    
     if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
         let id = '';
-        const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-        if (match && match[1]) {
-            id = match[1];
-        } else {
-            try {
-                const urlObj = new URL(url);
-                id = urlObj.searchParams.get('id') || '';
-            } catch (e) {}
+        const parts = url.split(/\/d\//);
+        if (parts.length > 1) {
+            id = parts[1].split('/')[0];
+        }
+        if (!id) {
+            const match = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+            if (match) id = match[1];
         }
 
         if (id) {
@@ -39,442 +50,447 @@ const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
     return url;
 };
 
-const formatDateIndo = (dateStr: string) => {
-    if (!dateStr) return '-';
-    try {
-        const date = new Date(dateStr);
-        if (isNaN(date.getTime())) return dateStr;
-        return new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
-    } catch { return dateStr; }
-};
-
-const PDFPageCanvas: React.FC<{ pdf: any; pageNum: number; scale: number }> = ({ pdf, pageNum, scale }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-
-    useEffect(() => {
-        let isCancelled = false;
-        if (pdf && canvasRef.current) {
-            pdf.getPage(pageNum).then((page: any) => {
-                if(isCancelled) return;
-                const viewport = page.getViewport({ scale });
-                const canvas = canvasRef.current;
-                if (canvas) {
-                    const context = canvas.getContext('2d');
-                    canvas.height = viewport.height;
-                    canvas.width = viewport.width;
-                    const renderContext = { canvasContext: context, viewport: viewport };
-                    page.render(renderContext).promise.catch((err: any) => {
-                        if(!isCancelled) console.error("Page render error:", err);
-                    });
-                }
-            }).catch((err: any) => console.error("Get page error:", err));
-        }
-        return () => { isCancelled = true; };
-    }, [pdf, pageNum, scale]);
-
-    return <canvas ref={canvasRef} className="shadow-lg bg-white mb-4" />;
-};
-
-const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ students, onUpdate, currentUser, onSave, targetStudentId }) => {
-  // Configurable Docs State
-  const [availableDocTypes, setAvailableDocTypes] = useState<any[]>([]);
-  const [activeDocType, setActiveDocType] = useState<string>('IJAZAH');
-  
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('ALL'); 
+const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ students, targetStudentId, onUpdate, currentUser }) => {
+  const [selectedClass, setSelectedClass] = useState<string>('VII A');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
-  const [zoomLevel, setZoomLevel] = useState<number>(1.0); 
-  const [layoutMode, setLayoutMode] = useState<'split' | 'full-doc'>('split');
-  const [forceUpdate, setForceUpdate] = useState(0);
-  const [rejectModalOpen, setRejectModalOpen] = useState(false);
-  const [rejectionNote, setRejectionNote] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  const [isEditingData, setIsEditingData] = useState(false);
-  const [editFormData, setEditFormData] = useState<Student | null>(null);
-  const [adminVerifyModalOpen, setAdminVerifyModalOpen] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState<CorrectionRequest | null>(null);
-  const [adminResponseNote, setAdminResponseNote] = useState('');
-  const [isPdfLoading, setIsPdfLoading] = useState(false);
-  const [pdfError, setPdfError] = useState(false);
-  const [pdfDoc, setPdfDoc] = useState<any>(null);
-  const [numPages, setNumPages] = useState(0);
+  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+
+  // Filter Docs
+  const [activeTab, setActiveTab] = useState<string>('ALL');
+  const [allowedCategories, setAllowedCategories] = useState<string[]>([]);
+
+  // Local Form Data
+  const [formData, setFormData] = useState<Partial<Student>>({});
+
+  const [adminNote, setAdminNote] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSavingData, setIsSavingData] = useState(false);
+  
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [rotation, setRotation] = useState(0);
   const [useFallbackViewer, setUseFallbackViewer] = useState(false);
 
-  // Load Config
+  // Fetch Settings for Document Tabs
   useEffect(() => {
-      const loadConfig = async () => {
+      const fetchSettings = async () => {
           try {
-              const MASTER_LIST = [
-                  { id: 'IJAZAH', label: 'Ijazah SD' },
-                  { id: 'SKL', label: 'Surat Ket. Lulus' },
-                  { id: 'AKTA', label: 'Akta Kelahiran' },
-                  { id: 'KK', label: 'Kartu Keluarga' },
-                  { id: 'NISN', label: 'Bukti NISN' },
-                  { id: 'FOTO', label: 'Pas Foto' },
-                  { id: 'KTP_AYAH', label: 'KTP Ayah' },
-                  { id: 'KTP_IBU', label: 'KTP Ibu' },
-                  { id: 'KIP', label: 'KIP / PKH' },
-                  { id: 'KARTU_PELAJAR', label: 'Kartu Pelajar' },
-                  { id: 'PIAGAM', label: 'Piagam' }
-              ];
-
               const settings = await api.getAppSettings();
-              let allowedDocs = ['IJAZAH', 'SKL', 'AKTA', 'KK', 'NISN', 'FOTO']; // Default
-
               if (settings && settings.docConfig && settings.docConfig.ijazahVerification) {
-                  allowedDocs = settings.docConfig.ijazahVerification;
-              }
-
-              const filtered = MASTER_LIST.filter(d => allowedDocs.includes(d.id));
-              
-              if (filtered.length === 0) {
-                  setAvailableDocTypes([{ id: 'IJAZAH', label: 'Ijazah SD' }]);
+                  setAllowedCategories(settings.docConfig.ijazahVerification);
               } else {
-                  setAvailableDocTypes(filtered);
-              }
-              
-              if (filtered.length > 0 && !activeDocType) {
-                  setActiveDocType(filtered[0].id);
-              } else if (filtered.length > 0 && !filtered.find(d => d.id === activeDocType)) {
-                  setActiveDocType(filtered[0].id);
+                  setAllowedCategories(['IJAZAH', 'SKL', 'AKTA', 'NISN']);
               }
           } catch (e) {
-              console.error("Config load error", e);
-              setAvailableDocTypes([{ id: 'IJAZAH', label: 'Ijazah SD' }]);
-              setActiveDocType('IJAZAH');
+              setAllowedCategories(['IJAZAH', 'SKL']);
           }
       };
-      loadConfig();
+      fetchSettings();
   }, []);
 
-  // ... (Effects and Helper functions for sorting/filtering/PDF loading remain the same) ...
-  const uniqueClasses = useMemo(() => Array.from(new Set(students.map(s => s.className))).sort(), [students]);
-  useEffect(() => { if (selectedClassFilter === 'ALL' && uniqueClasses.length > 0) setSelectedClassFilter(uniqueClasses[0]); }, [uniqueClasses]);
-  const filteredStudents = useMemo(() => {
-      let filtered = students;
-      if (selectedClassFilter !== 'ALL') filtered = filtered.filter(s => s.className === selectedClassFilter);
-      
-      // SAFE SEARCH FILTER
-      if (searchTerm) {
-          const term = searchTerm.toLowerCase();
-          filtered = filtered.filter(s => {
-              const name = (s.fullName || '').toLowerCase();
-              const nisn = (s.nisn || '').toString();
-              return name.includes(term) || nisn.includes(term);
-          });
-      }
-      
-      return filtered.sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
-  }, [students, searchTerm, selectedClassFilter]);
-  
-  // Init Selection logic (handle targetStudentId)
+  // Initialize selection
   useEffect(() => {
       if (targetStudentId) {
-          const target = students.find(s => s.id === targetStudentId);
-          if (target) {
-              setSelectedClassFilter(target.className);
-              setSelectedStudentId(target.id);
+          const student = students.find(s => s.id === targetStudentId);
+          if (student) {
+              setSelectedClass(student.className);
+              setSelectedStudentId(student.id);
           }
-      } else if (filteredStudents.length > 0) {
-          if (!selectedStudentId || !filteredStudents.find(s => s.id === selectedStudentId)) {
-              setSelectedStudentId(filteredStudents[0].id);
-          }
-      } else { setSelectedStudentId(''); }
-  }, [filteredStudents, targetStudentId]); 
+      }
+  }, [targetStudentId, students]);
 
-  const currentStudent = students.find(s => s.id === selectedStudentId);
-  const currentDoc = useMemo(() => currentStudent?.documents.find(d => d.category === activeDocType), [currentStudent, activeDocType, forceUpdate]);
-  const isImageFile = (doc: any) => { if (!doc) return false; return doc.type === 'IMAGE' || /\.(jpg|jpeg|png|gif|webp|bmp|heic)$/i.test(doc.name); };
-  const isDriveUrl = currentDoc && (currentDoc.url.includes('drive.google.com') || currentDoc.url.includes('docs.google.com') || currentDoc.url.includes('googleusercontent.com'));
+  // Derived Lists
+  const uniqueClasses = useMemo(() => {
+      const classes = Array.from(new Set(students.map(s => s.className))).sort();
+      return classes.length > 0 ? classes : ['VII A'];
+  }, [students]);
 
-  // ... (Viewer Logic Effect remains the same) ...
+  const filteredStudents = useMemo(() => {
+      return students.filter(s => s.className === selectedClass).sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }, [students, selectedClass]);
+
   useEffect(() => {
-    let isMounted = true;
-    const controller = new AbortController();
-    const loadPdf = async () => {
-        if (!isMounted) return;
-        setPdfDoc(null); setIsPdfLoading(false); setPdfError(false); setUseFallbackViewer(false); setZoomLevel(1.0);
-        if (!currentStudent || !currentDoc) return;
-        if (isDriveUrl && !isImageFile(currentDoc)) { if(isMounted) setUseFallbackViewer(true); return; }
-        if (currentDoc.type === 'PDF' || currentDoc.name.toLowerCase().endsWith('.pdf')) {
-            if (!currentDoc.url.startsWith('blob:')) { if(isMounted) setUseFallbackViewer(true); return; }
-            if(isMounted) setIsPdfLoading(true);
-            try {
-                // @ts-ignore
-                const pdfjsLib = await import('pdfjs-dist');
-                if(!isMounted) return;
-                const pdfjs = pdfjsLib.default ? pdfjsLib.default : pdfjsLib;
-                if (!pdfjs.GlobalWorkerOptions.workerSrc) { pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`; }
-                const response = await fetch(currentDoc.url, { signal: controller.signal });
-                if (!response.ok) throw new Error("Network response was not ok");
-                const arrayBuffer = await response.arrayBuffer();
-                if(!isMounted) return;
-                const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
-                const pdf = await loadingTask.promise;
-                if(isMounted) { setPdfDoc(pdf); setNumPages(pdf.numPages); setIsPdfLoading(false); }
-            } catch (error: any) { 
-                if (error.name === 'AbortError') return;
-                if(isMounted) { console.error("PDF Load Error, falling back:", error); setUseFallbackViewer(true); setIsPdfLoading(false); }
-            }
-        }
-    };
-    loadPdf();
-    return () => { isMounted = false; controller.abort(); };
-  }, [currentDoc]);
+      if (!selectedStudentId && filteredStudents.length > 0) {
+          setSelectedStudentId(filteredStudents[0].id);
+      } else if (filteredStudents.length > 0 && !filteredStudents.find(s => s.id === selectedStudentId)) {
+          setSelectedStudentId(filteredStudents[0].id);
+      }
+  }, [filteredStudents, selectedStudentId]);
 
-  // ... (handleVerifyDoc remains the same) ...
-  const handleVerifyDoc = async (status: 'APPROVED' | 'REVISION', note?: string) => {
-      if (currentDoc && currentStudent) {
-          setIsSaving(true);
-          const updatedDocs = currentStudent.documents.map(d => d.id === currentDoc.id ? { ...d, status, adminNote: note || (status === 'APPROVED' ? 'Valid' : ''), verificationDate: new Date().toISOString().split('T')[0], verifierName: currentUser?.name || 'Admin', verifierRole: currentUser?.role || 'ADMIN' } : d);
-          const updatedStudent = { ...currentStudent, documents: updatedDocs };
-          try {
-              if (onSave) await onSave(updatedStudent);
-              else { await api.updateStudent(updatedStudent); if (onUpdate) onUpdate(); }
-          } catch (e) { console.error("Save failed", e); alert("Gagal menyimpan status."); } 
-          finally { setIsSaving(false); setRejectModalOpen(false); setRejectionNote(''); setForceUpdate(prev => prev + 1); }
+  const currentStudent = useMemo(() => students.find(s => s.id === selectedStudentId), [students, selectedStudentId]);
+
+  // Sync Form Data with Defaults to avoid undefined
+  useEffect(() => {
+      if (currentStudent) {
+          // Ensure nested objects exist
+          const safeData = JSON.parse(JSON.stringify(currentStudent));
+          if (!safeData.father) safeData.father = {};
+          if (!safeData.dapodik) safeData.dapodik = {};
+          
+          setFormData(safeData);
+          setActiveTab('ALL');
+      }
+  }, [currentStudent]);
+
+  // Filter Docs based on Settings AND Active Tab
+  const ijazahDocs = useMemo(() => {
+      if (!currentStudent) return [];
+      
+      // 1. Filter docs allowed for Ijazah Verification
+      let docs = currentStudent.documents.filter(d => allowedCategories.includes(d.category));
+      
+      // 2. Filter by Active Tab
+      if (activeTab !== 'ALL') {
+          docs = docs.filter(d => d.category === activeTab);
+      }
+      
+      return docs;
+  }, [currentStudent, activeTab, allowedCategories]);
+
+  // Auto Select Doc
+  useEffect(() => {
+      if (ijazahDocs.length > 0) {
+          if (!selectedDocId || !ijazahDocs.find(d => d.id === selectedDocId)) {
+              const pending = ijazahDocs.find(d => d.status === 'PENDING');
+              setSelectedDocId(pending ? pending.id : ijazahDocs[0].id);
+          }
+      } else {
+          setSelectedDocId(null);
+      }
+  }, [ijazahDocs]);
+
+  const currentDoc = ijazahDocs.find(d => d.id === selectedDocId);
+
+  // Save Data Only (No Verification)
+  const handleSaveData = async () => {
+      if (!currentStudent) return;
+      setIsSavingData(true);
+      try {
+          const updatedStudent = {
+              ...currentStudent,
+              ...formData,
+              dapodik: { ...currentStudent.dapodik, ...(formData.dapodik || {}) },
+              father: { ...currentStudent.father, ...(formData.father || {}) }
+          };
+          
+          await api.updateStudent(updatedStudent);
+          onUpdate();
+          alert("Data berhasil disimpan.");
+      } catch (e) {
+          console.error(e);
+          alert("Gagal menyimpan data.");
+      } finally {
+          setIsSavingData(false);
       }
   };
 
-  // ... (Edit Data Logic remains the same) ...
-  const handleStartEdit = () => { if (currentStudent) { setEditFormData(JSON.parse(JSON.stringify(currentStudent))); setIsEditingData(true); } };
-  const handleCancelEdit = () => { setIsEditingData(false); setEditFormData(null); };
-  const handleSaveData = async () => {
-      if (!editFormData) return;
-      setIsSaving(true);
-      try {
-          if (onSave) await onSave(editFormData);
-          else { await api.updateStudent(editFormData); if (onUpdate) onUpdate(); }
-          setIsEditingData(false); setEditFormData(null);
-          alert("Data berhasil disimpan.");
-      } catch (e) { console.error(e); alert("Gagal menyimpan data."); } 
-      finally { setIsSaving(false); }
-  };
-  const handleInputChange = (fieldKey: string, value: string) => {
-      if (!editFormData) return;
-      const keys = fieldKey.split('.');
-      const newData = { ...editFormData };
-      let current: any = newData;
-      for (let i = 0; i < keys.length - 1; i++) { if (!current[keys[i]]) current[keys[i]] = {}; current = current[keys[i]]; }
-      current[keys[keys.length - 1]] = value;
-      setEditFormData(newData);
-  };
-  const getNestedValue = (obj: any, path: string) => { if (!path) return ''; return path.split('.').reduce((o, i) => (o ? o[i] : ''), obj); };
-
-  // --- ADMIN DATA VERIFICATION HANDLERS (REQUESTS) ---
-  const handleAdminVerifyClick = (request: CorrectionRequest) => {
-      setSelectedRequest(request);
-      setAdminResponseNote(request.adminNote || '');
-      setAdminVerifyModalOpen(true);
-  };
-
-  const processVerification = async (action: 'APPROVED' | 'REJECTED') => {
-      if (!currentStudent || !selectedRequest) return;
-      
-      if (action === 'REJECTED' && !adminResponseNote.trim()) {
-          alert("Mohon isi alasan penolakan.");
+  // Verify Document
+  const handleProcess = async (status: 'APPROVED' | 'REVISION') => {
+      if (!currentStudent || !currentDoc) return;
+      if (status === 'REVISION' && !adminNote.trim()) {
+          alert("Mohon isi catatan jika dokumen perlu revisi.");
           return;
       }
 
-      setIsSaving(true);
+      setIsProcessing(true);
+      try {
+          // Merge Data
+          const updatedStudent = {
+              ...currentStudent,
+              ...formData,
+              dapodik: { ...currentStudent.dapodik, ...(formData.dapodik || {}) },
+              father: { ...currentStudent.father, ...(formData.father || {}) }
+          };
 
-      // 1. Deep Clone
-      const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
-      
-      // 2. Update Request Status in correctionRequests array
-      if (updatedStudent.correctionRequests) {
-          updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((req: CorrectionRequest) => {
-              if (req.id === selectedRequest.id) {
+          // Update Doc Status
+          updatedStudent.documents = updatedStudent.documents.map(d => {
+              if (d.id === currentDoc.id) {
                   return {
-                      ...req,
-                      status: action,
-                      adminNote: adminResponseNote || (action === 'APPROVED' ? 'Disetujui.' : 'Ditolak.'),
-                      verifierName: currentUser?.name || 'Admin',
-                      processedDate: new Date().toISOString()
+                      ...d,
+                      status: status,
+                      adminNote: adminNote,
+                      verifierName: currentUser.name,
+                      verificationDate: new Date().toISOString()
                   };
               }
-              return req;
+              return d;
           });
-      }
 
-      // 3. CRITICAL: If Approved, Apply Data Changes to the ACTUAL field in Student Object
-      if (action === 'APPROVED') {
-          const keys = selectedRequest.fieldKey.split('.');
-          let current: any = updatedStudent;
+          await api.updateStudent(updatedStudent);
+          onUpdate();
+          setAdminNote('');
           
-          // Traverse path 
-          for (let i = 0; i < keys.length - 1; i++) {
-               if (!current[keys[i]]) current[keys[i]] = {}; // Create nested object if missing
-               current = current[keys[i]];
-          }
-          
-          // Set Value (Handle numeric safety)
-          const lastKey = keys[keys.length - 1];
-          const newValue = selectedRequest.proposedValue;
+          // Next pending
+          const nextPending = updatedStudent.documents.find(d => d.status === 'PENDING' && allowedCategories.includes(d.category));
+          if(nextPending) setSelectedDocId(nextPending.id);
 
-          if (current[lastKey] !== undefined && typeof current[lastKey] === 'number') {
-              current[lastKey] = Number(newValue) || 0;
-          } else {
-              current[lastKey] = newValue;
-          }
-      }
-
-      // 4. Save to Database
-      try {
-          if (onSave) {
-              await onSave(updatedStudent);
-          } else {
-              const success = await api.updateStudent(updatedStudent);
-              if (!success) throw new Error("Failed to save to database");
-              if (onUpdate) onUpdate();
-          }
-          
-          setAdminVerifyModalOpen(false);
-          setForceUpdate(prev => prev + 1);
-          alert(`Data berhasil ${action === 'APPROVED' ? 'disetujui' : 'ditolak'}.`);
       } catch (e) {
-          alert("Gagal menyimpan perubahan. Cek koneksi internet.");
           console.error(e);
+          alert("Gagal memproses verifikasi.");
       } finally {
-          setIsSaving(false);
+          setIsProcessing(false);
       }
   };
 
-  const allRequests = useMemo(() => {
-      if (!currentStudent?.correctionRequests) return [];
-      const filtered = currentStudent.correctionRequests.filter(r => !r.fieldKey.startsWith('grade-') && !r.fieldKey.startsWith('class-'));
-      return filtered.sort((a, b) => {
-          if (a.status === 'PENDING' && b.status !== 'PENDING') return -1;
-          if (a.status !== 'PENDING' && b.status === 'PENDING') return 1;
-          return new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime();
-      });
-  }, [currentStudent]);
-
-  // ... (FormField, render logic remains) ...
-  const FormField = ({ label, value, fieldKey }: { label: string, value: string | undefined, fieldKey?: string }) => {
-      const pendingReq = fieldKey ? currentStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING') : null;
-      const displayValue = isEditingData && editFormData && fieldKey ? getNestedValue(editFormData, fieldKey) : value;
-      const isDate = fieldKey === 'birthDate';
-      
-      const formattedValue = isDate && !isEditingData ? formatDateIndo(value || '') : value;
-
-      return (
-        <div className="flex flex-col border-b border-gray-100 py-2">
-            <span className="text-[10px] uppercase font-bold text-gray-400">{label}</span>
-            <div className="flex items-center gap-2 w-full">
-                {isEditingData && fieldKey ? (
-                    <input type={isDate ? "date" : "text"} className="w-full text-sm font-bold bg-blue-50 border-b border-blue-300 outline-none text-blue-900 px-1" value={displayValue || ''} onChange={(e) => handleInputChange(fieldKey, e.target.value)} />
-                ) : (
-                    <span className={`text-sm font-semibold ${pendingReq ? 'line-through text-gray-400' : 'text-gray-800'}`}>{formattedValue || '-'}</span>
-                )}
-                {pendingReq && !isEditingData && (
-                    <div className="flex items-center gap-1 bg-yellow-100 px-2 py-0.5 rounded border border-yellow-300 cursor-pointer animate-pulse ml-auto" onClick={() => handleAdminVerifyClick(pendingReq)} title="Klik untuk verifikasi">
-                        <span className="text-xs font-bold text-yellow-800">{isDate ? formatDateIndo(pendingReq.proposedValue) : pendingReq.proposedValue}</span>
-                        <AlertCircle className="w-3 h-3 text-yellow-700" />
-                    </div>
-                )}
-            </div>
-        </div>
-      );
+  const isImageFile = (doc: DocumentFile) => {
+      return doc.type === 'IMAGE' || doc.name.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp)$/);
   };
+
+  const isDriveUrl = currentDoc?.url.includes('drive.google.com') || currentDoc?.url.includes('docs.google.com');
 
   return (
-    <div className="flex flex-col h-full animate-fade-in relative">
-        {/* ... (Modals: Reject & Verify) ... */}
-        {rejectModalOpen && (
-            <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col">
-                    <h3 className="font-bold text-red-600 mb-2">Tolak Dokumen Ijazah</h3>
-                    <textarea className="w-full p-2 border rounded mb-4" rows={3} value={rejectionNote} onChange={e => setRejectionNote(e.target.value)} placeholder="Alasan penolakan..." />
-                    <div className="flex justify-end gap-2">
-                        <button onClick={()=>setRejectModalOpen(false)} className="px-3 py-1 bg-gray-100 rounded">Batal</button>
-                        <button onClick={() => handleVerifyDoc('REVISION', rejectionNote)} disabled={isSaving} className="px-3 py-1 bg-red-600 text-white rounded flex items-center">{isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Simpan'}</button>
-                    </div>
+    <div className="flex flex-col h-full animate-fade-in">
+        {/* Top Toolbar */}
+        <div className="bg-white p-3 border-b border-gray-200 flex flex-col md:flex-row gap-4 items-center justify-between shadow-sm z-20">
+            <div className="flex items-center gap-2">
+                <FileBadge className="w-5 h-5 text-purple-600" />
+                <h2 className="font-bold text-gray-800">Verifikasi Ijazah/SKL</h2>
+            </div>
+            <div className="flex gap-3 w-full md:w-auto">
+                <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
+                    <Filter className="w-4 h-4 text-gray-500" />
+                    <select 
+                        className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer min-w-[100px]"
+                        value={selectedClass}
+                        onChange={(e) => setSelectedClass(e.target.value)}
+                    >
+                        {uniqueClasses.map(c => <option key={c} value={c}>Kelas {c}</option>)}
+                    </select>
+                </div>
+                <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200 w-full md:w-64">
+                    <Search className="w-4 h-4 text-gray-500" />
+                    <select 
+                        className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-full"
+                        value={selectedStudentId}
+                        onChange={(e) => setSelectedStudentId(e.target.value)}
+                    >
+                        {filteredStudents.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}
+                    </select>
                 </div>
             </div>
-        )}
-        {adminVerifyModalOpen && selectedRequest && (
-            <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform scale-100 transition-all">
-                    <div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="text-lg font-bold text-gray-800">Verifikasi Pengajuan Ijazah</h3><button onClick={() => setAdminVerifyModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button></div>
-                    <div className="space-y-4 mb-6">
-                        <div className="bg-gray-50 p-3 rounded-lg border border-gray-200"><p className="text-xs font-bold text-gray-500 uppercase mb-1">Item Perubahan</p><p className="text-sm font-semibold text-gray-800">{selectedRequest.fieldName}</p></div>
-                        <div className="flex items-center gap-3">
-                            <div className="flex-1 p-3 bg-red-50 border border-red-100 rounded-lg"><p className="text-[10px] text-red-500 font-bold uppercase">Data Lama</p><p className="text-sm font-bold text-gray-700 line-through decoration-red-400">{selectedRequest.originalValue}</p></div>
-                            <div className="flex-1 p-3 bg-green-50 border border-green-100 rounded-lg"><p className="text-[10px] text-green-600 font-bold uppercase">Usulan Baru</p><p className="text-sm font-bold text-gray-800">{selectedRequest.proposedValue}</p></div>
-                        </div>
-                        <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100"><p className="text-xs font-bold text-yellow-700 uppercase mb-1">Alasan Siswa</p><p className="text-sm text-gray-700 italic">"{selectedRequest.studentReason}"</p></div>
-                        {selectedRequest.status === 'PENDING' && (<div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Catatan Admin (Opsional)</label><textarea className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none" rows={2} placeholder="Alasan penolakan atau catatan..." value={adminResponseNote} onChange={(e) => setAdminResponseNote(e.target.value)} /></div>)}
-                    </div>
-                    {selectedRequest.status === 'PENDING' && (<div className="flex gap-2"><button onClick={() => processVerification('REJECTED')} disabled={isSaving} className="flex-1 py-2 bg-white border border-red-200 text-red-600 font-bold rounded-lg text-sm hover:bg-red-50 flex items-center justify-center gap-2"><XCircle className="w-4 h-4" /> Tolak</button><button onClick={() => processVerification('APPROVED')} disabled={isSaving} className="flex-1 py-2 bg-green-600 text-white font-bold rounded-lg text-sm hover:bg-green-700 flex items-center justify-center gap-2">{isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Setujui</button></div>)}
-                </div>
-            </div>
-        )}
-
-        {/* Top Controls */}
-        <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col xl:flex-row justify-between items-center gap-4 mb-4">
-            <div className="flex gap-2 w-full xl:w-auto">
-                <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200"><Filter className="w-4 h-4 text-gray-500" /><select className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-24 md:w-auto" value={selectedClassFilter} onChange={(e) => setSelectedClassFilter(e.target.value)}><option value="ALL">Semua Kelas</option>{uniqueClasses.map(c => <option key={c} value={c}>Kelas {c}</option>)}</select></div>
-                <div className="relative flex-1 md:w-64"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" /><input type="text" placeholder="Cari Siswa..." className="w-full pl-9 pr-4 py-2 bg-gray-50 rounded-lg text-sm border border-gray-200 focus:bg-white transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
-                <select className="pl-3 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-bold text-gray-700 w-full md:w-auto" value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>{filteredStudents.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}</select>
-            </div>
-            <div className="flex gap-1 overflow-x-auto max-w-full pb-1 no-scrollbar">{availableDocTypes.map(type => { const doc = currentStudent?.documents.find(d => d.category === type.id); let colorClass = 'bg-white text-gray-600 border-gray-200'; if (doc?.status === 'APPROVED') colorClass = 'bg-green-50 text-green-700 border-green-200'; if (doc?.status === 'REVISION') colorClass = 'bg-red-50 text-red-700 border-red-200'; if (doc?.status === 'PENDING') colorClass = 'bg-yellow-50 text-yellow-700 border-yellow-200'; return (<button key={type.id} onClick={() => setActiveDocType(type.id)} className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors border ${activeDocType === type.id ? 'ring-2 ring-blue-500 border-blue-500 z-10' : ''} ${colorClass} hover:shadow-sm`}>{type.label}</button>); })}</div>
         </div>
 
-        {currentStudent ? (
-            <div className="flex-1 flex flex-col lg:flex-row gap-4 overflow-hidden relative">
-                {/* Document Viewer */}
-                <div className={`flex flex-col bg-gray-800 rounded-xl overflow-hidden shadow-lg transition-all duration-300 ${layoutMode === 'full-doc' ? 'w-full absolute inset-0 z-20' : 'w-full lg:w-3/5 h-full'}`}>
-                    <div className="h-14 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-4 text-gray-300"><span className="font-bold text-white text-sm hidden md:block">{availableDocTypes.find(t => t.id === activeDocType)?.label}</span><div className="flex items-center gap-2"><button onClick={()=>setZoomLevel(z=>Math.max(0.5, z-0.2))} className="p-1 hover:bg-gray-700 rounded"><ZoomOut className="w-4 h-4" /></button><span className="text-xs w-8 text-center">{Math.round(zoomLevel*100)}%</span><button onClick={()=>setZoomLevel(z=>Math.min(3, z+0.2))} className="p-1 hover:bg-gray-700 rounded"><ZoomIn className="w-4 h-4" /></button><button onClick={()=>setLayoutMode(m=>m==='full-doc'?'split':'full-doc')} className="p-1 hover:bg-gray-700 rounded ml-2"><Maximize2 className="w-4 h-4" /></button></div></div>
-                    <div className="flex-1 overflow-auto p-4 bg-gray-900/50 flex items-start justify-center pb-32 relative">
-                        <div style={{ transform: `scale(${useFallbackViewer || (isDriveUrl && !isImageFile(currentDoc)) ? 1 : zoomLevel})`, transformOrigin: 'top center', width: '100%', display: 'flex', justifyContent: 'center' }}>
-                            {currentDoc ? ((useFallbackViewer || (isDriveUrl && !isImageFile(currentDoc))) ? (<iframe src={getDriveUrl(currentDoc.url, 'preview')} className="w-full min-h-[1100px] border-none rounded bg-white shadow-lg" title="Document Viewer" allow="autoplay" />) : (isImageFile(currentDoc) ? (<img src={isDriveUrl ? getDriveUrl(currentDoc.url, 'direct') : currentDoc.url} className="w-full h-auto object-contain bg-white shadow-sm rounded" alt="Document" onError={() => setUseFallbackViewer(true)} />) : (<div className="bg-white min-h-[600px] w-full max-w-[900px] flex flex-col items-center justify-start relative overflow-auto p-4 rounded shadow-lg">{isPdfLoading ? (<div className="flex flex-col items-center justify-center h-full pt-20"><Loader2 className="animate-spin w-10 h-10 text-blue-500 mb-2" /><p className="text-xs text-gray-500">Memuat PDF...</p></div>) : (pdfDoc ? (Array.from(new Array(numPages), (el, index) => (<PDFPageCanvas key={`page_${index + 1}`} pdf={pdfDoc} pageNum={index + 1} scale={zoomLevel} />))) : (<div className="text-red-500 flex flex-col items-center justify-center h-full pt-20"><AlertCircle className="w-8 h-8 mb-2" /><p>{pdfError ? 'Gagal memuat PDF' : 'PDF Viewer Error'}</p><button onClick={() => setUseFallbackViewer(true)} className="mt-2 text-xs underline text-blue-600">Coba Mode Alternatif</button></div>))}</div>))) : (<div className="flex flex-col items-center justify-center h-full text-gray-400"><ScrollText className="w-16 h-16 mb-4 opacity-20" /><p>Dokumen {activeDocType} belum diupload.</p></div>)}
+        {/* Main Content Split */}
+        <div className="flex-1 flex overflow-hidden">
+            {/* Left: Document Viewer */}
+            <div className="flex-1 bg-gray-900 relative flex flex-col overflow-hidden">
+                {currentDoc ? (
+                    <>
+                        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex gap-2 bg-black/50 backdrop-blur-md p-1.5 rounded-full border border-white/10 shadow-lg">
+                            <button onClick={() => setZoomLevel(z => Math.max(0.5, z - 0.2))} className="p-2 text-white hover:bg-white/20 rounded-full transition-colors" title="Zoom Out"><ZoomOut className="w-4 h-4" /></button>
+                            <span className="text-white text-xs font-mono font-bold flex items-center px-2">{Math.round(zoomLevel * 100)}%</span>
+                            <button onClick={() => setZoomLevel(z => Math.min(3, z + 0.2))} className="p-2 text-white hover:bg-white/20 rounded-full transition-colors" title="Zoom In"><ZoomIn className="w-4 h-4" /></button>
+                            <div className="w-px h-4 bg-white/20 my-auto mx-1"></div>
+                            <button onClick={() => setRotation(r => r + 90)} className="p-2 text-white hover:bg-white/20 rounded-full transition-colors" title="Putar"><RotateCw className="w-4 h-4" /></button>
+                            <button onClick={() => setUseFallbackViewer(v => !v)} className="px-3 py-1 text-[10px] font-bold text-white hover:bg-white/20 rounded-full border border-white/20 ml-1 transition-colors">
+                                {useFallbackViewer ? 'Mode Default' : 'Mode Alt'}
+                            </button>
                         </div>
-                    </div>
-                    {currentDoc && (<div className="bg-gray-900 border-t border-gray-700 p-4 flex justify-between items-center"><div className="flex items-center gap-2"><span className={`px-2 py-1 rounded text-xs font-bold ${currentDoc.status === 'APPROVED' ? 'bg-green-900 text-green-300' : currentDoc.status === 'REVISION' ? 'bg-red-900 text-red-300' : 'bg-yellow-900 text-yellow-300'}`}>{currentDoc.status === 'APPROVED' ? 'Disetujui' : currentDoc.status === 'REVISION' ? 'Perlu Revisi' : 'Menunggu Verifikasi'}</span></div><div className="flex gap-2"><button onClick={() => { setRejectionNote(''); setRejectModalOpen(true); }} disabled={isSaving} className="px-4 py-2 bg-red-600/20 text-red-400 border border-red-600/50 rounded-lg hover:bg-red-600 hover:text-white transition-colors text-sm font-bold">Tolak</button><button onClick={() => handleVerifyDoc('APPROVED')} disabled={isSaving} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-bold flex items-center gap-2 shadow-lg shadow-green-900/20">{isSaving ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle2 className="w-4 h-4" />} Setujui</button></div></div>)}
-                </div>
 
-                {/* Right Side: Data Reference */}
-                <div className={`bg-white rounded-xl border border-gray-200 flex flex-col shadow-sm transition-all duration-300 ${layoutMode === 'full-doc' ? 'hidden' : 'flex-1'} overflow-hidden`}>
-                    <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-                        <div><h3 className="font-bold text-gray-800 flex items-center gap-2"><ScrollText className="w-5 h-5 text-blue-600" /> Data Ijazah & SKL</h3><p className="text-xs text-gray-500 mt-1">Data referensi untuk verifikasi dokumen Ijazah.</p></div>
-                        <div className="flex gap-2">
-                            {isEditingData ? (<><button onClick={handleCancelEdit} disabled={isSaving} className="px-2 py-1 bg-white border border-gray-300 rounded text-[10px] hover:bg-gray-50 flex items-center gap-1"><X className="w-3 h-3" /> Batal</button><button onClick={handleSaveData} disabled={isSaving} className="px-2 py-1 bg-green-600 text-white rounded text-[10px] hover:bg-green-700 flex items-center gap-1">{isSaving ? <Loader2 className="w-3 h-3 animate-spin"/> : <Save className="w-3 h-3" />} Simpan</button></>) : (<button onClick={handleStartEdit} className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-[10px] font-bold hover:bg-blue-200 flex items-center gap-1"><Pencil className="w-3 h-3" /> Edit Data</button>)}
+                        <div className="flex-1 overflow-auto flex items-center justify-center p-8">
+                            <div 
+                                style={{ 
+                                    transform: `scale(${useFallbackViewer ? 1 : zoomLevel}) rotate(${rotation}deg)`, 
+                                    transformOrigin: 'center center', 
+                                    transition: 'transform 0.2s ease-out' 
+                                }}
+                                className="relative shadow-2xl transition-transform duration-200"
+                            >
+                                {(useFallbackViewer || (isDriveUrl && !isImageFile(currentDoc))) ? (
+                                    <iframe 
+                                        src={getDriveUrl(currentDoc.url, 'preview')} 
+                                        className="w-[800px] h-[1100px] bg-white rounded shadow-lg" 
+                                        title="Document Viewer" 
+                                        allow="autoplay" 
+                                    />
+                                ) : (
+                                    <img 
+                                        src={isDriveUrl ? getDriveUrl(currentDoc.url, 'direct') : currentDoc.url} 
+                                        className="max-w-none h-auto object-contain bg-white rounded shadow-sm" 
+                                        style={{ maxHeight: '85vh', minWidth: '400px' }}
+                                        alt="Document" 
+                                        onError={() => setUseFallbackViewer(true)} 
+                                    />
+                                )}
+                            </div>
+                        </div>
+                    </>
+                ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
+                        <ScrollText className="w-16 h-16 mb-4 opacity-20" />
+                        <p>Tidak ada dokumen verifikasi.</p>
+                        <p className="text-xs">Namun Anda tetap bisa mengedit data di kanan.</p>
+                    </div>
+                )}
+            </div>
+
+            {/* Right: Data Panel */}
+            <div className="w-96 bg-white border-l border-gray-200 flex flex-col shadow-xl z-10">
+                {/* 1. Ijazah List (Top Right) */}
+                <div className="h-1/3 min-h-[150px] flex flex-col bg-gray-50 border-b border-gray-200">
+                    <div className="bg-white border-b border-gray-200 shadow-sm z-10">
+                        <div className="p-3 text-xs font-bold text-gray-600 uppercase flex justify-between">
+                            <span>Dokumen Verifikasi</span>
+                            <span className="bg-gray-100 px-2 rounded-full text-[10px]">{ijazahDocs.length} File</span>
+                        </div>
+                        {/* DOC CATEGORY TABS (SCROLLABLE) */}
+                        <div className="flex gap-2 px-3 pb-3 overflow-x-auto no-scrollbar">
+                            <button
+                                onClick={() => setActiveTab('ALL')}
+                                className={`px-3 py-1.5 rounded-full text-[10px] font-bold whitespace-nowrap border transition-all ${activeTab === 'ALL' ? 'bg-purple-600 text-white border-purple-600 shadow' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                            >
+                                SEMUA
+                            </button>
+                            {allowedCategories.map(cat => (
+                                <button
+                                    key={cat}
+                                    onClick={() => setActiveTab(cat)}
+                                    className={`px-3 py-1.5 rounded-full text-[10px] font-bold whitespace-nowrap border transition-all ${activeTab === cat ? 'bg-purple-600 text-white border-purple-600 shadow' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                                >
+                                    {DOC_LABELS[cat] || cat}
+                                </button>
+                            ))}
                         </div>
                     </div>
-                    
-                    <div className="flex-1 flex flex-col overflow-hidden">
-                        {/* ADMIN SIDEBAR LIST FOR PENDING REQUESTS */}
-                        {allRequests.length > 0 && !isEditingData && (
-                            <div className="border-b border-gray-200 bg-yellow-50 p-3 overflow-y-auto max-h-48">
-                                <div className="text-xs font-bold text-yellow-800 flex items-center gap-2 mb-2"><ListChecks className="w-4 h-4" /> Pengajuan Perubahan Data ({allRequests.length})</div>
-                                <div className="space-y-2">{allRequests.map(req => (<div key={req.id} className="bg-white border border-yellow-200 rounded-lg p-2 shadow-sm cursor-pointer hover:bg-yellow-100 transition-colors" onClick={() => handleAdminVerifyClick(req)}><div className="flex justify-between items-center"><p className="text-xs font-bold text-gray-800">{req.fieldName}</p><span className={`text-[9px] px-1 rounded font-bold ${req.status === 'PENDING' ? 'bg-yellow-200 text-yellow-800' : req.status === 'APPROVED' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{req.status}</span></div><div className="mt-1 flex items-center gap-1 text-[10px] text-gray-500"><span className="line-through decoration-red-300 truncate max-w-[40%]">{req.originalValue}</span><span>➔</span><span className="font-bold text-gray-800">{req.proposedValue}</span></div></div>))}</div>
-                            </div>
+
+                    <div className="flex-1 overflow-y-auto">
+                        {ijazahDocs.length === 0 ? (
+                            <div className="p-4 text-center text-gray-400 text-xs italic">Belum ada dokumen.</div>
+                        ) : (
+                            ijazahDocs.map(doc => (
+                                <div 
+                                    key={doc.id} 
+                                    onClick={() => { setSelectedDocId(doc.id); setAdminNote(''); setZoomLevel(1); setRotation(0); setUseFallbackViewer(false); }}
+                                    className={`p-3 border-b border-gray-100 cursor-pointer hover:bg-white transition-colors flex items-center justify-between ${selectedDocId === doc.id ? 'bg-white border-l-4 border-l-purple-600 shadow-sm' : ''}`}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <div className="p-1.5 bg-purple-100 text-purple-600 rounded">
+                                            <FileCheck2 className="w-3 h-3" />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-bold text-gray-800">{DOC_LABELS[doc.category] || doc.category}</p>
+                                            <p className="text-[9px] text-gray-500">{doc.uploadDate}</p>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        {doc.status === 'APPROVED' && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                                        {doc.status === 'REVISION' && <XCircle className="w-4 h-4 text-red-500" />}
+                                        {doc.status === 'PENDING' && <div className="w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse"></div>}
+                                    </div>
+                                </div>
+                            ))
                         )}
-
-                        <div className="flex-1 overflow-auto p-6">
-                            <div className="space-y-4">
-                                <FormField label="Nama Lengkap" value={currentStudent.fullName} fieldKey="fullName" />
-                                <FormField label="NISN" value={currentStudent.nisn} fieldKey="nisn" />
-                                <FormField label="NIS" value={currentStudent.nis} fieldKey="nis" />
-                                <FormField label="Tempat Lahir" value={currentStudent.birthPlace} fieldKey="birthPlace" />
-                                <FormField label="Tanggal Lahir" value={formatDateIndo(currentStudent.birthDate)} fieldKey="birthDate" />
-                                <FormField label="Nama Ayah" value={currentStudent.father.name} fieldKey="father.name" />
-                                <FormField label="Nama Ibu" value={currentStudent.mother.name} fieldKey="mother.name" />
-                                <FormField label="NIK Siswa" value={currentStudent.dapodik.nik} fieldKey="dapodik.nik" />
-                                <FormField label="No KK" value={currentStudent.dapodik.noKK} fieldKey="dapodik.noKK" />
-                                <FormField label="Alamat" value={currentStudent.address} fieldKey="address" />
-                            </div>
-                        </div>
                     </div>
                 </div>
+
+                {/* 2. Data Info (Bottom Right) - EDITABLE */}
+                <div className="flex-1 flex flex-col overflow-hidden bg-white">
+                    <div className="p-3 bg-purple-50 border-b border-purple-100 text-xs text-purple-800 font-bold flex items-center justify-between">
+                        <span className="flex items-center gap-2"><FileBadge className="w-3 h-3" /> Data Ijazah (Edit Mode)</span>
+                        <button onClick={handleSaveData} className="text-purple-600 hover:text-purple-800" title="Simpan Data"><Save className="w-4 h-4"/></button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                        {currentStudent ? (
+                            <>
+                                <div className="bg-purple-50 p-2 rounded border border-purple-100 text-[10px] text-purple-800 mb-2">
+                                    Pastikan data di bawah sesuai dengan ijazah fisik.
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="group border-b pb-2">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1 mb-2"><User className="w-3 h-3"/> Identitas Dasar</label>
+                                        <div className="space-y-2">
+                                            <div>
+                                                <label className="text-[9px] font-bold text-gray-500 uppercase">Nama Lengkap</label>
+                                                <input className="w-full p-2 border rounded text-xs font-bold" value={formData.fullName || ''} onChange={(e) => setFormData({...formData, fullName: e.target.value})} placeholder="Nama Lengkap"/>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <div>
+                                                    <label className="text-[9px] font-bold text-gray-500 uppercase">NIS</label>
+                                                    <input className="w-full p-2 border rounded text-xs" value={formData.nis || ''} onChange={(e) => setFormData({...formData, nis: e.target.value})} />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[9px] font-bold text-gray-500 uppercase">NISN</label>
+                                                    <input className="w-full p-2 border rounded text-xs" value={formData.nisn || ''} onChange={(e) => setFormData({...formData, nisn: e.target.value})} />
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="text-[9px] font-bold text-gray-500 uppercase">Tempat Lahir</label>
+                                                <input className="w-full p-2 border rounded text-xs" value={formData.birthPlace || ''} onChange={(e) => setFormData({...formData, birthPlace: e.target.value})} placeholder="Tempat Lahir"/>
+                                            </div>
+                                            <div>
+                                                <label className="text-[9px] font-bold text-gray-500 uppercase">Tanggal Lahir</label>
+                                                <input type="date" className="w-full p-2 border rounded text-xs" value={formData.birthDate || ''} onChange={(e) => setFormData({...formData, birthDate: e.target.value})} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="group border-b pb-2">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Nama Orang Tua (Ijazah)</label>
+                                        <input 
+                                            className="w-full p-2 border rounded text-xs" 
+                                            value={formData.father?.name || ''} 
+                                            onChange={(e) => setFormData({...formData, father: {...(formData.father || {}), name: e.target.value} as any})} 
+                                            placeholder="Nama Ayah/Wali di Ijazah"
+                                        />
+                                    </div>
+
+                                    <div className="group">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">No. Seri Ijazah (Database)</label>
+                                        <input 
+                                            className="w-full p-2 border border-gray-300 rounded text-sm font-bold font-mono text-blue-700 focus:ring-1 focus:ring-blue-500 outline-none"
+                                            value={formData.diplomaNumber || ''}
+                                            onChange={(e) => setFormData({...formData, diplomaNumber: e.target.value})}
+                                            placeholder="DN-..."
+                                        />
+                                    </div>
+                                    <div className="group">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">No. Peserta Ujian</label>
+                                        <input 
+                                            className="w-full p-2 border border-gray-300 rounded text-sm font-bold text-gray-800 focus:ring-1 focus:ring-blue-500 outline-none"
+                                            value={formData.dapodik?.unExamNumber || ''}
+                                            onChange={(e) => setFormData({...formData, dapodik: {...(formData.dapodik || {}), unExamNumber: e.target.value} as any})}
+                                        />
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="text-center text-gray-400 text-xs py-10">Pilih dokumen di atas.</div>
+                        )}
+                    </div>
+
+                    {/* Action Footer */}
+                    {currentDoc && (
+                        <div className="p-4 border-t border-gray-200 bg-gray-50">
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Catatan</label>
+                            <input 
+                                type="text" 
+                                className="w-full p-2.5 border border-gray-300 rounded-lg text-sm mb-3 focus:ring-2 focus:ring-blue-500 outline-none" 
+                                placeholder="Contoh: Nomor seri tidak terbaca" 
+                                value={adminNote}
+                                onChange={(e) => setAdminNote(e.target.value)}
+                            />
+                            <div className="grid grid-cols-2 gap-2">
+                                <button 
+                                    onClick={() => handleProcess('REVISION')} 
+                                    disabled={isProcessing}
+                                    className="py-2.5 bg-white border border-red-200 text-red-600 font-bold rounded-lg hover:bg-red-50 text-sm flex items-center justify-center gap-2"
+                                >
+                                    <XCircle className="w-4 h-4" /> Tolak
+                                </button>
+                                <button 
+                                    onClick={() => handleProcess('APPROVED')} 
+                                    disabled={isProcessing}
+                                    className="py-2.5 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 text-sm flex items-center justify-center gap-2 shadow-sm"
+                                >
+                                    {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Simpan & Valid
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
-        ) : (
-            <div className="flex-1 flex items-center justify-center text-gray-400 flex-col">
-                <Search className="w-16 h-16 mb-4 opacity-20" />
-                <p>Pilih siswa untuk memulai verifikasi.</p>
-            </div>
-        )}
+        </div>
     </div>
   );
 };

@@ -1,51 +1,32 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Student, CorrectionRequest } from '../types';
-import { 
-  CheckCircle2, FileText, Maximize2, ZoomIn, ZoomOut, Save, 
-  FileCheck2, Loader2, Pencil, Search, Filter, ExternalLink, RefreshCw, AlertCircle, Eye, File, ImageIcon, FileType, X, Send, XCircle, ListChecks, History, ScrollText
-} from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Student, DocumentFile } from '../types';
 import { api } from '../services/api';
+import { CheckCircle2, XCircle, Loader2, AlertCircle, FileText, ZoomIn, ZoomOut, RotateCw, LayoutList, Filter, Search, Save, Calendar, ChevronRight, File, School, RefreshCw, UserCheck } from 'lucide-react';
 
 interface GradeVerificationViewProps {
   students: Student[];
-  onUpdate?: () => void;
-  currentUser?: { name: string; role: string };
-  userRole?: 'ADMIN' | 'STUDENT' | 'GURU'; 
-  targetStudentId?: string; // Add support for targeted linking
-  onSave?: (student: Student) => void; // Added onSave prop
+  targetStudentId?: string;
+  onUpdate: () => void;
+  currentUser: { name: string; role: string };
 }
 
-const CLASS_LIST = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
-
-// NEW: Helper for Score Color
-const getScoreColor = (score: number) => {
-    if (!score && score !== 0) return '';
-    if (score === 0) return 'text-gray-400';
-    if (score < 70) return 'bg-red-100 text-red-700 font-bold';
-    if (score < 85) return 'bg-yellow-100 text-yellow-800 font-bold';
-    return 'bg-green-100 text-green-700 font-bold';
-};
-
-// ... (Helper functions getDriveUrl, PDFPageCanvas remain) ...
 const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
     if (!url) return '';
-    if (url.startsWith('blob:')) return url; // Local blobs
-
+    if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+    
     if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
         let id = '';
-        const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-        if (match && match[1]) {
-            id = match[1];
-        } else {
-            try {
-                const urlObj = new URL(url);
-                id = urlObj.searchParams.get('id') || '';
-            } catch (e) {}
+        const parts = url.split(/\/d\//);
+        if (parts.length > 1) {
+            id = parts[1].split('/')[0];
+        }
+        if (!id) {
+            const match = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+            if (match) id = match[1];
         }
 
         if (id) {
-            // Always return preview for iframe usage, it's the most reliable
             if (type === 'preview') return `https://drive.google.com/file/d/${id}/preview`;
             if (type === 'direct') return `https://drive.google.com/uc?export=view&id=${id}`;
         }
@@ -53,588 +34,642 @@ const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
     return url;
 };
 
-// Helper Component for PDF Rendering
-const PDFPageCanvas: React.FC<{ pdf: any; pageNum: number; scale: number }> = ({ pdf, pageNum, scale }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
+const SUBJECT_MAP = [
+    { key: 'PAI', label: 'PAI' },
+    { key: 'Pendidikan Pancasila', label: 'PPKn' },
+    { key: 'Bahasa Indonesia', label: 'BIN' },
+    { key: 'Matematika', label: 'MTK' },
+    { key: 'IPA', label: 'IPA' },
+    { key: 'IPS', label: 'IPS' },
+    { key: 'Bahasa Inggris', label: 'BIG' },
+    { key: 'PJOK', label: 'PJOK' },
+    { key: 'Informatika', label: 'INF' },
+    { key: 'Seni dan Prakarya', label: 'SENI' },
+    { key: 'Bahasa Jawa', label: 'B.JAWA' },
+];
 
-    useEffect(() => {
-        let isCancelled = false;
-        if (pdf && canvasRef.current) {
-            pdf.getPage(pageNum).then((page: any) => {
-                if(isCancelled) return;
-                const viewport = page.getViewport({ scale });
-                const canvas = canvasRef.current;
-                if (canvas) {
-                    const context = canvas.getContext('2d');
-                    canvas.height = viewport.height;
-                    canvas.width = viewport.width;
-                    
-                    const renderContext = {
-                        canvasContext: context,
-                        viewport: viewport,
-                    };
-                    page.render(renderContext).promise.catch((err: any) => {
-                        if(!isCancelled) console.error("Page render error:", err);
-                    });
-                }
-            }).catch((err: any) => console.error("Get page error:", err));
-        }
-        return () => { isCancelled = true; };
-    }, [pdf, pageNum, scale]);
+const SEMESTERS = [1, 2, 3, 4, 5, 6];
+const CLASS_OPTIONS = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
 
-    return <canvas ref={canvasRef} className="shadow-lg bg-white mb-4" />;
-};
-
-const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students, onUpdate, currentUser, userRole = 'ADMIN', targetStudentId, onSave }) => {
-  // ... (All existing state and effects logic remains identical) ...
-  const [activeSemester, setActiveSemester] = useState<number>(1);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('ALL'); 
+const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students, targetStudentId, onUpdate, currentUser }) => {
+  const [selectedClass, setSelectedClass] = useState<string>('VII A');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   
-  // Document Viewer State
-  const [viewerMode, setViewerMode] = useState<'RAPOR' | 'DOCS'>('RAPOR');
-  const [activePage, setActivePage] = useState<number>(1); // For Rapor
-  const [activeDocType, setActiveDocType] = useState<string>(''); // For Extra Docs
-  const [availableGradeDocs, setAvailableGradeDocs] = useState<any[]>([]);
+  // Unified State Controls
+  const [activeSemester, setActiveSemester] = useState<number>(1);
+  const [activePage, setActivePage] = useState<number>(1);
 
-  const [zoomLevel, setZoomLevel] = useState<number>(1.0); 
-  const [layoutMode, setLayoutMode] = useState<'split' | 'full-doc'>('split');
-  const [isEditing, setIsEditing] = useState(false);
-  const [forceUpdate, setForceUpdate] = useState(0);
+  // Local state for editing grades & attendance
+  const [gradeData, setGradeData] = useState<Record<string, number>>({});
+  const [attendanceData, setAttendanceData] = useState<{ sick: number, permitted: number, noReason: number }>({ sick: 0, permitted: 0, noReason: 0 });
   
-  // Settings State
+  const [semesterClass, setSemesterClass] = useState<string>('');
+  const [academicYear, setAcademicYear] = useState<string>(''); 
+
+  const [adminNote, setAdminNote] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSavingData, setIsSavingData] = useState(false); 
+  
+  // Global Settings for Year Calculation
   const [appSettings, setAppSettings] = useState<any>(null);
-  const [raporPageCount, setRaporPageCount] = useState<number>(3);
-
-  const [rejectModalOpen, setRejectModalOpen] = useState(false);
-  const [rejectionNote, setRejectionNote] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  const isStudent = userRole === 'STUDENT';
-  const isAdmin = userRole === 'ADMIN' || userRole === 'GURU';
-
-  // --- CORRECTION STATE (STUDENT) ---
-  const [correctionModalOpen, setCorrectionModalOpen] = useState(false);
-  const [targetCorrection, setTargetCorrection] = useState<{
-      key: string; 
-      label: string; 
-      currentValue: string;
-      type: 'CLASS' | 'GRADE';
-  } | null>(null);
-  const [proposedValue, setProposedValue] = useState('');
-  const [correctionReason, setCorrectionReason] = useState('');
-
-  // --- ADMIN VERIFICATION STATE ---
-  const [adminVerifyModalOpen, setAdminVerifyModalOpen] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState<CorrectionRequest | null>(null);
-  const [adminResponseNote, setAdminResponseNote] = useState('');
-
-  // PDF States
-  const [isPdfLoading, setIsPdfLoading] = useState(false);
-  const [pdfError, setPdfError] = useState(false);
-  const [pdfDoc, setPdfDoc] = useState<any>(null);
-  const [numPages, setNumPages] = useState(0);
+  
+  // Viewer State
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [rotation, setRotation] = useState(0);
   const [useFallbackViewer, setUseFallbackViewer] = useState(false);
 
-  // Fetch Settings on Mount
+  // Fetch App Settings on Mount
   useEffect(() => {
       const fetchSettings = async () => {
           try {
               const settings = await api.getAppSettings();
-              if (settings) {
-                  setAppSettings(settings);
-                  if (settings.raporPageCount) setRaporPageCount(Number(settings.raporPageCount));
-                  
-                  // Setup Extra Docs based on Config
-                  const MASTER_LIST = [
-                      { id: 'PIAGAM', label: 'Piagam' }, 
-                      { id: 'SKL', label: 'SKL' }, 
-                      { id: 'KARTU_PELAJAR', label: 'Kartu Pelajar' }
-                  ];
-                  
-                  if (settings.docConfig && settings.docConfig.gradeVerification) {
-                      const configured = settings.docConfig.gradeVerification;
-                      const filtered = MASTER_LIST.filter(d => configured.includes(d.id));
-                      setAvailableGradeDocs(filtered);
-                      if (filtered.length > 0) setActiveDocType(filtered[0].id);
-                  }
-              }
-              // Local fallback for page count
-              const localPageCount = localStorage.getItem('sys_rapor_config');
-              if (localPageCount) setRaporPageCount(parseInt(localPageCount));
+              if (settings) setAppSettings(settings);
           } catch (e) {
-              console.error("Failed to load settings for verification", e);
+              console.error("Failed to load settings", e);
           }
       };
       fetchSettings();
   }, []);
 
-  const uniqueClasses = useMemo(() => {
-      return Array.from(new Set(students.map(s => s.className))).sort();
-  }, [students]);
+  // Load Page Config
+  const totalPages = useMemo(() => {
+      try {
+          const saved = localStorage.getItem('sys_rapor_config');
+          return saved ? parseInt(saved) : 3;
+      } catch { return 3; }
+  }, []);
 
-  useEffect(() => {
-      if (!selectedClassFilter && uniqueClasses.length > 0) {
-          setSelectedClassFilter(uniqueClasses[0]);
-      }
-  }, [uniqueClasses]);
-
-  const filteredStudents = useMemo(() => {
-      let filtered = students;
-      if (selectedClassFilter !== 'ALL') filtered = filtered.filter(s => s.className === selectedClassFilter);
-      
-      // SAFE SEARCH FILTER
-      if (searchTerm) {
-          const term = searchTerm.toLowerCase();
-          filtered = filtered.filter(s => {
-              const name = (s.fullName || '').toLowerCase();
-              const nisn = (s.nisn || '').toString();
-              return name.includes(term) || nisn.includes(term);
-          });
-      }
-      
-      return filtered.sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
-  }, [students, searchTerm, selectedClassFilter]);
-
-  // Init Selection logic (handle props target)
+  // Initialize selection
   useEffect(() => {
       if (targetStudentId) {
-          const target = students.find(s => s.id === targetStudentId);
-          if (target) {
-              // Update local state to match target
-              setSelectedClassFilter(target.className);
-              setSelectedStudentId(target.id);
+          const student = students.find(s => s.id === targetStudentId);
+          if (student) {
+              setSelectedClass(student.className);
+              setSelectedStudentId(student.id);
+              
+              const pendingDoc = student.documents.find(d => d.category === 'RAPOR' && d.status === 'PENDING');
+              if (pendingDoc && pendingDoc.subType?.semester) {
+                  setActiveSemester(pendingDoc.subType.semester);
+                  if (pendingDoc.subType.page) setActivePage(pendingDoc.subType.page);
+              }
           }
-      } else if (filteredStudents.length > 0) {
-          // Check if current selection is valid within the new filtered list
-          const isCurrentValid = filteredStudents.some(s => s.id === selectedStudentId);
-          if (!isCurrentValid) {
-              setSelectedStudentId(filteredStudents[0].id);
-          }
-      } else {
-          setSelectedStudentId('');
       }
-  }, [filteredStudents, targetStudentId]); 
+  }, [targetStudentId, students]);
 
-  const currentStudent = students.find(s => s.id === selectedStudentId);
-  const currentRecord = currentStudent?.academicRecords?.[activeSemester];
-  
-  // ... (Rest of component logic same as provided in previous turns) ...
-  // Full implementation included below for completeness
+  const uniqueClasses = useMemo(() => {
+      const classes = Array.from(new Set(students.map(s => s.className))).sort();
+      return classes.length > 0 ? classes : ['VII A'];
+  }, [students]);
 
-  // Dynamic Document Selection
-  const currentDoc = useMemo(() => {
-      if (viewerMode === 'RAPOR') {
-          return currentStudent?.documents.find(d => 
-              d.category === 'RAPOR' && 
-              d.subType?.semester == activeSemester && 
-              d.subType?.page == activePage
-          );
-      } else {
-          return currentStudent?.documents.find(d => d.category === activeDocType);
-      }
-  }, [currentStudent, activeSemester, activePage, activeDocType, viewerMode, forceUpdate]);
+  const filteredStudents = useMemo(() => {
+      return students.filter(s => s.className === selectedClass).sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }, [students, selectedClass]);
 
-  // Enhanced File Type Detection
-  const isImageFile = (doc: any) => {
-      if (!doc) return false;
-      if (doc.type === 'IMAGE') return true;
-      const name = doc.name ? doc.name.toLowerCase() : '';
-      return name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png') || name.endsWith('.gif') || name.endsWith('.webp') || name.endsWith('.bmp');
-  };
-
-  const isDriveUrl = currentDoc && (currentDoc.url.includes('drive.google.com') || currentDoc.url.includes('docs.google.com') || currentDoc.url.includes('googleusercontent.com'));
-
-  // Calculate Display Class based on Semester
-  const getDisplayClass = () => {
-      if (!currentStudent) return '';
-      // Use academic record specific class if available, else fallback to current class logic
-      if (currentRecord && currentRecord.className) {
-          return currentRecord.className;
-      }
-
-      let level = '';
-      if (activeSemester <= 2) level = 'VII';
-      else if (activeSemester <= 4) level = 'VIII';
-      else level = 'IX';
-      
-      const parts = currentStudent.className.split(' ');
-      const suffix = parts.length > 1 ? parts.slice(1).join(' ') : '';
-      return `${level} ${suffix}`.trim();
-  };
-
-  // Get Dynamic Dropdown Options based on Semester
-  const getClassOptions = () => {
-      return CLASS_LIST; // Allow changing to any class for flexibility
-  };
-
-  // Get Academic Year from settings or fallback
-  const getAcademicYear = () => {
-      return appSettings?.academicData?.semesterYears?.[activeSemester] || '2024/2025';
-  };
-
-  // AUTOMATED COMPETENCY GENERATOR
-  const getCompetencyDescription = (score: number, subjectName: string) => {
-      if (!score) return '-';
-      let predikat = '';
-      if (score >= 91) predikat = 'Sangat baik';
-      else if (score >= 81) predikat = 'Baik';
-      else if (score >= 75) predikat = 'Cukup';
-      else predikat = 'Perlu bimbingan';
-
-      return `${predikat} dalam memahami materi ${subjectName}.`;
-  };
-
-  // VIEWER LOGIC IMPLEMENTATION
   useEffect(() => {
-    let isMounted = true;
-    const controller = new AbortController();
+      if (!selectedStudentId && filteredStudents.length > 0) {
+          setSelectedStudentId(filteredStudents[0].id);
+      } else if (filteredStudents.length > 0 && !filteredStudents.find(s => s.id === selectedStudentId)) {
+          setSelectedStudentId(filteredStudents[0].id);
+      }
+  }, [filteredStudents, selectedStudentId]);
 
-    const loadPdf = async () => {
-        if (!isMounted) return;
-        setPdfDoc(null);
-        setIsPdfLoading(false);
-        setPdfError(false);
-        setUseFallbackViewer(false);
-        setZoomLevel(1.0);
+  const currentStudent = useMemo(() => students.find(s => s.id === selectedStudentId), [students, selectedStudentId]);
 
-        if (!currentStudent || !currentDoc) return;
+  const currentDoc = useMemo(() => {
+      if (!currentStudent) return undefined;
+      return currentStudent.documents.find(d => 
+          d.category === 'RAPOR' && 
+          d.subType?.semester === activeSemester && 
+          d.subType?.page === activePage
+      );
+  }, [currentStudent, activeSemester, activePage]);
 
-        if (isDriveUrl && !isImageFile(currentDoc)) {
-            if(isMounted) setUseFallbackViewer(true);
-            return;
-        }
-
-        if (currentDoc.type === 'PDF' || currentDoc.name.toLowerCase().endsWith('.pdf')) {
-            if (!currentDoc.url.startsWith('blob:')) {
-                if(isMounted) setUseFallbackViewer(true);
-                return;
-            }
-
-            if(isMounted) setIsPdfLoading(true);
-            try {
-                // @ts-ignore
-                const pdfjsLib = await import('pdfjs-dist');
-                if(!isMounted) return;
-
-                const pdfjs = pdfjsLib.default ? pdfjsLib.default : pdfjsLib;
-                if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-                    pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
-                }
-
-                const response = await fetch(currentDoc.url, { signal: controller.signal });
-                if (!response.ok) throw new Error("Network response was not ok");
-                const arrayBuffer = await response.arrayBuffer();
-
-                if(!isMounted) return;
-
-                const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
-                const pdf = await loadingTask.promise;
-                
-                if(isMounted) {
-                    setPdfDoc(pdf); setNumPages(pdf.numPages); setIsPdfLoading(false);
-                }
-            } catch (error: any) { 
-                if (error.name === 'AbortError') return;
-                if(isMounted) {
-                    if (error.message !== 'Failed to fetch') console.error("Error loading PDF, trying fallback:", error);
-                    setUseFallbackViewer(true); setIsPdfLoading(false); 
-                }
-            }
-        }
-    };
-    loadPdf();
-    return () => { isMounted = false; controller.abort(); };
+  // Reset viewer when doc changes
+  useEffect(() => {
+      setZoomLevel(1);
+      setRotation(0);
+      setUseFallbackViewer(false);
+      setAdminNote(currentDoc?.adminNote || '');
   }, [currentDoc]);
-  
-  const handleApproveDoc = async () => { 
-      if (currentDoc && currentStudent) { 
-          setIsSaving(true);
-          const updatedDocs = currentStudent.documents.map(d => d.id === currentDoc.id ? { ...d, status: 'APPROVED' as const, adminNote: 'Valid.', verifierName: currentUser?.name || 'Admin', verifierRole: currentUser?.role || 'ADMIN', verificationDate: new Date().toISOString().split('T')[0] } : d);
-          const updatedStudent = { ...currentStudent, documents: updatedDocs };
-          
-          if (onSave) {
-              await onSave(updatedStudent);
-          } else {
-              await api.updateStudent(updatedStudent);
-              if (onUpdate) onUpdate(); 
-          }
-          
-          setIsSaving(false); setForceUpdate(prev => prev + 1);
-      } 
-  };
-  const confirmRejectDoc = async () => { 
-      if (currentDoc && currentStudent) { 
-          if (!rejectionNote.trim()) { alert("Isi alasan penolakan!"); return; }
-          setIsSaving(true);
-          const updatedDocs = currentStudent.documents.map(d => d.id === currentDoc.id ? { ...d, status: 'REVISION' as const, adminNote: rejectionNote, verifierName: currentUser?.name || 'Admin', verifierRole: currentUser?.role || 'ADMIN', verificationDate: new Date().toISOString().split('T')[0] } : d);
-          const updatedStudent = { ...currentStudent, documents: updatedDocs };
-          
-          if (onSave) {
-              await onSave(updatedStudent);
-          } else {
-              await api.updateStudent(updatedStudent);
-              if (onUpdate) onUpdate(); 
-          }
-          
-          setIsSaving(false); setRejectModalOpen(false); setRejectionNote(''); setForceUpdate(prev => prev + 1);
-      } 
-  };
-  
-  const handleGradeChange = (subjectIndex: number, newScore: string) => { 
-      if (currentRecord) { 
-          currentRecord.subjects[subjectIndex].score = Number(newScore); 
-          setForceUpdate(prev => prev + 1); 
-      } 
-  };
 
-  const handleClassChange = (newClass: string) => {
-      if (!currentStudent) return;
-      if (!currentStudent.academicRecords) currentStudent.academicRecords = {};
-      if (!currentStudent.academicRecords[activeSemester]) {
-           const level = (activeSemester <= 2) ? 'VII' : (activeSemester <= 4) ? 'VIII' : 'IX';
-           currentStudent.academicRecords[activeSemester] = { 
-              semester: activeSemester, classLevel: level, className: newClass, phase: 'D', year: '2024', 
-              subjects: [], p5Projects: [], extracurriculars: [], teacherNote: '', attendance: {sick:0, permitted:0, noReason:0}
-           };
-      } else {
-          currentStudent.academicRecords[activeSemester].className = newClass;
-      }
-      setForceUpdate(prev => prev + 1);
-  };
-
-  const saveGrades = async () => { 
-      if (currentStudent) {
-          setIsSaving(true);
-          try {
-              if (onSave) { await onSave(currentStudent); } else { await api.updateStudent(currentStudent); if (onUpdate) onUpdate(); }
-              setIsEditing(false);
-          } catch(e) { console.error(e); alert("Terjadi kesalahan."); } finally { setIsSaving(false); }
-      }
-  };
-
-  const handleOpenCorrection = (key: string, label: string, currentValue: string, type: 'CLASS' | 'GRADE') => {
-      setTargetCorrection({ key, label, currentValue, type });
-      if (type === 'CLASS') {
-          const opts = getClassOptions();
-          setProposedValue(opts.includes(currentValue) ? currentValue : opts[0]);
-      } else { setProposedValue(currentValue); }
-      setCorrectionReason('');
-      setCorrectionModalOpen(true);
-  };
-
-  const submitCorrection = async () => {
-      if (!currentStudent || !targetCorrection) return;
-      if (!proposedValue || !correctionReason.trim()) { alert("Mohon lengkapi data."); return; }
-      const finalKey = targetCorrection.type === 'CLASS' ? `class-${activeSemester}` : targetCorrection.key;
-      const newRequest: CorrectionRequest = {
-          id: Math.random().toString(36).substr(2, 9),
-          fieldKey: finalKey,
-          fieldName: targetCorrection.label,
-          originalValue: targetCorrection.currentValue,
-          proposedValue: proposedValue,
-          studentReason: correctionReason,
-          status: 'PENDING',
-          requestDate: new Date().toISOString(),
-      };
-      const updatedStudent = { ...currentStudent };
-      if (!updatedStudent.correctionRequests) updatedStudent.correctionRequests = [];
-      updatedStudent.correctionRequests = updatedStudent.correctionRequests.filter(r => !(r.fieldKey === finalKey && r.status === 'PENDING'));
-      updatedStudent.correctionRequests.push(newRequest);
-      if (onSave) { await onSave(updatedStudent); } else { await api.updateStudent(updatedStudent); if (onUpdate) onUpdate(); }
-      setCorrectionModalOpen(false); alert("✅ Pengajuan revisi berhasil dikirim.");
-  };
-
-  const handleAdminVerifyClick = (request: CorrectionRequest) => {
-      setSelectedRequest(request);
-      setAdminResponseNote(request.adminNote || '');
-      setAdminVerifyModalOpen(true);
-  };
-
-  const processVerification = async (action: 'APPROVED' | 'REJECTED') => {
-      if (!currentStudent || !selectedRequest) return;
-      if (action === 'REJECTED' && !adminResponseNote.trim()) { alert("Mohon isi alasan penolakan."); return; }
-      setIsSaving(true);
-      const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+  // --- HELPER: CALCULATE HISTORICAL YEAR ---
+  const calculateHistoricalYear = (studentCurrentClass: string, targetSemester: number) => {
+      const currentActiveYear = appSettings?.academicData?.activeYear || '2024/2025';
+      const [startYear, endYear] = currentActiveYear.split('/').map(Number);
       
-      updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((req: CorrectionRequest) => {
-          if (req.id === selectedRequest.id) {
-              return { ...req, status: action, adminNote: adminResponseNote || (action === 'APPROVED' ? 'Disetujui.' : 'Ditolak.'), verifierName: currentUser?.name || 'Admin', processedDate: new Date().toISOString() };
-          }
-          return req;
-      });
+      if (!startYear) return currentActiveYear;
 
-      if (action === 'APPROVED') {
-          const { fieldKey, proposedValue } = selectedRequest;
-          if (fieldKey === 'className') {
-              updatedStudent.className = proposedValue;
-          } else if (fieldKey.startsWith('class-')) {
-              const sem = parseInt(fieldKey.split('-')[1]);
-              if (!isNaN(sem)) {
-                  if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
-                  if (!updatedStudent.academicRecords[sem]) {
-                      const level = (sem <= 2) ? 'VII' : (sem <= 4) ? 'VIII' : 'IX';
-                      updatedStudent.academicRecords[sem] = { semester: sem, classLevel: level, className: proposedValue, phase: 'D', year: '2024', subjects: [], p5Projects: [], extracurriculars: [], teacherNote: '', attendance: {sick:0, permitted:0, noReason:0} };
-                  }
-                  updatedStudent.academicRecords[sem].className = proposedValue;
-              }
-          } else if (fieldKey.startsWith('grade-')) {
-              const parts = fieldKey.split('-');
-              if (parts.length >= 3) {
-                  const sem = parseInt(parts[1]);
-                  const subjectName = parts.slice(2).join('-');
-                  if (updatedStudent.academicRecords && updatedStudent.academicRecords[sem]) {
-                      const subjectRecord = updatedStudent.academicRecords[sem].subjects.find((s: any) => s.subject === subjectName);
-                      if (subjectRecord) { subjectRecord.score = Number(proposedValue); }
-                  }
-              }
+      const getLevel = (cls: string) => {
+          if (!cls) return 7;
+          const upper = cls.toUpperCase();
+          if (upper.includes('IX')) return 9;
+          if (upper.includes('VIII')) return 8;
+          if (upper.includes('VII')) return 7;
+          return 7;
+      };
+      
+      const currentLevel = getLevel(studentCurrentClass);
+      const targetLevel = targetSemester <= 2 ? 7 : targetSemester <= 4 ? 8 : 9;
+      const offset = currentLevel - targetLevel;
+
+      let histStart = startYear - offset;
+      
+      // Ensure full format "YYYY/YYYY+1"
+      return `${histStart}/${histStart + 1}`;
+  };
+
+  // --- HELPER: GUESS HISTORICAL CLASS NAME ---
+  const guessHistoricalClassName = (studentCurrentClass: string, targetSemester: number) => {
+      const targetLevelRoman = targetSemester <= 2 ? 'VII' : targetSemester <= 4 ? 'VIII' : 'IX';
+      const parts = studentCurrentClass.split(' ');
+      const suffix = parts.length > 1 ? parts.slice(1).join(' ') : '';
+      return suffix ? `${targetLevelRoman} ${suffix}` : `${targetLevelRoman} A`;
+  };
+
+  // --- INITIALIZE DATA WHEN STUDENT/SEMESTER CHANGES ---
+  useEffect(() => {
+      if (currentStudent) {
+          const record = currentStudent.academicRecords?.[activeSemester];
+          const initialGrades: Record<string, number> = {};
+          
+          SUBJECT_MAP.forEach(sub => {
+              const subjData = record?.subjects.find(s => s.subject.includes(sub.key) || s.subject === sub.label);
+              initialGrades[sub.key] = subjData ? subjData.score : 0;
+          });
+          setGradeData(initialGrades);
+          
+          // Attendance
+          setAttendanceData(record?.attendance || { sick: 0, permitted: 0, noReason: 0 });
+          
+          // Determine Class Name
+          let cls = record?.className;
+          if (!cls) {
+              cls = guessHistoricalClassName(currentStudent.className, activeSemester);
           }
+          setSemesterClass(cls);
+
+          // Determine Academic Year
+          if (record?.year) {
+              // FIX: If year is saved as "2024" instead of "2024/2025", fix it here
+              if (!record.year.includes('/') && !isNaN(Number(record.year))) {
+                  const y = Number(record.year);
+                  setAcademicYear(`${y}/${y+1}`);
+              } else {
+                  setAcademicYear(record.year);
+              }
+          } else {
+              const autoYear = calculateHistoricalYear(currentStudent.className, activeSemester);
+              setAcademicYear(autoYear);
+          }
+      } else {
+          setGradeData({});
+          setAttendanceData({ sick: 0, permitted: 0, noReason: 0 });
+          setSemesterClass('');
+          setAcademicYear('2024/2025');
+      }
+  }, [currentStudent, activeSemester, appSettings]);
+
+  // Function to Save ONLY Data
+  const handleSaveDataOnly = async () => {
+      if (!currentStudent) return;
+      setIsSavingData(true);
+      try {
+          const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+          
+          if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
+          
+          let record = updatedStudent.academicRecords[activeSemester];
+          if (!record) {
+              record = {
+                  semester: activeSemester,
+                  classLevel: semesterClass.split(' ')[0] || 'VII',
+                  year: academicYear,
+                  subjects: [],
+                  attendance: { sick: 0, permitted: 0, noReason: 0 }
+              };
+              updatedStudent.academicRecords[activeSemester] = record;
+          }
+          
+          // Update Fields
+          record.className = semesterClass;
+          record.year = academicYear;
+          record.attendance = attendanceData; // Save Attendance
+          record.subjects = SUBJECT_MAP.map((sub: any, idx: number) => ({
+              no: idx + 1,
+              subject: sub.label,
+              score: Number(gradeData[sub.key]) || 0,
+              competency: '-' 
+          }));
+
+          await api.updateStudent(updatedStudent);
+          onUpdate();
+          alert("Data akademik & kehadiran berhasil disimpan!");
+      } catch (e) {
+          console.error(e);
+          alert("Gagal menyimpan data.");
+      } finally {
+          setIsSavingData(false);
+      }
+  };
+
+  // Function to Verify Document AND Save Data
+  const handleProcess = async (status: 'APPROVED' | 'REVISION') => {
+      if (!currentStudent) return;
+      if (status === 'REVISION' && !adminNote.trim()) {
+          alert("Mohon isi catatan jika dokumen perlu revisi.");
+          return;
       }
 
+      setIsProcessing(true);
       try {
-          if (onSave) { await onSave(updatedStudent); } else { await api.updateStudent(updatedStudent); if (onUpdate) onUpdate(); }
-          setAdminVerifyModalOpen(false); setForceUpdate(prev => prev + 1);
-      } catch (e) { alert("Gagal menyimpan perubahan."); console.error(e); } finally { setIsSaving(false); }
+          const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+          
+          // 1. Update Document Status
+          if (currentDoc) {
+              updatedStudent.documents = updatedStudent.documents.map((d: any) => {
+                  if (d.id === currentDoc.id) {
+                      return {
+                          ...d,
+                          status: status,
+                          adminNote: adminNote,
+                          verifierName: currentUser.name,
+                          verificationDate: new Date().toISOString()
+                      };
+                  }
+                  return d;
+              });
+          }
+
+          // 2. Update Grades, Class, Year, Attendance
+          if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
+          
+          let record = updatedStudent.academicRecords[activeSemester];
+          if (!record) {
+              record = {
+                  semester: activeSemester,
+                  classLevel: semesterClass.split(' ')[0] || 'VII',
+                  year: academicYear,
+                  subjects: [],
+                  attendance: { sick: 0, permitted: 0, noReason: 0 }
+              };
+              updatedStudent.academicRecords[activeSemester] = record;
+          }
+          
+          record.className = semesterClass;
+          record.year = academicYear;
+          record.attendance = attendanceData; // Save Attendance
+          record.subjects = SUBJECT_MAP.map((sub: any, idx: number) => ({
+              no: idx + 1,
+              subject: sub.label,
+              score: Number(gradeData[sub.key]) || 0,
+              competency: '-' 
+          }));
+
+          await api.updateStudent(updatedStudent);
+          onUpdate();
+          
+          if (status === 'APPROVED') {
+              if (activePage < totalPages) {
+                  setActivePage(activePage + 1);
+              } 
+          }
+
+      } catch (e) {
+          console.error(e);
+          alert("Gagal memproses verifikasi.");
+      } finally {
+          setIsProcessing(false);
+      }
   };
 
-  const getPendingRequest = (key: string) => {
-      return currentStudent?.correctionRequests?.find(r => r.fieldKey === key && r.status === 'PENDING');
+  const isImageFile = (doc: DocumentFile) => {
+      return doc.type === 'IMAGE' || doc.name.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp)$/);
   };
 
-  const allRequests = useMemo(() => {
-      if (!currentStudent?.correctionRequests) return [];
-      const gradeRelatedRequests = currentStudent.correctionRequests.filter(r => r.fieldKey.startsWith('grade-') || r.fieldKey.startsWith('class-'));
-      return gradeRelatedRequests.sort((a, b) => {
-          if (a.status === 'PENDING' && b.status !== 'PENDING') return -1;
-          if (a.status !== 'PENDING' && b.status === 'PENDING') return 1;
-          return new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime();
-      });
-  }, [currentStudent]);
+  const isDriveUrl = currentDoc?.url.includes('drive.google.com') || currentDoc?.url.includes('docs.google.com');
 
   return (
-    <div className="flex flex-col h-full animate-fade-in relative">
-        {rejectModalOpen && (
-            <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col">
-                    <h3 className="font-bold text-red-600 mb-2">Tolak Dokumen</h3>
-                    <textarea className="w-full p-2 border rounded mb-4" rows={3} value={rejectionNote} onChange={e => setRejectionNote(e.target.value)} placeholder="Alasan penolakan..." />
-                    <div className="flex justify-end gap-2">
-                        <button onClick={()=>setRejectModalOpen(false)} className="px-3 py-1 bg-gray-100 rounded">Batal</button>
-                        <button onClick={confirmRejectDoc} disabled={isSaving} className="px-3 py-1 bg-red-600 text-white rounded flex items-center">{isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Simpan'}</button>
-                    </div>
+    <div className="flex flex-col h-full animate-fade-in">
+        {/* Top Toolbar */}
+        <div className="bg-white p-3 border-b border-gray-200 flex flex-col gap-3 shadow-sm z-20">
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                <div className="flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-blue-600" />
+                    <h2 className="font-bold text-gray-800">Verifikasi Nilai Rapor</h2>
                 </div>
-            </div>
-        )}
+                
+                {/* GLOBAL SEMESTER SELECTOR */}
+                <div className="flex items-center bg-gray-100 p-1 rounded-lg">
+                    {SEMESTERS.map(sem => (
+                        <button
+                            key={sem}
+                            onClick={() => { setActiveSemester(sem); setActivePage(1); }}
+                            className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${
+                                activeSemester === sem 
+                                ? 'bg-white text-blue-700 shadow-sm border border-gray-200' 
+                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
+                            }`}
+                        >
+                            Semester {sem}
+                        </button>
+                    ))}
+                </div>
 
-        {correctionModalOpen && targetCorrection && (
-            <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform scale-100 transition-all">
-                    <div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="text-lg font-bold text-gray-800">Ajukan Revisi Data</h3><button onClick={() => setCorrectionModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button></div>
-                    <div className="mb-4 bg-blue-50 p-3 rounded border border-blue-100"><p className="text-xs text-gray-500 uppercase">{targetCorrection.label} (Saat Ini)</p><p className="text-sm font-bold text-gray-700">{targetCorrection.currentValue || '-'}</p></div>
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Data Baru / Usulan</label>
-                            {targetCorrection.type === 'CLASS' ? (
-                                <select className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none font-bold" value={proposedValue} onChange={(e) => setProposedValue(e.target.value)}>{getClassOptions().map(c => <option key={c} value={c}>{c}</option>)}</select>
-                            ) : (
-                                <input type="number" className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none font-bold" value={proposedValue} onChange={(e) => setProposedValue(e.target.value)} placeholder="Masukkan nilai yang benar" />
-                            )}
-                        </div>
-                        <div><label className="block text-xs font-bold text-gray-600 uppercase mb-1">Alasan Revisi</label><textarea className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" rows={2} placeholder="Jelaskan alasan perubahan..." value={correctionReason} onChange={(e) => setCorrectionReason(e.target.value)} /></div>
+                <div className="flex gap-2 w-full md:w-auto">
+                    <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
+                        <Filter className="w-4 h-4 text-gray-500" />
+                        <select 
+                            className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer min-w-[100px]"
+                            value={selectedClass}
+                            onChange={(e) => setSelectedClass(e.target.value)}
+                        >
+                            {uniqueClasses.map(c => <option key={c} value={c}>Kelas {c}</option>)}
+                        </select>
                     </div>
-                    <div className="flex gap-2 mt-6"><button onClick={() => setCorrectionModalOpen(false)} className="flex-1 py-2 bg-gray-100 text-gray-600 font-bold rounded-lg text-sm hover:bg-gray-200">Batal</button><button onClick={submitCorrection} className="flex-1 py-2 bg-blue-600 text-white font-bold rounded-lg text-sm hover:bg-blue-700 flex items-center justify-center gap-2"><Send className="w-3 h-3" /> Kirim</button></div>
+                    <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200 md:w-64 flex-1">
+                        <Search className="w-4 h-4 text-gray-500" />
+                        <select 
+                            className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-full"
+                            value={selectedStudentId}
+                            onChange={(e) => setSelectedStudentId(e.target.value)}
+                        >
+                            {filteredStudents.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}
+                        </select>
+                    </div>
                 </div>
             </div>
-        )}
-
-        {adminVerifyModalOpen && selectedRequest && (
-            <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform scale-100 transition-all">
-                    <div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="text-lg font-bold text-gray-800">Verifikasi Pengajuan</h3><button onClick={() => setAdminVerifyModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button></div>
-                    <div className="space-y-4 mb-6">
-                        <div className="bg-gray-50 p-3 rounded-lg border border-gray-200"><p className="text-xs font-bold text-gray-500 uppercase mb-1">Item Perubahan</p><p className="text-sm font-semibold text-gray-800">{selectedRequest.fieldName}</p></div>
-                        <div className="flex items-center gap-3">
-                            <div className="flex-1 p-3 bg-red-50 border border-red-100 rounded-lg"><p className="text-[10px] text-red-500 font-bold uppercase">Data Lama</p><p className="text-sm font-bold text-gray-700 line-through decoration-red-400">{selectedRequest.originalValue}</p></div>
-                            <div className="flex-1 p-3 bg-green-50 border border-green-100 rounded-lg"><p className="text-[10px] text-green-600 font-bold uppercase">Usulan Baru</p><p className="text-sm font-bold text-gray-800">{selectedRequest.proposedValue}</p></div>
-                        </div>
-                        <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100"><p className="text-xs font-bold text-yellow-700 uppercase mb-1">Alasan Siswa</p><p className="text-sm text-gray-700 italic">"{selectedRequest.studentReason}"</p></div>
-                        {selectedRequest.status !== 'PENDING' && (<div className={`p-3 rounded-lg border ${selectedRequest.status === 'APPROVED' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}><p className={`text-xs font-bold uppercase mb-1 ${selectedRequest.status === 'APPROVED' ? 'text-green-700' : 'text-red-700'}`}>Status: {selectedRequest.status === 'APPROVED' ? 'Disetujui' : 'Ditolak'}</p><p className="text-sm text-gray-700 italic">"{selectedRequest.adminNote}"</p></div>)}
-                        {selectedRequest.status === 'PENDING' && (<div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Catatan Admin (Opsional)</label><textarea className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none" rows={2} placeholder="Alasan penolakan atau catatan..." value={adminResponseNote} onChange={(e) => setAdminResponseNote(e.target.value)} /></div>)}
-                    </div>
-                    {selectedRequest.status === 'PENDING' && (<div className="flex gap-2"><button onClick={() => processVerification('REJECTED')} disabled={isSaving} className="flex-1 py-2 bg-white border border-red-200 text-red-600 font-bold rounded-lg text-sm hover:bg-red-50 flex items-center justify-center gap-2"><XCircle className="w-4 h-4" /> Tolak</button><button onClick={() => processVerification('APPROVED')} disabled={isSaving} className="flex-1 py-2 bg-green-600 text-white font-bold rounded-lg text-sm hover:bg-green-700 flex items-center justify-center gap-2">{isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Setujui</button></div>)}
-                </div>
-            </div>
-        )}
-        
-        {/* Top Controls */}
-        <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col xl:flex-row justify-between items-center gap-4 mb-4">
-            {!isStudent ? (
-                <div className="flex gap-2 w-full xl:w-auto">
-                    <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200"><Filter className="w-4 h-4 text-gray-500" /><select className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-24 md:w-auto" value={selectedClassFilter} onChange={(e) => setSelectedClassFilter(e.target.value)}>{uniqueClasses.map(c => <option key={c} value={c}>Kelas {c}</option>)}</select></div>
-                    <div className="relative flex-1 md:w-64"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" /><input type="text" placeholder="Cari Siswa..." className="w-full pl-9 pr-4 py-2 bg-gray-50 rounded-lg text-sm border border-gray-200 focus:bg-white transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
-                    <select className="pl-3 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-bold text-gray-700 w-full md:w-auto" value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>{filteredStudents.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}</select>
-                </div>
-            ) : (<div className="font-bold text-lg text-gray-800 flex flex-col"><span>{currentStudent?.fullName}</span><span className="text-xs text-gray-500 font-normal">Menu Verifikasi Nilai & Rapor</span></div>)}
-            <div className="flex items-center gap-2"><span className="text-sm font-bold text-gray-600 mr-2">Semester:</span><div className="flex bg-gray-100 p-1 rounded-lg">{[1, 2, 3, 4, 5, 6].map(sem => (<button key={sem} onClick={() => { setActiveSemester(sem); setActivePage(1); }} className={`w-8 h-8 rounded-md text-sm font-bold transition-all ${activeSemester === sem ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>{sem}</button>))}</div></div>
         </div>
 
-        {currentStudent ? (
-            <div className="flex-1 flex flex-col lg:flex-row gap-4 overflow-hidden relative">
-                {!isStudent && (
-                    <div className={`flex flex-col bg-gray-800 rounded-xl overflow-hidden shadow-lg transition-all duration-300 ${layoutMode === 'full-doc' ? 'w-full absolute inset-0 z-20' : 'w-full lg:w-1/2 h-full'}`}>
-                        <div className="bg-gray-900 border-b border-gray-700 px-4 py-2">
-                            <div className="flex gap-2 mb-2 justify-center"><button onClick={() => setViewerMode('RAPOR')} className={`px-3 py-1 rounded text-xs font-bold ${viewerMode === 'RAPOR' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>File Rapor</button>{availableGradeDocs.length > 0 && (<button onClick={() => setViewerMode('DOCS')} className={`px-3 py-1 rounded text-xs font-bold ${viewerMode === 'DOCS' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>Dokumen Lain</button>)}</div>
-                            <div className="flex items-center justify-between text-gray-300">
-                                <div className="flex gap-1 overflow-x-auto max-w-[200px] no-scrollbar">{viewerMode === 'RAPOR' ? (Array.from({length: raporPageCount}, (_, i) => i + 1).map(p => (<button key={p} onClick={() => setActivePage(p)} className={`px-2 py-0.5 rounded text-[10px] font-bold ${activePage === p ? 'bg-blue-500 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}>Hal {p}</button>))) : (availableGradeDocs.map(d => (<button key={d.id} onClick={() => setActiveDocType(d.id)} className={`px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${activeDocType === d.id ? 'bg-blue-500 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}>{d.label}</button>)))}</div>
-                                <div className="flex items-center gap-1"><button onClick={()=>setZoomLevel(z=>Math.max(0.5, z-0.2))} className="p-1 hover:bg-gray-700 rounded"><ZoomOut className="w-3 h-3" /></button><span className="text-[10px] w-6 text-center">{Math.round(zoomLevel*100)}%</span><button onClick={()=>setZoomLevel(z=>Math.min(3, z+0.2))} className="p-1 hover:bg-gray-700 rounded"><ZoomIn className="w-3 h-3" /></button><button onClick={()=>setLayoutMode(m=>m==='full-doc'?'split':'full-doc')} className="p-1 hover:bg-gray-700 rounded ml-1"><Maximize2 className="w-3 h-3" /></button></div>
-                            </div>
-                        </div>
-                        <div className="flex-1 overflow-auto p-4 bg-gray-900/50 flex items-start justify-center pb-32 relative">
-                            <div style={{ transform: `scale(${useFallbackViewer || (isDriveUrl && !isImageFile(currentDoc)) ? 1 : zoomLevel})`, transformOrigin: 'top center', width: '100%', display: 'flex', justifyContent: 'center' }}>
-                                {currentDoc ? ((useFallbackViewer || (isDriveUrl && !isImageFile(currentDoc))) ? (<iframe src={getDriveUrl(currentDoc.url, 'preview')} className="w-full min-h-[1100px] border-none rounded bg-white shadow-lg" title="Document Viewer" allow="autoplay"/>) : (isImageFile(currentDoc) ? (<img src={isDriveUrl ? getDriveUrl(currentDoc.url, 'direct') : currentDoc.url} className="w-full h-auto object-contain bg-white shadow-sm rounded" alt="Document" onError={() => setUseFallbackViewer(true)}/>) : (<div className="bg-white min-h-[600px] w-full max-w-[900px] flex flex-col items-center justify-start relative overflow-auto p-4 rounded shadow-lg">{isPdfLoading ? (<div className="flex flex-col items-center justify-center h-full pt-20"><Loader2 className="animate-spin w-10 h-10 text-blue-500 mb-2" /><p className="text-xs text-gray-500">Memuat PDF...</p></div>) : (pdfDoc ? (Array.from(new Array(numPages), (el, index) => (<PDFPageCanvas key={`page_${index + 1}`} pdf={pdfDoc} pageNum={index + 1} scale={zoomLevel} />))) : (<div className="text-red-500 flex flex-col items-center justify-center h-full pt-20"><AlertCircle className="w-8 h-8 mb-2" /><p>{pdfError ? 'Gagal memuat PDF' : 'PDF Viewer Error'}</p><button onClick={() => setUseFallbackViewer(true)} className="mt-2 text-xs underline text-blue-600">Coba Mode Alternatif</button></div>))}</div>))) : (<div className="flex flex-col items-center justify-center h-full text-gray-400">{viewerMode === 'RAPOR' ? <FileText className="w-16 h-16 mb-4 opacity-20" /> : <ScrollText className="w-16 h-16 mb-4 opacity-20" />}<p className="text-sm">{viewerMode === 'RAPOR' ? `Halaman ${activePage} belum diupload.` : `Dokumen ${activeDocType} tidak ditemukan.`}</p></div>)}
-                            </div>
-                        </div>
-                        {currentDoc && (<div className="bg-gray-900 border-t border-gray-700 p-4 flex justify-between items-center"><div className="flex items-center gap-2"><span className={`px-2 py-1 rounded text-xs font-bold ${currentDoc.status === 'APPROVED' ? 'bg-green-900 text-green-300' : currentDoc.status === 'REVISION' ? 'bg-red-900 text-red-300' : 'bg-yellow-900 text-yellow-300'}`}>{currentDoc.status === 'APPROVED' ? 'Disetujui' : currentDoc.status === 'REVISION' ? 'Perlu Revisi' : 'Menunggu Verifikasi'}</span></div><div className="flex gap-2"><button onClick={() => { setRejectionNote(''); setRejectModalOpen(true); }} disabled={isSaving} className="px-4 py-2 bg-red-600/20 text-red-400 border border-red-600/50 rounded-lg hover:bg-red-600 hover:text-white transition-colors text-sm font-bold">Tolak</button><button onClick={handleApproveDoc} disabled={isSaving} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-bold flex items-center gap-2 shadow-lg shadow-green-900/20">{isSaving ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle2 className="w-4 h-4" />} Setujui</button></div></div>)}
-                    </div>
-                )}
+        {/* Main Content Split */}
+        <div className="flex-1 flex overflow-hidden">
+            {/* Left: Document Viewer with Page Tabs */}
+            <div className="flex-1 bg-gray-900 relative flex flex-col overflow-hidden">
+                
+                {/* PAGE TABS OVERLAY */}
+                <div className="bg-gray-800 border-b border-gray-700 p-2 flex justify-center gap-2 z-10">
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+                        const pageDoc = currentStudent?.documents.find(d => 
+                            d.category === 'RAPOR' && 
+                            d.subType?.semester === activeSemester && 
+                            d.subType?.page === page
+                        );
+                        
+                        let statusColor = 'bg-gray-600 border-gray-500 text-gray-400';
+                        if (pageDoc) {
+                            if (pageDoc.status === 'APPROVED') statusColor = 'bg-green-900/50 border-green-600 text-green-400';
+                            else if (pageDoc.status === 'REVISION') statusColor = 'bg-red-900/50 border-red-600 text-red-400';
+                            else statusColor = 'bg-yellow-900/50 border-yellow-600 text-yellow-400 animate-pulse';
+                        }
 
-                <div className={`bg-white rounded-xl border border-gray-200 flex flex-col shadow-sm transition-all duration-300 ${layoutMode === 'full-doc' && !isStudent ? 'hidden' : 'flex-1'} overflow-hidden`}>
-                    <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-                        <h3 className="font-bold text-gray-800 flex items-center gap-2"><FileCheck2 className="w-5 h-5 text-purple-600" /> {isStudent ? 'Nilai Rapor Saya' : 'Verifikasi Nilai'}</h3>
-                        {!isStudent && (<div className="flex gap-2"><button onClick={() => { if(isEditing) saveGrades(); else setIsEditing(true); }} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${isEditing ? 'bg-green-600 text-white shadow-lg' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'}`}>{isEditing ? <><Save className="w-3 h-3" /> {isSaving ? 'Menyimpan...' : 'Simpan'}</> : <><Pencil className="w-3 h-3" /> Edit Nilai</>}</button></div>)}
-                        {isStudent && (<div className="text-[10px] text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-100">* Klik pada Kelas atau Nilai untuk mengajukan perbaikan</div>)}
-                    </div>
-                    
-                    <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-                        {isAdmin && allRequests.length > 0 && (
-                            <div className="w-full md:w-64 border-r border-gray-200 bg-gray-50 p-3 overflow-y-auto">
-                                <div className="text-xs font-bold text-gray-700 flex items-center gap-2 mb-3 bg-white p-2 rounded shadow-sm"><ListChecks className="w-4 h-4 text-blue-600" /> Riwayat Verifikasi ({allRequests.length})</div>
-                                <div className="space-y-2">{allRequests.map(req => { const isPending = req.status === 'PENDING'; const isApproved = req.status === 'APPROVED'; return (<div key={req.id} className={`border rounded-lg p-2 shadow-sm cursor-pointer transition-colors ${isPending ? 'bg-white border-yellow-300 hover:bg-yellow-50' : ''} ${isApproved ? 'bg-green-50 border-green-200 opacity-80 hover:opacity-100' : ''} ${req.status === 'REJECTED' ? 'bg-red-50 border-red-200 opacity-80 hover:opacity-100' : ''}`} onClick={() => handleAdminVerifyClick(req)}><div className="flex justify-between items-start"><p className="text-xs font-bold text-gray-800">{req.fieldName}</p>{isPending ? (<span className="text-[9px] bg-yellow-100 text-yellow-700 px-1 rounded font-bold">Pending</span>) : isApproved ? (<span className="text-[9px] bg-green-100 text-green-700 px-1 rounded font-bold">Disetujui</span>) : (<span className="text-[9px] bg-red-100 text-red-700 px-1 rounded font-bold">Ditolak</span>)}</div><div className="mt-1 flex items-center gap-1 text-[10px] text-gray-500"><span className="line-through decoration-red-300 truncate max-w-[40%]">{req.originalValue}</span><span>➔</span><span className="font-bold text-gray-800">{req.proposedValue}</span></div>{!isPending && (<p className="text-[9px] text-gray-400 mt-1 italic">Oleh: {req.verifierName || 'Admin'}</p>)}</div>); })}</div>
-                            </div>
-                        )}
+                        const isActive = activePage === page;
 
-                        <div className="flex-1 overflow-auto p-4 md:p-6 bg-white" id="grades-table-container">
-                            <div className="mb-6 border-b-2 border-gray-800 pb-4">
-                                <div className="flex justify-between text-sm font-bold text-gray-900 mb-2"><span>NAMA: {currentStudent.fullName.toUpperCase()}</span>{(() => { const displayClass = getDisplayClass(); const classPending = getPendingRequest(`class-${activeSemester}`); return (<span className={`flex items-center gap-2 px-2 py-0.5 rounded transition-colors ${isStudent ? 'cursor-pointer hover:bg-blue-50 text-blue-800' : ''} ${isAdmin && classPending ? 'bg-yellow-200 border border-yellow-300 cursor-pointer animate-pulse' : ''} ${classPending && !isAdmin ? 'bg-yellow-100 text-yellow-800' : ''}`} onClick={() => { if (isStudent && !classPending) handleOpenCorrection('className', 'KELAS', displayClass, 'CLASS'); if (isAdmin && classPending) handleAdminVerifyClick(classPending); }} title={isStudent ? "Klik untuk koreksi Kelas" : (isAdmin && classPending ? "Klik untuk memverifikasi perubahan" : "")}>KELAS: {isEditing && !isStudent ? (<select className="ml-2 bg-gray-50 border border-gray-300 rounded text-sm p-1" value={currentRecord?.className || currentStudent.className} onChange={(e) => handleClassChange(e.target.value)}>{CLASS_LIST.map(c => <option key={c} value={c}>{c}</option>)}</select>) : (<>{classPending ? classPending.proposedValue : displayClass}{classPending && <span className="text-[9px] bg-yellow-300 border border-yellow-400 px-1 rounded font-bold text-yellow-900">Menunggu Verifikasi</span>}{isStudent && !classPending && <Pencil className="w-3 h-3 opacity-50" />}</>)}</span>)})()}</div>
-                                <div className="flex justify-between text-xs text-gray-600"><span>NISN: {currentStudent.nisn}</span><span>SEMESTER: {activeSemester} ({getAcademicYear()})</span></div>
+                        return (
+                            <button
+                                key={page}
+                                onClick={() => setActivePage(page)}
+                                className={`
+                                    px-4 py-2 rounded-lg text-xs font-bold border transition-all flex items-center gap-2
+                                    ${isActive ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900 transform scale-105' : 'hover:bg-gray-700'}
+                                    ${statusColor}
+                                    ${isActive && !pageDoc ? 'bg-gray-700 text-white' : ''}
+                                `}
+                            >
+                                <File className="w-3 h-3" />
+                                Halaman {page}
+                                {pageDoc?.status === 'APPROVED' && <CheckCircle2 className="w-3 h-3 ml-1" />}
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {/* VIEWER AREA */}
+                <div className="flex-1 relative overflow-hidden flex flex-col">
+                    {currentDoc ? (
+                        <>
+                            {/* Zoom Controls */}
+                            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex gap-2 bg-black/50 backdrop-blur-md p-1.5 rounded-full border border-white/10 shadow-lg">
+                                <button onClick={() => setZoomLevel(z => Math.max(0.5, z - 0.2))} className="p-2 text-white hover:bg-white/20 rounded-full transition-colors" title="Zoom Out"><ZoomOut className="w-4 h-4" /></button>
+                                <span className="text-white text-xs font-mono font-bold flex items-center px-2">{Math.round(zoomLevel * 100)}%</span>
+                                <button onClick={() => setZoomLevel(z => Math.min(3, z + 0.2))} className="p-2 text-white hover:bg-white/20 rounded-full transition-colors" title="Zoom In"><ZoomIn className="w-4 h-4" /></button>
+                                <div className="w-px h-4 bg-white/20 my-auto mx-1"></div>
+                                <button onClick={() => setRotation(r => r + 90)} className="p-2 text-white hover:bg-white/20 rounded-full transition-colors" title="Putar"><RotateCw className="w-4 h-4" /></button>
+                                <button onClick={() => setUseFallbackViewer(v => !v)} className="px-3 py-1 text-[10px] font-bold text-white hover:bg-white/20 rounded-full border border-white/20 ml-1 transition-colors">
+                                    {useFallbackViewer ? 'Mode Default' : 'Mode Alt'}
+                                </button>
                             </div>
-                            
-                            {currentRecord ? (
-                                <table className="w-full text-sm border-collapse">
-                                    <thead><tr className="bg-gray-100 border-y-2 border-gray-800 text-xs font-bold text-gray-700 uppercase"><th className="py-2 text-left pl-2">Mata Pelajaran</th><th className="py-2 text-center w-24">Nilai</th><th className="py-2 text-left pl-4">Capaian Kompetensi</th></tr></thead>
-                                    <tbody className="divide-y divide-gray-200">{currentRecord.subjects.map((sub, idx) => { const gradeKey = `grade-${activeSemester}-${sub.subject}`; const gradePending = getPendingRequest(gradeKey); const competencyText = getCompetencyDescription(sub.score, sub.subject); return (<tr key={idx} className="hover:bg-blue-50/50 transition-colors"><td className="py-3 pl-2 font-medium text-gray-800">{sub.subject}</td><td className="py-3 text-center font-bold text-gray-900">{isEditing && !isStudent ? (<input type="number" className="w-12 text-center border border-blue-300 rounded p-1" value={sub.score} onChange={(e) => handleGradeChange(idx, e.target.value)} />) : (<div className={`inline-flex items-center gap-1 px-2 py-1 rounded transition-colors ${getScoreColor(sub.score)} ${isStudent ? 'cursor-pointer hover:bg-blue-50 border border-transparent hover:border-blue-200' : ''} ${isAdmin && gradePending ? 'bg-yellow-200 border border-yellow-300 cursor-pointer animate-pulse' : ''} ${gradePending && !isAdmin ? 'bg-yellow-100 text-yellow-800 border-yellow-200' : ''}`} onClick={() => { if (isStudent && !gradePending) handleOpenCorrection(gradeKey, `Nilai ${sub.subject} (Sem ${activeSemester})`, String(sub.score), 'GRADE'); if (isAdmin && gradePending) handleAdminVerifyClick(gradePending); }} title={isStudent ? "Klik untuk mengajukan perbaikan nilai" : (isAdmin && gradePending ? "Klik untuk memverifikasi" : "")}>{gradePending ? gradePending.proposedValue : sub.score}{gradePending && <span className="text-[8px] ml-1 opacity-70">(Rev)</span>}</div>)}</td><td className="py-3 pl-4 text-xs text-gray-600 italic">{competencyText}</td></tr>); })}</tbody>
-                                </table>
-                            ) : <div className="text-center py-10 text-gray-400 italic">Data nilai belum diinput.</div>}
+
+                            {/* Scrollable Container */}
+                            <div className="flex-1 overflow-auto p-4 md:p-8 bg-gray-900/50 scroll-smooth">
+                                <div 
+                                    style={{ 
+                                        transform: `scale(${useFallbackViewer ? 1 : zoomLevel}) rotate(${rotation}deg)`, 
+                                        transformOrigin: 'top center',
+                                        transition: 'transform 0.2s ease-out' 
+                                    }}
+                                    className="w-fit h-fit mx-auto shadow-2xl transition-transform duration-200 bg-white rounded"
+                                >
+                                    {(useFallbackViewer || (isDriveUrl && !isImageFile(currentDoc))) ? (
+                                        <iframe 
+                                            src={getDriveUrl(currentDoc.url, 'preview')} 
+                                            className="w-[800px] h-[1100px] bg-white rounded" 
+                                            title="Document Viewer" 
+                                            allow="autoplay" 
+                                        />
+                                    ) : (
+                                        <img 
+                                            src={isDriveUrl ? getDriveUrl(currentDoc.url, 'direct') : currentDoc.url} 
+                                            className="max-w-none h-auto object-contain rounded" 
+                                            style={{ minWidth: '600px', maxWidth: '100%' }}
+                                            alt="Document" 
+                                            onError={() => setUseFallbackViewer(true)} 
+                                        />
+                                    )}
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
+                            <LayoutList className="w-16 h-16 mb-4 opacity-20" />
+                            <p>Tidak ada dokumen untuk Halaman {activePage} Semester {activeSemester}.</p>
+                            <p className="text-xs mt-2 text-gray-600">Siswa belum mengupload bagian ini.</p>
                         </div>
-                    </div>
+                    )}
                 </div>
             </div>
-        ) : (
-            <div className="flex-1 flex items-center justify-center text-gray-400 flex-col">
-                <Search className="w-16 h-16 mb-4 opacity-20" />
-                <p>Pilih siswa untuk memulai verifikasi nilai.</p>
+
+            {/* Right: Data Panel */}
+            <div className="w-[480px] bg-white border-l border-gray-200 flex flex-col shadow-xl z-10">
+                {/* Header */}
+                <div className="p-4 bg-blue-50 border-b border-blue-100 flex justify-between items-center">
+                    <div>
+                        <div className="flex items-center gap-2 mb-1">
+                            <LayoutList className="w-4 h-4 text-blue-700" />
+                            <span className="text-sm font-bold text-blue-800">Verifikasi Nilai</span>
+                        </div>
+                        <div className="text-xs text-blue-600 font-medium">
+                            Semester {activeSemester}
+                        </div>
+                    </div>
+                    {/* New Save Data Button */}
+                    <button 
+                        onClick={handleSaveDataOnly}
+                        disabled={isSavingData}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm"
+                    >
+                        {isSavingData ? <Loader2 className="w-3 h-3 animate-spin"/> : <Save className="w-3 h-3" />}
+                        Simpan Data
+                    </button>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 flex flex-col overflow-hidden bg-white">
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                        {currentStudent ? (
+                            <>
+                                <div className="bg-yellow-50 p-3 rounded border border-yellow-100 text-xs text-yellow-800 flex gap-2">
+                                    <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                        <p className="font-bold">Instruksi:</p>
+                                        <p>1. Cek dokumen di kiri.</p>
+                                        <p>2. Data Tahun & Kelas diisi otomatis, koreksi jika salah.</p>
+                                        <p>3. Input Nilai & Kehadiran sesuai Rapor.</p>
+                                    </div>
+                                </div>
+
+                                {/* CLASS INFO SECTION */}
+                                <div className="bg-blue-50/50 p-3 rounded-lg border border-blue-100">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <h4 className="text-xs font-bold text-blue-800 uppercase flex items-center gap-2">
+                                            <School className="w-3 h-3" /> Info Akademik (S{activeSemester})
+                                        </h4>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Tahun Pelajaran</label>
+                                            <input 
+                                                className="w-full p-2 border border-blue-200 rounded text-xs font-bold text-gray-800 focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                                                value={academicYear}
+                                                onChange={(e) => setAcademicYear(e.target.value)}
+                                                placeholder="Contoh: 2024/2025"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Kelas</label>
+                                            <select 
+                                                className="w-full p-2 border border-blue-200 rounded text-xs font-bold text-gray-800 focus:ring-2 focus:ring-blue-500 outline-none bg-white cursor-pointer"
+                                                value={semesterClass}
+                                                onChange={(e) => setSemesterClass(e.target.value)}
+                                            >
+                                                {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* ATTENDANCE SECTION - NEW */}
+                                <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <h4 className="text-xs font-bold text-gray-600 uppercase flex items-center gap-2">
+                                            <UserCheck className="w-3 h-3" /> Kehadiran (Semester {activeSemester})
+                                        </h4>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <div>
+                                            <label className="text-[9px] font-bold text-gray-400 uppercase block mb-1 text-center">Sakit</label>
+                                            <input 
+                                                type="number" 
+                                                className="w-full p-1.5 border rounded text-center text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                                value={attendanceData.sick}
+                                                onChange={(e) => setAttendanceData({...attendanceData, sick: Number(e.target.value)})}
+                                                min={0}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] font-bold text-gray-400 uppercase block mb-1 text-center">Izin</label>
+                                            <input 
+                                                type="number" 
+                                                className="w-full p-1.5 border rounded text-center text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                                value={attendanceData.permitted}
+                                                onChange={(e) => setAttendanceData({...attendanceData, permitted: Number(e.target.value)})}
+                                                min={0}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] font-bold text-gray-400 uppercase block mb-1 text-center">Alpha</label>
+                                            <input 
+                                                type="number" 
+                                                className="w-full p-1.5 border rounded text-center text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                                value={attendanceData.noReason}
+                                                onChange={(e) => setAttendanceData({...attendanceData, noReason: Number(e.target.value)})}
+                                                min={0}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* GRADE INPUT SECTION */}
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase border-b pb-2 mb-2">
+                                        <span className="pl-2">Mata Pelajaran</span>
+                                        <span className="pr-2">Nilai</span>
+                                    </div>
+                                    {SUBJECT_MAP.map((sub, idx) => (
+                                        <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-50 hover:bg-gray-50 px-2 rounded">
+                                            <label className="text-xs font-bold text-gray-700 w-2/3 truncate" title={sub.label}>{idx+1}. {sub.label}</label>
+                                            <input 
+                                                type="number" 
+                                                className="w-20 p-1.5 border rounded text-right text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                                value={gradeData[sub.key] || ''}
+                                                onChange={(e) => setGradeData({...gradeData, [sub.key]: Number(e.target.value)})}
+                                                placeholder="0"
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        ) : (
+                            <div className="text-center text-gray-400 text-xs py-10">Pilih siswa dari daftar di atas.</div>
+                        )}
+                    </div>
+
+                    {/* Action Footer */}
+                    {currentStudent && (
+                        <div className="p-4 border-t border-gray-200 bg-gray-50">
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Catatan Dokumen (Hal {activePage})</label>
+                            <input 
+                                type="text" 
+                                className="w-full p-2.5 border border-gray-300 rounded-lg text-sm mb-3 focus:ring-2 focus:ring-blue-500 outline-none" 
+                                placeholder="Contoh: Nilai Matematika kurang jelas / Salah crop" 
+                                value={adminNote}
+                                onChange={(e) => setAdminNote(e.target.value)}
+                            />
+                            
+                            {!currentDoc && (
+                                <p className="text-[10px] text-red-500 mb-2 italic">*Dokumen untuk Halaman {activePage} belum ada. Anda tetap bisa menyimpan nilai.</p>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-2">
+                                <button 
+                                    onClick={() => handleProcess('REVISION')} 
+                                    disabled={isProcessing || !currentDoc}
+                                    className="py-2.5 bg-white border border-red-200 text-red-600 font-bold rounded-lg hover:bg-red-50 text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <XCircle className="w-4 h-4" /> Tolak Dokumen
+                                </button>
+                                <button 
+                                    onClick={() => handleProcess('APPROVED')} 
+                                    disabled={isProcessing}
+                                    className="py-2.5 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 text-sm flex items-center justify-center gap-2 shadow-sm"
+                                >
+                                    {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} 
+                                    {currentDoc ? 'Valid & Simpan' : 'Simpan Nilai'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
-        )}
+        </div>
     </div>
   );
 };

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student } from '../types';
-import { Search, FileSpreadsheet, FileText, Calculator, LayoutList, TableProperties } from 'lucide-react';
+import { Search, FileSpreadsheet, FileText, Calculator, LayoutList, TableProperties, Columns, Rows } from 'lucide-react';
 import { api } from '../services/api';
 
 interface RecapViewProps {
@@ -205,133 +205,103 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
       } catch (e) { console.error(e); alert("Gagal download excel."); }
   };
 
-  // --- STUDENT VIEW (SPECIAL LAYOUT) ---
+  // --- SPECIAL VIEW FOR STUDENT: SUBJECTS AS ROWS ---
   if (userRole === 'STUDENT' && loggedInStudent) {
-      // Filter the subjects to display based on Admin Configuration
-      const visibleSubjects = SUBJECT_MAP.filter(sub => selected5SemSubjects.includes(sub.key));
+      const student = loggedInStudent;
+      const totalAvg = calculateTotal5SemAvg(student);
 
       return (
-        <div className="flex flex-col h-full animate-fade-in space-y-6">
-            {/* Header / Info Card */}
-            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-6">
-                <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-full bg-purple-100 flex items-center justify-center text-purple-600">
-                        <Calculator className="w-8 h-8" />
-                    </div>
-                    <div>
-                        <h2 className="text-2xl font-bold text-gray-800">Rekapitulasi Nilai</h2>
-                        <p className="text-gray-500">Rapor 5 Semester (Semester 1 - 5)</p>
-                    </div>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full md:w-auto bg-gray-50 p-4 rounded-xl border border-gray-100">
-                    <div>
-                        <p className="text-[10px] uppercase font-bold text-gray-400">Nama Lengkap</p>
-                        <p className="text-sm font-bold text-gray-800">{loggedInStudent.fullName}</p>
-                    </div>
-                    <div>
-                        <p className="text-[10px] uppercase font-bold text-gray-400">NISN</p>
-                        <p className="text-sm font-mono font-bold text-gray-800">{loggedInStudent.nisn}</p>
-                    </div>
-                    <div>
-                        <p className="text-[10px] uppercase font-bold text-gray-400">Kelas</p>
-                        <p className="text-sm font-bold text-gray-800">{loggedInStudent.className}</p>
-                    </div>
-                    <div>
-                        <p className="text-[10px] uppercase font-bold text-gray-400">Total Rata-rata</p>
-                        <p className="text-sm font-black text-purple-600 text-lg leading-none">{calculateTotal5SemAvg(loggedInStudent)}</p>
-                    </div>
-                </div>
-            </div>
+          <div className="flex flex-col h-full animate-fade-in space-y-6">
+              {/* Header Card */}
+              <div className="bg-white p-6 rounded-2xl border border-purple-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-6 bg-gradient-to-r from-purple-50 to-white">
+                  <div className="flex items-center gap-4">
+                      <div className="w-16 h-16 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 shadow-sm border border-purple-200">
+                          <Calculator className="w-8 h-8" />
+                      </div>
+                      <div>
+                          <h2 className="text-2xl font-bold text-gray-800">Rekap Nilai 5 Semester</h2>
+                          <p className="text-gray-500">Rapor Semester 1 - 5</p>
+                      </div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full md:w-auto bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                      <div><p className="text-[10px] uppercase font-bold text-gray-400">Nama Lengkap</p><p className="text-sm font-bold text-gray-800">{student.fullName}</p></div>
+                      <div><p className="text-[10px] uppercase font-bold text-gray-400">NISN</p><p className="text-sm font-mono font-bold text-gray-800">{student.nisn}</p></div>
+                      <div><p className="text-[10px] uppercase font-bold text-gray-400">Kelas</p><p className="text-sm font-bold text-purple-700">{student.className}</p></div>
+                      <div><p className="text-[10px] uppercase font-bold text-gray-400">Rata-rata Total</p><p className="text-sm font-black text-purple-600 text-lg leading-none">{totalAvg}</p></div>
+                  </div>
+              </div>
 
-            {/* Transposed Table Card */}
-            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm flex-1 overflow-hidden flex flex-col">
-                <div className="overflow-auto flex-1">
-                    <table className="w-full text-sm text-left border-collapse">
-                        <thead>
-                            <tr className="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase tracking-wider">
-                                <th className="p-4 w-16 text-center font-bold">No</th>
-                                <th className="p-4 font-bold min-w-[200px]">Mata Pelajaran</th>
-                                {[1, 2, 3, 4, 5].map(sem => (
-                                    <th key={sem} className="p-4 text-center font-bold bg-purple-50/50 text-purple-900 border-l border-gray-100 min-w-[60px]">
-                                        Sm {sem}
-                                    </th>
-                                ))}
-                                <th className="p-4 text-center font-bold bg-gray-100 text-gray-800 border-l border-gray-200 min-w-[80px]">
-                                    Rata-rata
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {visibleSubjects.length > 0 ? (
-                                visibleSubjects.map((sub, idx) => {
-                                    let totalSubjectScore = 0;
-                                    let countSubjectScore = 0;
-                                    const semScores = [1, 2, 3, 4, 5].map(sem => {
-                                        const score = Number(getScore(loggedInStudent, sub.key, sem));
-                                        if (score > 0) {
-                                            totalSubjectScore += score;
-                                            countSubjectScore++;
-                                        }
-                                        return score;
-                                    });
-                                    const subjectAvg = countSubjectScore > 0 ? Number((totalSubjectScore / countSubjectScore).toFixed(1)) : 0;
-
-                                    return (
-                                        <tr key={sub.key} className="hover:bg-purple-50/30 transition-colors">
-                                            <td className="p-4 text-center text-gray-400 font-medium">{idx + 1}</td>
-                                            <td className="p-4">
-                                                <div className="font-bold text-gray-700">{sub.label}</div>
-                                                <div className="text-xs text-gray-400 hidden md:block">{sub.full}</div>
-                                            </td>
-                                            {semScores.map((score, i) => (
-                                                <td key={i} className="p-4 text-center border-l border-gray-50">
-                                                    {score > 0 ? (
-                                                        <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${getScoreColor(score)}`}>
-                                                            {score}
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-gray-300">-</span>
-                                                    )}
-                                                </td>
-                                            ))}
-                                            <td className="p-4 text-center font-bold text-gray-800 bg-gray-50/50 border-l border-gray-100">
-                                                {subjectAvg > 0 ? subjectAvg : '-'}
-                                            </td>
-                                        </tr>
-                                    );
-                                })
-                            ) : (
-                                <tr>
-                                    <td colSpan={8} className="p-8 text-center text-gray-400">
-                                        Belum ada mata pelajaran yang dikonfigurasi oleh admin.
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                        <tfoot className="bg-gray-50/80 border-t border-gray-200 font-bold text-sm sticky bottom-0 z-10 shadow-md">
-                            <tr>
-                                <td colSpan={2} className="p-4 text-right uppercase text-xs text-gray-500">Rata-rata Semester</td>
-                                {[1, 2, 3, 4, 5].map(sem => {
-                                    const avg = calculateSemesterAvg(loggedInStudent, sem);
-                                    return (
-                                        <td key={sem} className="p-4 text-center text-purple-700 border-l border-gray-200">
-                                            {avg > 0 ? avg : '-'}
-                                        </td>
-                                    );
-                                })}
-                                <td className="p-4 text-center bg-gray-100 border-l border-gray-200">
-                                    {calculateTotal5SemAvg(loggedInStudent)}
-                                </td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-            </div>
-        </div>
+              {/* Transposed Table: Subjects as Rows */}
+              <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
+                  <div className="overflow-auto flex-1 pb-10">
+                      <table className="w-full text-sm text-left border-collapse">
+                          <thead>
+                              <tr className="bg-purple-50 border-b border-gray-200 text-xs text-purple-800 uppercase tracking-wider">
+                                  <th className="p-4 w-16 text-center font-bold">No</th>
+                                  <th className="p-4 font-bold min-w-[200px]">Mata Pelajaran</th>
+                                  {[1, 2, 3, 4, 5].map(sem => (
+                                      <th key={sem} className="p-4 text-center font-bold bg-purple-100/50 border-l border-gray-100 min-w-[60px]">Sem {sem}</th>
+                                  ))}
+                                  <th className="p-4 text-center font-bold bg-gray-100 text-gray-800 border-l border-gray-200 min-w-[80px]">Rata-rata</th>
+                              </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                              {selected5SemSubjects.map((key, idx) => {
+                                  const subjectLabel = SUBJECT_MAP.find(s => s.key === key)?.label || key;
+                                  const subjectFull = SUBJECT_MAP.find(s => s.key === key)?.full || key;
+                                  const avg = calculate5SemAvg(student, key);
+                                  
+                                  return (
+                                      <tr key={key} className="hover:bg-purple-50/30 transition-colors">
+                                          <td className="p-4 text-center text-gray-400 font-medium">{idx + 1}</td>
+                                          <td className="p-4">
+                                              <div className="font-bold text-gray-700">{subjectLabel}</div>
+                                              <div className="text-[10px] text-gray-400 hidden md:block">{subjectFull}</div>
+                                          </td>
+                                          {[1, 2, 3, 4, 5].map(sem => {
+                                              const score = getScore(student, key, sem);
+                                              return (
+                                                  <td key={sem} className="p-4 text-center border-l border-gray-50">
+                                                      {score > 0 ? (
+                                                          <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${getScoreColor(Number(score))}`}>
+                                                              {score}
+                                                          </span>
+                                                      ) : <span className="text-gray-300">-</span>}
+                                                  </td>
+                                              );
+                                          })}
+                                          <td className="p-4 text-center font-bold text-gray-800 bg-gray-50/50 border-l border-gray-100">
+                                              {avg > 0 ? avg : '-'}
+                                          </td>
+                                      </tr>
+                                  );
+                              })}
+                          </tbody>
+                          {/* Footer for Semester Averages */}
+                          <tfoot className="bg-gray-50/80 border-t border-gray-200 font-bold text-sm">
+                              <tr>
+                                  <td colSpan={2} className="p-4 text-right uppercase text-xs text-gray-500">Rata-rata Semester</td>
+                                  {[1, 2, 3, 4, 5].map(sem => {
+                                      const semAvg = calculateSemesterAvg(student, sem);
+                                      return (
+                                          <td key={sem} className="p-4 text-center text-purple-700 border-l border-gray-200">
+                                              {semAvg > 0 ? semAvg : '-'}
+                                          </td>
+                                      );
+                                  })}
+                                  <td className="p-4 text-center bg-gray-100 border-l border-gray-200 text-purple-800 font-black text-lg">
+                                      {totalAvg}
+                                  </td>
+                              </tr>
+                          </tfoot>
+                      </table>
+                  </div>
+              </div>
+          </div>
       );
   }
 
-  // --- ADMIN / GURU VIEW ---
+  // --- UNIFIED VIEW (ADMIN/GURU) ---
   return (
     <div className="flex flex-col h-full animate-fade-in space-y-4">
         {/* Toolbar */}

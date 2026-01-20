@@ -16,8 +16,11 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
   const [detailType, setDetailType] = useState<'CERTIFICATE' | 'TRANSCRIPT'>('CERTIFICATE');
   
   const [dbClassFilter, setDbClassFilter] = useState<string>('ALL');
+  
+  // Table Layout States (Shared for Admin & Student now)
   const [viewDetailScore, setViewDetailScore] = useState(false); 
   const [tableLayout, setTableLayout] = useState<'SUBJECT' | 'SEMESTER'>('SEMESTER'); 
+  
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   
   // Correction State
@@ -69,12 +72,10 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
       fetchSettings();
   }, []);
 
+  // For Student Role, auto-select filter but keep List View available (contains 1 row)
   useEffect(() => {
       if (userRole === 'STUDENT' && loggedInStudent) {
-          setSelectedStudent(loggedInStudent);
-          setViewMode('DETAIL');
-          // Default tab can be DATA or NILAI, letting user switch now
-          if (activeTab === 'DATA') setActiveTab('DATA'); 
+          // No separate view logic needed, standard list will filter automatically
       }
   }, [userRole, loggedInStudent]);
 
@@ -204,7 +205,7 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
               }));
           } else {
               // Export Detailed Scores based on current Layout
-              if (tableLayout === 'SEMESTER') {
+              if (tableLayout === 'SEMESTER' || userRole === 'STUDENT') {
                   dataToExport = filteredStudents.map((s, index) => {
                       const row: any = {
                           'No': index + 1,
@@ -314,10 +315,11 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
   const headmasterName = appSettings?.schoolData?.headmaster || 'DIDIK SULISTYO, M.M.Pd';
   const headmasterNip = appSettings?.schoolData?.nip || '19660518 198901 1 002';
 
+  // --- MAIN RENDER (UNIFIED ADMIN/STUDENT) ---
   return (
     <div className="flex flex-col h-full animate-fade-in space-y-4">
         
-        {/* CORRECTION MODAL */}
+        {/* CORRECTION MODAL (Shared) */}
         {isCorrectionModalOpen && targetCorrection && (
             <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
                 <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform scale-100 transition-all">
@@ -359,13 +361,13 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                         <Award className="w-4 h-4" /> Manajemen Ijazah
                     </div>
                     
-                    {/* TABS Navigation (Visible for Students Now) */}
+                    {/* TABS Navigation */}
                     <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200">
                         <button onClick={() => { setActiveTab('DATA'); if(userRole!=='STUDENT') setViewMode('LIST'); }} className={`px-4 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${activeTab === 'DATA' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
                             <ScrollText className="w-3 h-3" /> Data Ijazah
                         </button>
                         <button onClick={() => setActiveTab('NILAI')} className={`px-4 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${activeTab === 'NILAI' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
-                            <FileText className="w-3 h-3" /> Nilai Ijazah
+                            <FileText className="w-3 h-3" /> Transkrip Nilai
                         </button>
                     </div>
                 </div>
@@ -391,9 +393,9 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                         </select>
                     )}
 
-                    {activeTab === 'NILAI' && (
+                    {activeTab === 'NILAI' && userRole !== 'STUDENT' && (
                         <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200 hidden md:flex">
-                            {/* Layout Toggle */}
+                            {/* Layout Toggle - ADMIN ONLY */}
                             <button onClick={() => setTableLayout('SUBJECT')} className={`px-3 py-1 rounded text-[10px] font-bold flex items-center gap-1 ${tableLayout === 'SUBJECT' ? 'bg-white shadow text-blue-700' : 'text-gray-500'}`} title="Group per Mapel">
                                 <Rows className="w-3 h-3" /> Per Mapel
                             </button>
@@ -466,128 +468,191 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                     </table>
                 )}
 
-                {/* --- TAB NILAI IJAZAH LIST (TRANSPOSED TABLE for STUDENTS) --- */}
+                {/* --- TAB NILAI IJAZAH LIST --- */}
                 {activeTab === 'NILAI' && (
-                    <table className="border-collapse min-w-max text-sm">
-                        <thead className="bg-blue-50 border-b border-blue-200 sticky top-0 z-10 shadow-sm text-blue-800 uppercase text-xs">
-                            {tableLayout === 'SEMESTER' ? (
-                                // --- LAYOUT BARU: BY SEMESTER ---
-                                <>
+                    userRole === 'STUDENT' ? (
+                        // --- SPECIAL STUDENT VIEW: VERTICAL SUBJECTS (LIKE REPORT CARD) ---
+                        <table className="w-full text-sm text-left border-collapse">
+                            <thead>
+                                <tr className="bg-blue-50 border-b border-gray-200 text-xs text-blue-800 uppercase tracking-wider sticky top-0 z-10">
+                                    <th className="p-4 w-12 text-center font-bold border-r border-gray-200">No</th>
+                                    <th className="p-4 font-bold min-w-[200px] border-r border-gray-200">Mata Pelajaran</th>
+                                    {[1, 2, 3, 4, 5, 6].map(sem => (
+                                        <th key={sem} className="p-4 text-center font-bold bg-blue-100/50 border-r border-gray-200 min-w-[50px]">Sem {sem}</th>
+                                    ))}
+                                    <th className="p-4 text-center font-bold bg-gray-100 text-gray-800 min-w-[60px]">Rata-rata</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {filteredStudents.length > 0 && SUBJECT_MAP.map((sub, idx) => {
+                                    const student = filteredStudents[0];
+                                    const avg = calculateSubjectAvg(student, sub.key);
+                                    return (
+                                        <tr key={sub.key} className="hover:bg-blue-50/30 transition-colors">
+                                            <td className="p-4 text-center text-gray-400 font-medium border-r border-gray-100">{idx + 1}</td>
+                                            <td className="p-4 border-r border-gray-100">
+                                                <div className="font-bold text-gray-700">{sub.label}</div>
+                                                <div className="text-[10px] text-gray-400 hidden md:block">{sub.full}</div>
+                                            </td>
+                                            {[1, 2, 3, 4, 5, 6].map(sem => {
+                                                const score = getScore(student, sub.key, sem);
+                                                return (
+                                                    <td key={sem} className="p-4 text-center border-r border-gray-100">
+                                                        <span className={getScoreColor(score)}>
+                                                            {score > 0 ? score : '-'}
+                                                        </span>
+                                                    </td>
+                                                );
+                                            })}
+                                            <td className="p-4 text-center font-bold text-gray-800 bg-gray-50/50">
+                                                {avg > 0 ? avg : '-'}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                            <tfoot className="bg-gray-50/80 border-t border-gray-200 font-bold text-sm">
+                                {filteredStudents.length > 0 && (
                                     <tr>
-                                        <th className="px-4 py-3 text-center w-12 border border-blue-200 sticky left-0 bg-blue-50 z-20" rowSpan={2}>No</th>
-                                        <th className="px-4 py-3 text-left min-w-[200px] border border-blue-200 sticky left-[48px] bg-blue-50 z-20" rowSpan={2}>Nama Siswa</th>
-                                        {[1, 2, 3, 4, 5, 6].map(sem => (
-                                            <th key={sem} className="px-2 py-2 text-center border border-blue-200 font-black bg-blue-100/50" colSpan={SUBJECT_MAP.length + 1}>
-                                                Semester {sem}
-                                            </th>
-                                        ))}
-                                        <th className="px-4 py-3 text-center border border-blue-200 w-24" rowSpan={2}>Nilai Akhir</th>
+                                        <td colSpan={2} className="p-4 text-right uppercase text-xs text-gray-500 border-r border-gray-200">Rata-rata Semester</td>
+                                        {[1, 2, 3, 4, 5, 6].map(sem => {
+                                            const semAvg = calculateSemesterRowAvg(filteredStudents[0], sem);
+                                            return (
+                                                <td key={sem} className="p-4 text-center text-blue-700 border-r border-gray-200">
+                                                    {semAvg > 0 ? semAvg : '-'}
+                                                </td>
+                                            );
+                                        })}
+                                        <td className="p-4 text-center bg-gray-100 text-blue-800 font-black text-lg">
+                                            {calculateFinalGrade(filteredStudents[0]) || '-'}
+                                        </td>
                                     </tr>
-                                    <tr>
-                                        {[1, 2, 3, 4, 5, 6].map(sem => (
-                                            <React.Fragment key={sem}>
-                                                {SUBJECT_MAP.map(sub => (
-                                                    <th key={`${sem}-${sub.key}`} className="px-1 py-1 text-[8px] border border-blue-200 min-w-[60px] text-center whitespace-normal">
-                                                        {sub.label}
-                                                    </th>
-                                                ))}
-                                                <th className="px-1 py-1 text-[8px] border border-blue-200 w-12 min-w-[50px] text-center bg-blue-100 font-bold">Rata-rata Sem {sem}</th>
-                                            </React.Fragment>
-                                        ))}
-                                    </tr>
-                                </>
-                            ) : (
-                                // --- LAYOUT LAMA: BY SUBJECT (DEFAULT) ---
-                                <>
-                                    <tr>
-                                        <th className="px-4 py-3 text-center w-12 border border-blue-200 sticky left-0 bg-blue-50 z-20" rowSpan={2}>No</th>
-                                        <th className="px-4 py-3 text-left min-w-[200px] border border-blue-200 sticky left-[48px] bg-blue-50 z-20" rowSpan={2}>Nama Siswa</th>
-                                        {SUBJECT_MAP.map(sub => (
-                                            <th key={sub.key} className="px-2 py-3 text-center border border-blue-200" colSpan={viewDetailScore ? 7 : 1}>
-                                                {sub.label}
-                                            </th>
-                                        ))}
-                                        <th className="px-4 py-3 text-center border border-blue-200 w-24" rowSpan={2}>Nilai Akhir</th>
-                                    </tr>
-                                    {viewDetailScore && (
+                                )}
+                            </tfoot>
+                        </table>
+                    ) : (
+                        // --- ADMIN VIEW: HORIZONTAL TABLE ---
+                        <table className="border-collapse min-w-max text-sm">
+                            <thead className="bg-blue-50 border-b border-blue-200 sticky top-0 z-10 shadow-sm text-blue-800 uppercase text-xs">
+                                {tableLayout === 'SEMESTER' ? (
+                                    // --- LAYOUT BARU: BY SEMESTER ---
+                                    <>
                                         <tr>
-                                            {SUBJECT_MAP.map(sub => (
-                                                <React.Fragment key={sub.key}>
-                                                    <th className="px-1 py-1 text-[8px] border border-blue-200 w-8">1</th>
-                                                    <th className="px-1 py-1 text-[8px] border border-blue-200 w-8">2</th>
-                                                    <th className="px-1 py-1 text-[8px] border border-blue-200 w-8">3</th>
-                                                    <th className="px-1 py-1 text-[8px] border border-blue-200 w-8">4</th>
-                                                    <th className="px-1 py-1 text-[8px] border border-blue-200 w-8">5</th>
-                                                    <th className="px-1 py-1 text-[8px] border border-blue-200 w-8">6</th>
-                                                    <th className="px-1 py-1 text-[8px] border border-blue-200 font-bold bg-blue-100 w-10">Avg</th>
+                                            <th className="px-4 py-3 text-center w-12 border border-blue-200 sticky left-0 bg-blue-50 z-20" rowSpan={2}>No</th>
+                                            <th className="px-4 py-3 text-left min-w-[200px] border border-blue-200 sticky left-[48px] bg-blue-50 z-20" rowSpan={2}>Nama Siswa</th>
+                                            {[1, 2, 3, 4, 5, 6].map(sem => (
+                                                <th key={sem} className="px-2 py-2 text-center border border-blue-200 font-black bg-blue-100/50" colSpan={SUBJECT_MAP.length + 1}>
+                                                    Semester {sem}
+                                                </th>
+                                            ))}
+                                            <th className="px-4 py-3 text-center border border-blue-200 w-24" rowSpan={2}>Nilai Akhir</th>
+                                        </tr>
+                                        <tr>
+                                            {[1, 2, 3, 4, 5, 6].map(sem => (
+                                                <React.Fragment key={sem}>
+                                                    {SUBJECT_MAP.map(sub => (
+                                                        <th key={`${sem}-${sub.key}`} className="px-1 py-1 text-[8px] border border-blue-200 min-w-[60px] text-center whitespace-normal">
+                                                            {sub.label}
+                                                        </th>
+                                                    ))}
+                                                    <th className="px-1 py-1 text-[8px] border border-blue-200 w-12 min-w-[50px] text-center bg-blue-100 font-bold">Rata-rata Sem {sem}</th>
                                                 </React.Fragment>
                                             ))}
                                         </tr>
-                                    )}
-                                </>
-                            )}
-                        </thead>
-                        <tbody className="divide-y divide-blue-50">
-                            {filteredStudents.map((student, idx) => {
-                                const finalGrade = calculateFinalGrade(student);
-                                return (
-                                    <tr key={student.id} className="hover:bg-blue-50/30 transition-colors">
-                                        <td className="px-4 py-2 text-center text-gray-500 border border-blue-100 sticky left-0 bg-white z-10 shadow-sm">{idx + 1}</td>
-                                        <td className="px-4 py-2 font-medium text-gray-900 border border-blue-100 sticky left-[48px] bg-white z-10 shadow-sm min-w-[200px]">
-                                            <div>{student.fullName}</div>
-                                            <div className="text-xs text-gray-400 font-mono">{student.nisn}</div>
-                                        </td>
-                                        
-                                        {tableLayout === 'SEMESTER' ? (
-                                            // --- RENDER BODY: BY SEMESTER ---
-                                            [1, 2, 3, 4, 5, 6].map(sem => {
-                                                const rowAvg = calculateSemesterRowAvg(student, sem);
-                                                return (
-                                                    <React.Fragment key={sem}>
-                                                        {SUBJECT_MAP.map(sub => {
-                                                            const score = getScore(student, sub.key, sem);
-                                                            return (
-                                                                <td key={`${sem}-${sub.key}`} className="px-1 py-2 text-center text-[10px] border border-blue-100 min-w-[40px]">
-                                                                    <span className={getScoreColor(score)}>{score > 0 ? score : '-'}</span>
-                                                                </td>
-                                                            );
-                                                        })}
-                                                        <td className="px-1 py-2 text-center font-bold border border-blue-100 bg-blue-50/50 text-[10px]">
-                                                            <span className={getScoreColor(rowAvg)}>{rowAvg > 0 ? rowAvg : '-'}</span>
-                                                        </td>
-                                                    </React.Fragment>
-                                                );
-                                            })
-                                        ) : (
-                                            // --- RENDER BODY: BY SUBJECT ---
-                                            SUBJECT_MAP.map(sub => {
-                                                const avg = calculateSubjectAvg(student, sub.key);
-                                                return viewDetailScore ? (
+                                    </>
+                                ) : (
+                                    // --- LAYOUT LAMA: BY SUBJECT (DEFAULT) ---
+                                    <>
+                                        <tr>
+                                            <th className="px-4 py-3 text-center w-12 border border-blue-200 sticky left-0 bg-blue-50 z-20" rowSpan={2}>No</th>
+                                            <th className="px-4 py-3 text-left min-w-[200px] border border-blue-200 sticky left-[48px] bg-blue-50 z-20" rowSpan={2}>Nama Siswa</th>
+                                            {SUBJECT_MAP.map(sub => (
+                                                <th key={sub.key} className="px-2 py-3 text-center border border-blue-200" colSpan={viewDetailScore ? 7 : 1}>
+                                                    {sub.label}
+                                                </th>
+                                            ))}
+                                            <th className="px-4 py-3 text-center border border-blue-200 w-24" rowSpan={2}>Nilai Akhir</th>
+                                        </tr>
+                                        {viewDetailScore && (
+                                            <tr>
+                                                {SUBJECT_MAP.map(sub => (
                                                     <React.Fragment key={sub.key}>
-                                                        {[1,2,3,4,5,6].map(sem => {
-                                                            const score = getScore(student, sub.key, sem);
-                                                            return <td key={sem} className="px-1 py-2 text-center text-[10px] text-gray-600 border border-blue-100">{score > 0 ? score : '-'}</td>;
-                                                        })}
-                                                        <td className="px-1 py-2 text-center font-bold border border-blue-100 bg-blue-50/50">
-                                                            <span className={`px-1 rounded text-[10px] ${getScoreColor(avg)}`}>{avg > 0 ? avg : '-'}</span>
-                                                        </td>
+                                                        <th className="px-1 py-1 text-[8px] border border-blue-200 w-8">1</th>
+                                                        <th className="px-1 py-1 text-[8px] border border-blue-200 w-8">2</th>
+                                                        <th className="px-1 py-1 text-[8px] border border-blue-200 w-8">3</th>
+                                                        <th className="px-1 py-1 text-[8px] border border-blue-200 w-8">4</th>
+                                                        <th className="px-1 py-1 text-[8px] border border-blue-200 w-8">5</th>
+                                                        <th className="px-1 py-1 text-[8px] border border-blue-200 w-8">6</th>
+                                                        <th className="px-1 py-1 text-[8px] border border-blue-200 font-bold bg-blue-100 w-10">Avg</th>
                                                     </React.Fragment>
-                                                ) : (
-                                                    <td key={sub.key} className="px-2 py-2 text-center border border-blue-100">
-                                                        <span className={`px-2 py-1 rounded text-xs ${getScoreColor(avg)}`}>{avg > 0 ? avg : '-'}</span>
-                                                    </td>
-                                                );
-                                            })
+                                                ))}
+                                            </tr>
                                         )}
+                                    </>
+                                )}
+                            </thead>
+                            <tbody className="divide-y divide-blue-50">
+                                {filteredStudents.map((student, idx) => {
+                                    const finalGrade = calculateFinalGrade(student);
+                                    return (
+                                        <tr key={student.id} className="hover:bg-blue-50/30 transition-colors">
+                                            <td className="px-4 py-2 text-center text-gray-500 border border-blue-100 sticky left-0 bg-white z-10 shadow-sm">{idx + 1}</td>
+                                            <td className="px-4 py-2 font-medium text-gray-900 border border-blue-100 sticky left-[48px] bg-white z-10 shadow-sm min-w-[200px]">
+                                                <div>{student.fullName}</div>
+                                                <div className="text-xs text-gray-400 font-mono">{student.nisn}</div>
+                                            </td>
+                                            
+                                            {tableLayout === 'SEMESTER' ? (
+                                                // --- RENDER BODY: BY SEMESTER ---
+                                                [1, 2, 3, 4, 5, 6].map(sem => {
+                                                    const rowAvg = calculateSemesterRowAvg(student, sem);
+                                                    return (
+                                                        <React.Fragment key={sem}>
+                                                            {SUBJECT_MAP.map(sub => {
+                                                                const score = getScore(student, sub.key, sem);
+                                                                return (
+                                                                    <td key={`${sem}-${sub.key}`} className="px-1 py-2 text-center text-[10px] border border-blue-100 min-w-[40px]">
+                                                                        <span className={getScoreColor(score)}>{score > 0 ? score : '-'}</span>
+                                                                    </td>
+                                                                );
+                                                            })}
+                                                            <td className="px-1 py-2 text-center font-bold border border-blue-100 bg-blue-50/50 text-[10px]">
+                                                                <span className={getScoreColor(rowAvg)}>{rowAvg > 0 ? rowAvg : '-'}</span>
+                                                            </td>
+                                                        </React.Fragment>
+                                                    );
+                                                })
+                                            ) : (
+                                                // --- RENDER BODY: BY SUBJECT ---
+                                                SUBJECT_MAP.map(sub => {
+                                                    const avg = calculateSubjectAvg(student, sub.key);
+                                                    return viewDetailScore ? (
+                                                        <React.Fragment key={sub.key}>
+                                                            {[1,2,3,4,5,6].map(sem => {
+                                                                const score = getScore(student, sub.key, sem);
+                                                                return <td key={sem} className="px-1 py-2 text-center text-[10px] text-gray-600 border border-blue-100">{score > 0 ? score : '-'}</td>;
+                                                            })}
+                                                            <td className="px-1 py-2 text-center font-bold border border-blue-100 bg-blue-50/50">
+                                                                <span className={`px-1 rounded text-[10px] ${getScoreColor(avg)}`}>{avg > 0 ? avg : '-'}</span>
+                                                            </td>
+                                                        </React.Fragment>
+                                                    ) : (
+                                                        <td key={sub.key} className="px-2 py-2 text-center border border-blue-100">
+                                                            <span className={`px-2 py-1 rounded text-xs ${getScoreColor(avg)}`}>{avg > 0 ? avg : '-'}</span>
+                                                        </td>
+                                                    );
+                                                })
+                                            )}
 
-                                        <td className="px-4 py-2 text-center font-bold text-blue-700 bg-blue-50/20 border border-blue-100">
-                                            <span className={`px-2 py-1 rounded ${getScoreColor(finalGrade)}`}>{finalGrade > 0 ? finalGrade : '-'}</span>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
+                                            <td className="px-4 py-2 text-center font-bold text-blue-700 bg-blue-50/20 border border-blue-100">
+                                                <span className={`px-2 py-1 rounded ${getScoreColor(finalGrade)}`}>{finalGrade > 0 ? finalGrade : '-'}</span>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    )
                 )}
 
                 {/* --- DETAIL VIEW (CERTIFICATE / TRANSCRIPT) --- */}

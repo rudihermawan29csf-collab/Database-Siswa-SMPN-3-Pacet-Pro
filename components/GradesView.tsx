@@ -96,6 +96,7 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
     let academicYear = '2024/2025';
     let reportDate = new Date().toLocaleDateString('id-ID');
 
+    // Calculate Academic Year from Settings
     if (appSettings?.academicData) {
         if (appSettings.academicData.semesterYears?.[currentLevel]?.[semester]) {
             academicYear = appSettings.academicData.semesterYears[currentLevel][semester];
@@ -146,7 +147,37 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
             const competency = getCompetencyDescription(score, mapItem.full);
             return { no: idx + 1, subject: mapItem.full, score: score, competency: competency };
         });
-        record = { ...record, subjects: filledSubjects };
+        
+        // FIX: Ensure attendance object exists even if missing in DB record
+        const attendance = record.attendance || { sick: 0, permitted: 0, noReason: 0 };
+        
+        record = { ...record, subjects: filledSubjects, attendance: attendance };
+    }
+
+    // --- P5 LOGIC (UPDATED) ---
+    // 1. Check Student Record (Manual Override)
+    let p5DataToRender = record.p5Projects || [];
+
+    // 2. If Empty, Check Admin Settings based on Context (Year-Level-Semester)
+    if (!p5DataToRender.length && appSettings?.p5DataMap) {
+        const p5Key = `${record.year || academicYear}-${currentLevel}-${semester}`;
+        const specificThemes = appSettings.p5DataMap[p5Key];
+        if (specificThemes && specificThemes.length > 0) {
+            p5DataToRender = specificThemes.map((t: any, i: number) => ({
+                no: i + 1,
+                theme: t.theme,
+                description: t.description
+            }));
+        }
+    }
+
+    // 3. Fallback to Old Global Settings (Backward Compatibility)
+    if (!p5DataToRender.length && appSettings?.p5Themes && appSettings.p5Themes.length > 0) {
+         p5DataToRender = appSettings.p5Themes.map((t: any, i: number) => ({
+            no: i + 1,
+            theme: t.theme,
+            description: t.description
+        }));
     }
 
     const classCorrectionKey = `class-${semester}`;
@@ -196,7 +227,19 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
                 <h3 className="font-bold text-sm mb-1">B. DESKRIPSI NILAI P5</h3>
                 <table className="w-full border-collapse border border-black text-xs">
                     <thead className="bg-black text-white text-center"><tr><th className="border border-black p-1 w-8">NO</th><th className="border border-black p-1 w-1/3">TEMA</th><th className="border border-black p-1">DESKRIPSI</th></tr></thead>
-                    <tbody>{record.p5Projects && record.p5Projects.length > 0 ? record.p5Projects.map((p, idx) => (<tr key={idx} className={idx % 2 !== 0 ? 'bg-gray-100' : ''}><td className="border border-black p-1 text-center">{idx + 1}</td><td className="border border-black p-1">{p.theme}</td><td className="border border-black p-1 text-[10px]">{p.description}</td></tr>)) : (<><tr className="bg-gray-100"><td className="border border-black p-1 text-center">1</td><td className="border border-black p-1">Suara Demokrasi</td><td className="border border-black p-1">Berkembang sesuai harapan</td></tr><tr><td className="border border-black p-1 text-center">2</td><td className="border border-black p-1">-</td><td className="border border-black p-1">-</td></tr></>)}</tbody>
+                    <tbody>
+                        {p5DataToRender.length > 0 ? (
+                            p5DataToRender.map((p: any, idx: number) => (
+                                <tr key={idx} className={idx % 2 !== 0 ? 'bg-gray-100' : ''}>
+                                    <td className="border border-black p-1 text-center">{idx + 1}</td>
+                                    <td className="border border-black p-1">{p.theme}</td>
+                                    <td className="border border-black p-1 text-[10px]">{p.description}</td>
+                                </tr>
+                            ))
+                        ) : (
+                            <tr><td colSpan={3} className="border border-black p-2 text-center italic text-gray-500">Tema P5 belum dikonfigurasi untuk Semester ini.</td></tr>
+                        )}
+                    </tbody>
                 </table>
             </div>
             <div className="mb-4 w-1/2">
@@ -210,9 +253,9 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
                 <h3 className="font-bold text-sm mb-1">D. KETIDAKHADIRAN</h3>
                 <table className="w-1/2 border-collapse border border-black text-xs">
                     <tbody>
-                        <tr><td className="border border-black p-1">Sakit</td><td className="border border-black p-1 text-center w-12">{record.attendance.sick || 0}</td><td className="border border-black p-1">Hari</td></tr>
-                        <tr><td className="border border-black p-1">Ijin</td><td className="border border-black p-1 text-center">{record.attendance.permitted || 0}</td><td className="border border-black p-1">Hari</td></tr>
-                        <tr><td className="border border-black p-1">Tanpa Keterangan</td><td className="border border-black p-1 text-center">{record.attendance.noReason || 0}</td><td className="border border-black p-1">Hari</td></tr>
+                        <tr><td className="border border-black p-1">Sakit</td><td className="border border-black p-1 text-center w-12">{record.attendance ? record.attendance.sick || 0 : 0}</td><td className="border border-black p-1">Hari</td></tr>
+                        <tr><td className="border border-black p-1">Ijin</td><td className="border border-black p-1 text-center">{record.attendance ? record.attendance.permitted || 0 : 0}</td><td className="border border-black p-1">Hari</td></tr>
+                        <tr><td className="border border-black p-1">Tanpa Keterangan</td><td className="border border-black p-1 text-center">{record.attendance ? record.attendance.noReason || 0 : 0}</td><td className="border border-black p-1">Hari</td></tr>
                     </tbody>
                 </table>
             </div>
