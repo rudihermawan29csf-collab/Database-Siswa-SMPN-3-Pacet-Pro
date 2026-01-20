@@ -1,14 +1,14 @@
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { DocumentFile } from '../types';
-import { UploadCloud, FileText, Image as ImageIcon, CheckCircle2, AlertCircle, Eye, RefreshCw, Trash2, Lock, Plus } from 'lucide-react';
+import { UploadCloud, FileText, Image as ImageIcon, CheckCircle2, AlertCircle, Eye, RefreshCw, Trash2, Lock, Plus, X, Loader2, Maximize2 } from 'lucide-react';
 
 interface FileManagerProps {
   documents: DocumentFile[];
   onUpload: (file: File, category: string) => void;
   onDelete?: (id: string) => void;
   allowDeleteApproved?: boolean;
-  allowedCategories?: string[]; // New prop for filtering based on settings
+  allowedCategories?: string[]; 
 }
 
 const MASTER_DOCS_LIST = [
@@ -31,12 +31,13 @@ const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
     
     if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
         let id = '';
-        const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-        if (match && match[1]) {
-            id = match[1];
-        } else {
-            const matchId = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-            if (matchId) id = matchId[1];
+        const parts = url.split(/\/d\//);
+        if (parts.length > 1) {
+            id = parts[1].split('/')[0];
+        }
+        if (!id) {
+            const match = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+            if (match) id = match[1];
         }
 
         if (id) {
@@ -50,11 +51,17 @@ const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
 const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete, allowDeleteApproved = false, allowedCategories }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [targetCategory, setTargetCategory] = useState<string>('');
+    const [previewDoc, setPreviewDoc] = useState<DocumentFile | null>(null);
+    const [useFallbackViewer, setUseFallbackViewer] = useState(false);
 
-    // Filter categories based on settings (if provided)
+    // Reset fallback state when doc changes
+    useEffect(() => {
+        setUseFallbackViewer(false);
+    }, [previewDoc]);
+
     const activeCategories = allowedCategories 
         ? MASTER_DOCS_LIST.filter(doc => allowedCategories.includes(doc.id))
-        : MASTER_DOCS_LIST.filter(doc => ['IJAZAH','AKTA','KK','FOTO'].includes(doc.id)); // Fallback default
+        : MASTER_DOCS_LIST.filter(doc => ['IJAZAH','AKTA','KK','FOTO'].includes(doc.id)); 
 
     const handleTriggerUpload = (category: string) => {
         setTargetCategory(category);
@@ -70,7 +77,6 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
         setTargetCategory('');
     };
 
-    // Helper to determine status color
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'APPROVED': return 'bg-green-100 text-green-700 border-green-200';
@@ -79,8 +85,68 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
         }
     };
 
+    const isImage = (doc: DocumentFile) => {
+        return doc.type === 'IMAGE' || doc.name.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp)$/);
+    };
+
     return (
-        <div className="space-y-6 animate-fade-in">
+        <div className="space-y-6 animate-fade-in relative">
+            {/* PREVIEW MODAL */}
+            {previewDoc && (
+                <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                    <div className="relative w-full max-w-5xl h-[85vh] bg-gray-900 rounded-xl flex flex-col overflow-hidden shadow-2xl border border-gray-700">
+                        {/* Modal Header */}
+                        <div className="flex justify-between items-center p-4 bg-gray-800 border-b border-gray-700">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-gray-700 rounded-lg">
+                                    {previewDoc.type === 'PDF' ? <FileText className="w-5 h-5 text-red-400"/> : <ImageIcon className="w-5 h-5 text-blue-400"/>}
+                                </div>
+                                <div>
+                                    <h3 className="text-white font-bold text-sm">{previewDoc.name}</h3>
+                                    <p className="text-gray-400 text-xs">{previewDoc.category}</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <a 
+                                    href={getDriveUrl(previewDoc.url, 'preview')} 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold rounded-lg transition-colors"
+                                >
+                                    Buka Tab Baru
+                                </a>
+                                <button 
+                                    onClick={() => setPreviewDoc(null)} 
+                                    className="p-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Modal Content */}
+                        <div className="flex-1 bg-black/50 flex items-center justify-center overflow-auto p-4 relative">
+                            {!useFallbackViewer && isImage(previewDoc) ? (
+                                <img 
+                                    src={getDriveUrl(previewDoc.url, 'direct')} 
+                                    alt="Preview" 
+                                    className="max-w-full max-h-full object-contain rounded shadow-lg" 
+                                    referrerPolicy="no-referrer"
+                                    onError={() => setUseFallbackViewer(true)}
+                                />
+                            ) : (
+                                <iframe 
+                                    src={getDriveUrl(previewDoc.url, 'preview')} 
+                                    className="w-full h-full rounded bg-white shadow-lg" 
+                                    title="PDF Viewer"
+                                    allow="autoplay"
+                                />
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <input 
                 type="file" 
                 ref={fileInputRef} 
@@ -108,11 +174,15 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
                                 {doc ? (
                                     <>
                                         <div className="w-full h-full flex flex-col items-center justify-center relative">
-                                            {doc.type === 'IMAGE' ? (
+                                            {isImage(doc) ? (
                                                 <img 
                                                     src={getDriveUrl(doc.url, 'direct')} 
                                                     alt={doc.category} 
                                                     className="w-full h-32 object-contain rounded-lg shadow-sm bg-white" 
+                                                    referrerPolicy="no-referrer"
+                                                    onError={(e) => {
+                                                        (e.target as HTMLImageElement).src = 'https://placehold.co/400x300?text=Preview+Error';
+                                                    }}
                                                 />
                                             ) : (
                                                 <div className="w-full h-32 flex flex-col items-center justify-center bg-white rounded-lg border border-gray-200 shadow-sm">
@@ -121,23 +191,19 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
                                                 </div>
                                             )}
                                             
-                                            {/* Status Badge */}
                                             <div className={`absolute -top-2 right-0 px-2 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 shadow-sm border ${getStatusColor(doc.status)}`}>
                                                 {doc.status === 'APPROVED' ? <CheckCircle2 className="w-3 h-3" /> : doc.status === 'REVISION' ? <AlertCircle className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
                                                 {doc.status === 'APPROVED' ? 'Valid' : doc.status === 'REVISION' ? 'Revisi' : 'Verifikasi'}
                                             </div>
                                         </div>
 
-                                        {/* Overlay Actions */}
                                         <div className="absolute inset-0 bg-white/90 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-4 z-10 backdrop-blur-[1px]">
-                                            <a 
-                                                href={getDriveUrl(doc.url, 'preview')} 
-                                                target="_blank" 
-                                                rel="noreferrer" 
+                                            <button 
+                                                onClick={() => setPreviewDoc(doc)}
                                                 className="w-full py-2 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold border border-blue-200 hover:bg-blue-100 flex items-center justify-center"
                                             >
                                                 <Eye className="w-3 h-3 mr-1.5" /> Lihat Dokumen
-                                            </a>
+                                            </button>
                                             
                                             {!isApproved && (
                                                 <button 
@@ -172,7 +238,6 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
                                 )}
                             </div>
 
-                            {/* Footer Status Message */}
                             {doc?.status === 'REVISION' && doc.adminNote && (
                                 <div className="px-3 py-2 bg-red-50 border-t border-red-100 text-[10px] text-red-700">
                                     <span className="font-bold">Admin:</span> "{doc.adminNote}"
@@ -182,7 +247,6 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
                     );
                 })}
 
-                {/* Additional Files Section */}
                 <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center p-6 text-center hover:border-blue-400 transition-colors cursor-pointer" onClick={() => handleTriggerUpload('LAINNYA')}>
                     <div className="w-12 h-12 bg-white rounded-full shadow-sm flex items-center justify-center mb-3">
                         <Plus className="w-6 h-6 text-gray-400" />
@@ -209,7 +273,7 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
                                     </div>
                                 </div>
                                 <div className="flex gap-1">
-                                    <a href={doc.url} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-gray-100 rounded text-blue-600"><Eye className="w-4 h-4"/></a>
+                                    <button onClick={() => setPreviewDoc(doc)} className="p-1.5 hover:bg-gray-100 rounded text-blue-600"><Eye className="w-4 h-4"/></button>
                                     {onDelete && <button onClick={() => onDelete(doc.id)} className="p-1.5 hover:bg-red-50 rounded text-red-600"><Trash2 className="w-4 h-4"/></button>}
                                 </div>
                             </div>

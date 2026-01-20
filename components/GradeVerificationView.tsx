@@ -182,8 +182,18 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   const filteredStudents = useMemo(() => {
       let filtered = students;
       if (selectedClassFilter !== 'ALL') filtered = filtered.filter(s => s.className === selectedClassFilter);
-      if (searchTerm) filtered = filtered.filter(s => s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || s.nisn.includes(searchTerm));
-      return filtered.sort((a, b) => a.fullName.localeCompare(b.fullName));
+      
+      // SAFE SEARCH FILTER
+      if (searchTerm) {
+          const term = searchTerm.toLowerCase();
+          filtered = filtered.filter(s => {
+              const name = (s.fullName || '').toLowerCase();
+              const nisn = (s.nisn || '').toString();
+              return name.includes(term) || nisn.includes(term);
+          });
+      }
+      
+      return filtered.sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
   }, [students, searchTerm, selectedClassFilter]);
 
   // Init Selection logic (handle props target)
@@ -204,7 +214,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       } else {
           setSelectedStudentId('');
       }
-  }, [filteredStudents, targetStudentId]); // Removed selectedStudentId from deps to fix loop, relies on filteredStudents change
+  }, [filteredStudents, targetStudentId]); 
 
   const currentStudent = students.find(s => s.id === selectedStudentId);
   const currentRecord = currentStudent?.academicRecords?.[activeSemester];

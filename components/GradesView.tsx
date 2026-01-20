@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Student, AcademicRecord, CorrectionRequest } from '../types';
-import { Search, FileSpreadsheet, Download, UploadCloud, Trash2, Save, Pencil, X, CheckCircle2, Loader2, LayoutList, ArrowLeft, Printer, FileDown, AlertTriangle, Eye, Activity, School, Send, Files, BookOpen, Award } from 'lucide-react';
+import { Search, FileSpreadsheet, Download, UploadCloud, Trash2, Save, Pencil, X, CheckCircle2, Loader2, LayoutList, ArrowLeft, Printer, FileDown, AlertTriangle, Eye, Activity, School, Send, Files, BookOpen, Award, FileCheck2 } from 'lucide-react';
 import { api } from '../services/api';
 
 interface GradesViewProps {
@@ -29,6 +29,14 @@ const SUBJECT_MAP = [
 ];
 
 // --- HELPER FUNCTIONS ---
+
+const getScoreColor = (score: number) => {
+    if (!score && score !== 0) return '';
+    if (score === 0) return 'text-gray-400';
+    if (score < 70) return 'bg-red-100 text-red-700 font-bold';
+    if (score < 85) return 'bg-yellow-100 text-yellow-800 font-bold';
+    return 'bg-green-100 text-green-700 font-bold';
+};
 
 const getCompetencyDescription = (score: number, subjectName: string) => {
     if (!score) return '-';
@@ -240,17 +248,25 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
 
 // --- MAIN COMPONENT ---
 const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', loggedInStudent, onUpdate }) => {
-  const [searchTerm, setSearchTerm] = useState('');
   const [selectedClass, setSelectedClass] = useState('ALL');
   const [selectedSemester, setSelectedSemester] = useState<number>(1);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   
-  const [isCorrectionModalOpen, setIsCorrectionModalOpen] = useState(false);
-  const [targetCorrection, setTargetCorrection] = useState<any>(null);
   const [appSettings, setAppSettings] = useState<any>(null);
-  
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
+
+  // --- CORRECTION STATE (STUDENT) ---
+  const [isCorrectionModalOpen, setIsCorrectionModalOpen] = useState(false);
+  const [targetCorrection, setTargetCorrection] = useState<{
+      key: string; 
+      label: string; 
+      currentValue: string;
+      type: 'CLASS' | 'GRADE';
+  } | null>(null);
+  const [proposedValue, setProposedValue] = useState('');
+  const [correctionReason, setCorrectionReason] = useState('');
+  const [viewMode, setViewMode] = useState<'RAPOR' | 'DETAIL'>('RAPOR'); // NEW: Switch between Rapor (PDF) and Detail (Table)
 
   useEffect(() => {
       const fetchSettings = async () => {
@@ -276,11 +292,10 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       if (userRole === 'STUDENT' && loggedInStudent) return [loggedInStudent];
       
       return students.filter(s => {
-          const matchSearch = s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || s.nisn.includes(searchTerm);
           const matchClass = selectedClass === 'ALL' || s.className === selectedClass;
-          return matchSearch && matchClass;
+          return matchClass;
       }).sort((a, b) => a.fullName.localeCompare(b.fullName));
-  }, [students, searchTerm, selectedClass, userRole, loggedInStudent]);
+  }, [students, selectedClass, userRole, loggedInStudent]);
 
   useEffect(() => {
       if (userRole === 'STUDENT' && loggedInStudent) {
@@ -362,16 +377,80 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
   };
 
   // --- CORRECTION HANDLER ---
-  const handleCorrectionRequest = (type: 'CLASS' | 'GRADE', data?: any) => {
+  const handleOpenCorrection = (key: string, label: string, currentValue: string, type: 'CLASS' | 'GRADE') => {
       if (userRole !== 'STUDENT') return;
-      setTargetCorrection({ type, data });
+      setTargetCorrection({ key, label, currentValue, type });
+      setProposedValue(currentValue);
+      setCorrectionReason('');
       setIsCorrectionModalOpen(true);
+  };
+
+  const submitCorrection = async () => {
+      if (!selectedStudent || !targetCorrection) return;
+      if (!proposedValue || !correctionReason.trim()) { alert("Mohon lengkapi data revisi."); return; }
+      
+      const finalKey = targetCorrection.type === 'CLASS' ? `class-${selectedSemester}` : targetCorrection.key;
+      const newRequest: CorrectionRequest = {
+          id: Math.random().toString(36).substr(2, 9),
+          fieldKey: finalKey,
+          fieldName: targetCorrection.label,
+          originalValue: targetCorrection.currentValue,
+          proposedValue: proposedValue,
+          studentReason: correctionReason,
+          status: 'PENDING',
+          requestDate: new Date().toISOString(),
+      };
+      
+      const updatedStudent = { ...selectedStudent };
+      if (!updatedStudent.correctionRequests) updatedStudent.correctionRequests = [];
+      updatedStudent.correctionRequests = updatedStudent.correctionRequests.filter(r => !(r.fieldKey === finalKey && r.status === 'PENDING'));
+      updatedStudent.correctionRequests.push(newRequest);
+      
+      if (onUpdate) { await api.updateStudent(updatedStudent); onUpdate(); }
+      
+      setSelectedStudent(updatedStudent); // Update local state immediately
+      setIsCorrectionModalOpen(false); 
+      alert("✅ Pengajuan revisi berhasil dikirim.");
+  };
+
+  const getPendingRequest = (key: string) => {
+      return selectedStudent?.correctionRequests?.find(r => r.fieldKey === key && r.status === 'PENDING');
   };
 
   // IF SINGLE STUDENT SELECTED
   if (selectedStudent) {
+      const currentRecord = selectedStudent.academicRecords?.[selectedSemester];
+      
+      // Calculate Display Class based on Semester
+      let displayClass = currentRecord?.className || selectedStudent.className;
+      const classCorrectionKey = `class-${selectedSemester}`;
+      const classPending = getPendingRequest(classCorrectionKey);
+
       return (
           <div className="flex flex-col h-full animate-fade-in space-y-4">
+              
+              {/* CORRECTION MODAL */}
+              {isCorrectionModalOpen && targetCorrection && (
+                  <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform scale-100 transition-all">
+                          <div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="text-lg font-bold text-gray-800">Ajukan Revisi Data</h3><button onClick={() => setIsCorrectionModalOpen(false)}><X className="w-5 h-5 text-gray-400" /></button></div>
+                          <div className="mb-4 bg-blue-50 p-3 rounded border border-blue-100"><p className="text-xs text-gray-500 uppercase">{targetCorrection.label} (Saat Ini)</p><p className="text-sm font-bold text-gray-700">{targetCorrection.currentValue || '-'}</p></div>
+                          <div className="space-y-4">
+                              <div>
+                                  <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Data Baru / Usulan</label>
+                                  {targetCorrection.type === 'CLASS' ? (
+                                      <select className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none font-bold" value={proposedValue} onChange={(e) => setProposedValue(e.target.value)}>{CLASS_LIST.map(c => <option key={c} value={c}>{c}</option>)}</select>
+                                  ) : (
+                                      <input type="number" className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none font-bold" value={proposedValue} onChange={(e) => setProposedValue(e.target.value)} placeholder="Masukkan nilai yang benar" />
+                                  )}
+                              </div>
+                              <div><label className="block text-xs font-bold text-gray-600 uppercase mb-1">Alasan Revisi</label><textarea className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" rows={2} placeholder="Jelaskan alasan perubahan..." value={correctionReason} onChange={(e) => setCorrectionReason(e.target.value)} /></div>
+                          </div>
+                          <div className="flex gap-2 mt-6"><button onClick={() => setIsCorrectionModalOpen(false)} className="flex-1 py-2 bg-gray-100 text-gray-600 font-bold rounded-lg text-sm hover:bg-gray-200">Batal</button><button onClick={submitCorrection} className="flex-1 py-2 bg-blue-600 text-white font-bold rounded-lg text-sm hover:bg-blue-700 flex items-center justify-center gap-2"><Send className="w-3 h-3" /> Kirim</button></div>
+                      </div>
+                  </div>
+              )}
+
               <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
                   <div className="flex items-center gap-3">
                       {userRole !== 'STUDENT' && (
@@ -383,7 +462,6 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                   </div>
                   
                   <div className="flex gap-2 items-center">
-                      <span className="text-xs font-bold text-gray-500 mr-2">Pilih Semester:</span>
                       <div className="flex bg-gray-100 p-1 rounded-lg">
                           {[1, 2, 3, 4, 5, 6].map(sem => (
                               <button 
@@ -396,29 +474,101 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                           ))}
                       </div>
                       
-                      <button 
-                          onClick={handleDownloadPDF}
-                          disabled={isGenerating}
-                          className="ml-4 flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium shadow-lg shadow-blue-500/30 disabled:opacity-50"
-                      >
-                          {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileDown className="w-4 h-4 mr-2" />}
-                          Download PDF (F4)
-                      </button>
+                      {userRole === 'STUDENT' && (
+                          <div className="flex bg-gray-100 p-1 rounded-lg ml-4">
+                              <button onClick={() => setViewMode('RAPOR')} className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 transition-all ${viewMode === 'RAPOR' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}><Printer className="w-3 h-3"/> Cetak PDF</button>
+                              <button onClick={() => setViewMode('DETAIL')} className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 transition-all ${viewMode === 'DETAIL' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}><Pencil className="w-3 h-3"/> Koreksi Nilai</button>
+                          </div>
+                      )}
+
+                      {userRole !== 'STUDENT' && (
+                          <button 
+                              onClick={handleDownloadPDF}
+                              disabled={isGenerating}
+                              className="ml-4 flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium shadow-lg shadow-blue-500/30 disabled:opacity-50"
+                          >
+                              {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileDown className="w-4 h-4 mr-2" />}
+                              Download PDF (F4)
+                          </button>
+                      )}
                   </div>
               </div>
 
-              {/* PREVIEW CONTAINER */}
-              <div className="bg-white p-4 md:p-8 rounded-xl border border-gray-200 shadow-sm flex-1 overflow-auto flex justify-center bg-gray-50/50 pb-32">
-                  <div id="report-content-print">
-                      <ReportTemplate 
-                          student={selectedStudent} 
-                          semester={selectedSemester} 
-                          appSettings={appSettings} 
-                          userRole={userRole}
-                          onCorrectionRequest={handleCorrectionRequest}
-                      />
+              {/* VIEW MODE: PDF PREVIEW */}
+              {viewMode === 'RAPOR' && (
+                  <div className="bg-white p-4 md:p-8 rounded-xl border border-gray-200 shadow-sm flex-1 overflow-auto flex justify-center bg-gray-50/50 pb-32">
+                      <div id="report-content-print">
+                          <ReportTemplate 
+                              student={selectedStudent} 
+                              semester={selectedSemester} 
+                              appSettings={appSettings} 
+                              userRole={userRole}
+                          />
+                      </div>
                   </div>
-              </div>
+              )}
+
+              {/* VIEW MODE: INTERACTIVE TABLE FOR CORRECTION */}
+              {viewMode === 'DETAIL' && (
+                  <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex-1 overflow-auto pb-32">
+                      <div className="mb-6 border-b-2 border-gray-100 pb-4">
+                          <div className="flex justify-between items-center text-sm font-bold text-gray-900 mb-2">
+                              <span>NAMA: {selectedStudent.fullName.toUpperCase()}</span>
+                              <span 
+                                  className={`flex items-center gap-2 px-2 py-1 rounded transition-colors ${classPending ? 'bg-yellow-100 text-yellow-800 border border-yellow-300' : 'bg-gray-100 hover:bg-blue-50 cursor-pointer text-gray-700'}`}
+                                  onClick={() => !classPending && handleOpenCorrection('className', 'KELAS', displayClass, 'CLASS')}
+                                  title="Klik untuk mengajukan koreksi kelas"
+                              >
+                                  KELAS: {classPending ? classPending.proposedValue : displayClass}
+                                  {classPending ? <span className="text-[9px] bg-yellow-300 border border-yellow-400 px-1 rounded font-bold text-yellow-900">Menunggu Verifikasi</span> : <Pencil className="w-3 h-3 text-blue-500" />}
+                              </span>
+                          </div>
+                      </div>
+
+                      {currentRecord ? (
+                          <table className="w-full text-sm border-collapse">
+                              <thead>
+                                  <tr className="bg-gray-50 border-y-2 border-gray-200 text-xs font-bold text-gray-700 uppercase">
+                                      <th className="py-3 text-left pl-4">Mata Pelajaran</th>
+                                      <th className="py-3 text-center w-32">Nilai Akhir</th>
+                                      <th className="py-3 text-left pl-4">Capaian Kompetensi</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                  {SUBJECT_MAP.map((mapItem, idx) => {
+                                      // Logic to find subject score safely
+                                      const existingSub = currentRecord.subjects.find(s => 
+                                          s.subject === mapItem.full || s.subject.startsWith(mapItem.key) || (mapItem.key === 'PAI' && s.subject.includes('Agama'))
+                                      );
+                                      const score = existingSub ? existingSub.score : 0;
+                                      const competency = getCompetencyDescription(score, mapItem.full);
+                                      
+                                      const gradeKey = `grade-${selectedSemester}-${mapItem.full}`;
+                                      const gradePending = getPendingRequest(gradeKey);
+
+                                      return (
+                                          <tr key={idx} className="hover:bg-blue-50/50 transition-colors">
+                                              <td className="py-3 pl-4 font-medium text-gray-800">{mapItem.full}</td>
+                                              <td className="py-3 text-center">
+                                                  <div 
+                                                      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border transition-all cursor-pointer shadow-sm ${gradePending ? 'bg-yellow-50 border-yellow-300 text-yellow-800' : 'bg-white border-gray-200 hover:border-blue-400 hover:text-blue-700 text-gray-900'}`}
+                                                      onClick={() => !gradePending && handleOpenCorrection(gradeKey, `Nilai ${mapItem.key} (Sem ${selectedSemester})`, String(score), 'GRADE')}
+                                                      title="Klik untuk mengajukan revisi nilai"
+                                                  >
+                                                      <span className="font-bold">{gradePending ? gradePending.proposedValue : score}</span>
+                                                      {gradePending ? <Loader2 className="w-3 h-3 animate-spin"/> : <Pencil className="w-3 h-3 opacity-30" />}
+                                                  </div>
+                                                  {gradePending && <div className="text-[9px] text-yellow-600 font-bold mt-1">Sedang Diverifikasi</div>}
+                                              </td>
+                                              <td className="py-3 pl-4 text-xs text-gray-500 italic">{competency}</td>
+                                          </tr>
+                                      );
+                                  })}
+                              </tbody>
+                          </table>
+                      ) : <div className="text-center py-10 text-gray-400 italic">Data nilai belum diinput oleh Admin.</div>}
+                  </div>
+              )}
           </div>
       );
   }
@@ -439,11 +589,6 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
             </div>
             
             <div className="flex gap-2 w-full xl:w-auto">
-                <div className="relative flex-1 md:w-64">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <input type="text" placeholder="Cari Siswa..." className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-lg text-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                </div>
-                
                 {userRole !== 'STUDENT' && (
                     <button 
                         onClick={handleDownloadBatch} 

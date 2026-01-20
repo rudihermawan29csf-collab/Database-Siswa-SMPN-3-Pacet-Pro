@@ -15,7 +15,6 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
   const [viewMode, setViewMode] = useState<'LIST' | 'DETAIL'>('LIST');
   const [detailType, setDetailType] = useState<'CERTIFICATE' | 'TRANSCRIPT'>('CERTIFICATE');
   
-  const [searchTerm, setSearchTerm] = useState('');
   const [dbClassFilter, setDbClassFilter] = useState<string>('ALL');
   const [viewDetailScore, setViewDetailScore] = useState(false); 
   const [tableLayout, setTableLayout] = useState<'SUBJECT' | 'SEMESTER'>('SEMESTER'); 
@@ -109,9 +108,8 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
   const effectiveStudents = (userRole === 'STUDENT' && loggedInStudent) ? [loggedInStudent] : students;
 
   const filteredStudents = effectiveStudents.filter(s => {
-      const matchSearch = s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || s.nisn.includes(searchTerm);
       const matchClass = userRole === 'STUDENT' ? true : (dbClassFilter === 'ALL' || s.className === dbClassFilter);
-      return matchSearch && matchClass;
+      return matchClass;
   });
 
   // --- LOGIC NILAI ---
@@ -414,7 +412,6 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
 
                     {(viewMode === 'LIST' || activeTab === 'NILAI') && (
                         <>
-                            <div className="relative flex-1 md:w-48"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-3 h-3" /><input type="text" placeholder="Cari..." className="w-full pl-8 pr-4 py-2 bg-gray-100 rounded-lg text-xs outline-none focus:bg-white focus:ring-2 focus:ring-blue-200 transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
                             <button onClick={handleDownloadExcel} className="bg-green-600 text-white px-3 py-2 rounded-lg text-xs font-bold hover:bg-green-700 flex items-center gap-1 shadow-sm"><FileSpreadsheet className="w-4 h-4" /> Export</button>
                         </>
                     )}

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Student } from '../types';
 import { Search, Filter, AlertCircle, CheckCircle2, ChevronRight, BookOpen, ClipboardList, FolderOpen, FileText, ArrowLeft, Calendar, UserCheck, LayoutDashboard, ChevronDown, ChevronUp } from 'lucide-react';
@@ -36,7 +37,7 @@ const analyzeStudent = (student: Student) => {
     // 1. Bio (Buku Induk)
     const missingBioFields = [];
     if (!student.nisn) missingBioFields.push('NISN');
-    if (!student.dapodik.nik) missingBioFields.push('NIK');
+    if (!student.dapodik?.nik) missingBioFields.push('NIK'); // Safe Access
     if (!student.address || student.address === '-') missingBioFields.push('Alamat');
     if (!student.father.name || student.father.name === 'Nama Ayah') missingBioFields.push('Nama Ayah');
     if (!student.mother.name || student.mother.name === 'Nama Ibu') missingBioFields.push('Nama Ibu');
@@ -103,7 +104,7 @@ const StudentDetailCard: React.FC<{ student: Student }> = ({ student }) => {
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-6">
             <div className="flex items-center gap-4 mb-6 border-b pb-4">
                 <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl">
-                    {student.fullName.charAt(0)}
+                    {student.fullName ? student.fullName.charAt(0) : '?'}
                 </div>
                 <div>
                     <h3 className="text-lg font-bold text-gray-800">{student.fullName}</h3>
@@ -185,8 +186,15 @@ const MonitoringView: React.FC<MonitoringViewProps> = ({ students, userRole, log
           return [loggedInStudent];
       }
       let filtered = students.filter(s => s.className === selectedClass);
+      
+      // SAFE SEARCH FILTER
       if (searchTerm) {
-          filtered = filtered.filter(s => s.fullName.toLowerCase().includes(searchTerm.toLowerCase()));
+          const term = searchTerm.toLowerCase();
+          filtered = filtered.filter(s => {
+              const name = (s.fullName || '').toLowerCase();
+              const nisn = (s.nisn || '').toString();
+              return name.includes(term) || nisn.includes(term);
+          });
       }
       return filtered;
   }, [students, selectedClass, searchTerm, userRole, loggedInStudent]);
@@ -268,26 +276,25 @@ const MonitoringView: React.FC<MonitoringViewProps> = ({ students, userRole, log
                                                                 <p className="font-bold mb-1 text-gray-600">Buku Induk</p>
                                                                 {analysis.missingBioFields.length > 0 ? (
                                                                     <ul className="list-disc pl-4 text-red-600">{analysis.missingBioFields.map(f => <li key={f}>{f}</li>)}</ul>
-                                                                ) : <span className="text-green-600 font-medium">Lengkap</span>}
+                                                                ) : <span className="text-green-600 font-bold flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> Lengkap</span>}
                                                             </div>
                                                             <div>
-                                                                <p className="font-bold mb-1 text-gray-600">Nilai (6 Semester)</p>
+                                                                <p className="font-bold mb-1 text-gray-600">Nilai (6 Sem)</p>
                                                                 {analysis.missingGradesSemesters.length > 0 ? (
-                                                                    <ul className="list-disc pl-4 text-red-600">{analysis.missingGradesSemesters.map(s => <li key={s}>Semester {s}</li>)}</ul>
-                                                                ) : <span className="text-green-600 font-medium">Lengkap</span>}
+                                                                    <ul className="list-disc pl-4 text-red-600">{analysis.missingGradesSemesters.map(s => <li key={s}>Sem {s} Kosong</li>)}</ul>
+                                                                ) : <span className="text-green-600 font-bold flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> Lengkap</span>}
                                                             </div>
                                                             <div>
-                                                                <p className="font-bold mb-1 text-gray-600">Dokumen Wajib</p>
+                                                                <p className="font-bold mb-1 text-gray-600">Dokumen</p>
                                                                 {analysis.missingDocs.length > 0 ? (
                                                                     <ul className="list-disc pl-4 text-red-600">{analysis.missingDocs.map((d: any) => <li key={d}>{d}</li>)}</ul>
-                                                                ) : <span className="text-green-600 font-medium">Lengkap</span>}
+                                                                ) : <span className="text-green-600 font-bold flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> Lengkap</span>}
                                                             </div>
                                                             <div>
-                                                                <p className="font-bold mb-1 text-gray-600">Rapor (S1-S6)</p>
-                                                                <p className="text-gray-500 mb-1">Target: {analysis.raporPageCount * 6} Halaman Total</p>
+                                                                <p className="font-bold mb-1 text-gray-600">Rapor</p>
                                                                 {analysis.missingRaporPages > 0 ? (
-                                                                    <span className="text-red-600">Kurang {analysis.missingRaporPages} Halaman</span>
-                                                                ) : <span className="text-green-600 font-medium">Lengkap</span>}
+                                                                    <p className="text-red-600">Kurang {analysis.missingRaporPages} Halaman</p>
+                                                                ) : <span className="text-green-600 font-bold flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> Lengkap</span>}
                                                             </div>
                                                         </div>
                                                     </div>
@@ -297,7 +304,11 @@ const MonitoringView: React.FC<MonitoringViewProps> = ({ students, userRole, log
                                     </React.Fragment>
                                 );
                             }) : (
-                                 <tr><td colSpan={6} className="text-center py-10 text-gray-400">Tidak ada siswa ditemukan</td></tr>
+                                <tr>
+                                    <td colSpan={6} className="px-6 py-10 text-center text-gray-500">
+                                        Tidak ada data siswa ditemukan.
+                                    </td>
+                                </tr>
                             )}
                         </tbody>
                     </table>

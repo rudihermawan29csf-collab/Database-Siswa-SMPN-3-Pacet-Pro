@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { Student, AdminMessage } from '../types';
 import { Search, Filter, AlertCircle, CheckCircle2, ChevronRight, MessageSquare, Send, BookOpen, ClipboardList, FolderOpen, FileText, ArrowLeft, X, Calendar } from 'lucide-react';
@@ -22,8 +23,14 @@ const ReportsView: React.FC<ReportsViewProps> = ({ students, onUpdate }) => {
 
   const filteredStudents = useMemo(() => {
       let filtered = students.filter(s => s.className === selectedClass);
+      
       if (searchTerm) {
-          filtered = filtered.filter(s => s.fullName.toLowerCase().includes(searchTerm.toLowerCase()));
+          const term = searchTerm.toLowerCase();
+          filtered = filtered.filter(s => {
+              const name = (s.fullName || '').toLowerCase();
+              const nisn = (s.nisn || '').toString();
+              return name.includes(term) || nisn.includes(term);
+          });
       }
       return filtered;
   }, [students, selectedClass, searchTerm]);
@@ -33,7 +40,7 @@ const ReportsView: React.FC<ReportsViewProps> = ({ students, onUpdate }) => {
       // 1. Bio (Buku Induk)
       const missingBioFields = [];
       if (!student.nisn) missingBioFields.push('NISN');
-      if (!student.dapodik.nik) missingBioFields.push('NIK');
+      if (!student.dapodik?.nik) missingBioFields.push('NIK'); // Safe access
       if (!student.address || student.address === '-') missingBioFields.push('Alamat');
       if (!student.father.name || student.father.name === 'Nama Ayah') missingBioFields.push('Nama Ayah');
       if (!student.mother.name || student.mother.name === 'Nama Ibu') missingBioFields.push('Nama Ibu');

@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import { Search, Plus, Pencil, Trash2, Save, X, Loader2, Download, UploadCloud, RotateCcw, User, MapPin, Users, Heart, Wallet, Filter, CheckSquare, Square, FileSpreadsheet, Check, AlertCircle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Save, X, Loader2, UploadCloud, User, MapPin, Users, Heart, Wallet, Filter, CheckSquare, Square, FileSpreadsheet, Check, AlertCircle } from 'lucide-react';
 import { Student } from '../types';
 import { api } from '../services/api';
 
@@ -12,7 +12,6 @@ interface DatabaseViewProps {
 const CLASS_OPTIONS = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
 
 const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents }) => {
-  const [searchTerm, setSearchTerm] = useState('');
   const [classFilter, setClassFilter] = useState('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -79,13 +78,10 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
   // Filter Logic
   const filteredStudents = useMemo(() => {
       return students.filter(s => {
-          const matchSearch = s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                              s.nisn.includes(searchTerm) ||
-                              s.nis.includes(searchTerm);
           const matchClass = classFilter === 'ALL' || s.className === classFilter;
-          return matchSearch && matchClass;
+          return matchClass;
       });
-  }, [students, searchTerm, classFilter]);
+  }, [students, classFilter]);
 
   // --- SELECTION HANDLERS ---
   const toggleSelection = (id: string) => {
@@ -468,11 +464,6 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                 >
                     {uniqueClasses.map(c => <option key={c} value={c}>{c === 'ALL' ? 'Semua Kelas' : c}</option>)}
                 </select>
-            </div>
-
-            <div className="relative flex-1 md:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input type="text" placeholder="Cari Nama / NISN..." className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
             </div>
             
             <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0">

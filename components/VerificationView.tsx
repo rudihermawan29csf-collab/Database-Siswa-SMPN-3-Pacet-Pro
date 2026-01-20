@@ -1,20 +1,19 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Student, CorrectionRequest } from '../types';
 import { 
-  CheckCircle2, Loader2, ZoomIn, ZoomOut, Maximize2, AlertCircle, ExternalLink, FileText, ImageIcon, FileType, Save, Pencil, Activity, Eye, RefreshCw, X, Search, ListChecks, XCircle, Filter, ScrollText
+  CheckCircle2, FileText, Maximize2, ZoomIn, ZoomOut, AlertCircle, ExternalLink, ImageIcon, FileType, Save, Pencil, Activity, Eye, RefreshCw, X, Search, ListChecks, XCircle, Filter, ScrollText, User, MapPin, Users, Heart, Wallet, Loader2
 } from 'lucide-react';
 import { api } from '../services/api';
 
 interface VerificationViewProps {
   students: Student[];
-  targetStudentId?: string; // Prop untuk navigasi dari notifikasi
+  targetStudentId?: string;
   onUpdate?: () => void;
   onSave?: (student: Student) => void;
   currentUser?: { name: string; role: string }; 
 }
 
-// ... (Helper functions getDriveUrl, PDFPageCanvas remain the same) ...
 const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
     if (!url) return '';
     if (url.startsWith('blob:')) return url; 
@@ -81,39 +80,32 @@ const PDFPageCanvas: React.FC<{ pdf: any; pageNum: number; scale: number }> = ({
 const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStudentId, onUpdate, onSave, currentUser }) => {
   const [selectedClass, setSelectedClass] = useState<string>('');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
-  const [activeDocType, setActiveDocType] = useState<string>('');
+  const [activeDocType, setActiveDocType] = useState<string>('AKTA');
   const [zoomLevel, setZoomLevel] = useState<number>(1.0); 
   const [layoutMode, setLayoutMode] = useState<'split' | 'full-doc'>('split');
   const [availableDocTypes, setAvailableDocTypes] = useState<any[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
   
-  // Actions
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionNote, setRejectionNote] = useState('');
   const [isSaving, setIsSaving] = useState(false); 
   const [forceUpdate, setForceUpdate] = useState(0);
 
-  // Edit Data State
   const [isEditingData, setIsEditingData] = useState(false);
   const [editFormData, setEditFormData] = useState<Student | null>(null);
 
-  // Data Verification State
   const [adminVerifyModalOpen, setAdminVerifyModalOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<CorrectionRequest | null>(null);
   const [adminResponseNote, setAdminResponseNote] = useState('');
 
-  // PDF States
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState(false);
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [numPages, setNumPages] = useState(0);
   const [useFallbackViewer, setUseFallbackViewer] = useState(false);
 
-  // Load Config
   useEffect(() => {
       const loadConfig = async () => {
           try {
-              // Master Docs
               const MASTER_LIST = [
                   { id: 'AKTA', label: 'Akta Kelahiran' }, 
                   { id: 'KK', label: 'Kartu Keluarga' },
@@ -124,20 +116,18 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                   { id: 'KIP', label: 'KIP/PKH' },
                   { id: 'IJAZAH', label: 'Ijazah SD' }, 
                   { id: 'SKL', label: 'Surat Ket. Lulus' },
+                  { id: 'KARTU_PELAJAR', label: 'Kartu Pelajar' }
               ];
 
-              // Try fetch settings
               const settings = await api.getAppSettings();
-              let allowedDocs = ['AKTA', 'KK', 'FOTO', 'KTP_AYAH', 'KTP_IBU']; // Default Buku Induk Verification Docs
+              let allowedDocs = ['AKTA', 'KK', 'FOTO', 'KTP_AYAH', 'KTP_IBU'];
 
               if (settings && settings.docConfig && settings.docConfig.indukVerification) {
                   allowedDocs = settings.docConfig.indukVerification;
               }
 
-              // Filter MASTER_LIST based on allowedDocs
               const filtered = MASTER_LIST.filter(d => allowedDocs.includes(d.id));
               
-              // If filtered is empty (edge case), use default
               if (filtered.length === 0) {
                   setAvailableDocTypes([{ id: 'AKTA', label: 'Akta Kelahiran' }, { id: 'KK', label: 'Kartu Keluarga' }]);
               } else {
@@ -149,7 +139,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               }
           } catch (e) {
               console.error("Config load error", e);
-              // Fallback
               setAvailableDocTypes([{ id: 'AKTA', label: 'Akta Kelahiran' }, { id: 'KK', label: 'Kartu Keluarga' }]);
               setActiveDocType('AKTA');
           }
@@ -158,15 +147,11 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       loadConfig();
   }, []);
 
-  // Memoized Data
   const uniqueClasses = useMemo(() => Array.from(new Set(students.map(s => s.className))).sort(), [students]);
   const studentsInClass = useMemo(() => {
       let list = students.filter(s => s.className === selectedClass);
-      if (searchTerm) {
-          list = list.filter(s => s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || s.nisn.includes(searchTerm));
-      }
       return list;
-  }, [students, selectedClass, searchTerm]);
+  }, [students, selectedClass]);
   const currentStudent = useMemo(() => students.find(s => s.id === selectedStudentId), [students, selectedStudentId]);
   
   const currentDoc = useMemo(() => {
@@ -174,7 +159,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       return currentStudent.documents.find(d => d.category === activeDocType);
   }, [currentStudent, activeDocType, forceUpdate]);
 
-  // Init Selection logic (HANDLE TARGET STUDENT ID FROM NOTIFICATION)
   useEffect(() => {
       if (targetStudentId) {
           const target = students.find(s => s.id === targetStudentId);
@@ -193,7 +177,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       }
   }, [studentsInClass, targetStudentId]);
 
-  // Detect file type robustly
   const isImageFile = (doc: any) => {
       if (!doc) return false;
       return doc.type === 'IMAGE' || /\.(jpg|jpeg|png|gif|webp|bmp|heic)$/i.test(doc.name);
@@ -201,7 +184,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   const isDriveUrl = currentDoc && (currentDoc.url.includes('drive.google.com') || currentDoc.url.includes('docs.google.com') || currentDoc.url.includes('googleusercontent.com'));
 
-  // ... (Viewer Logic Effect) ...
   useEffect(() => {
     let isMounted = true;
     const controller = new AbortController();
@@ -249,7 +231,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       }
   };
 
-  // ... (Edit Data Logic) ...
   const handleStartEdit = () => { if (currentStudent) { setEditFormData(JSON.parse(JSON.stringify(currentStudent))); setIsEditingData(true); } };
   const handleCancelEdit = () => { setIsEditingData(false); setEditFormData(null); };
   const handleSaveData = async () => {
@@ -274,7 +255,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   };
   const getNestedValue = (obj: any, path: string) => { if (!path) return ''; return path.split('.').reduce((o, i) => (o ? o[i] : ''), obj); };
 
-  // --- ADMIN DATA VERIFICATION HANDLERS (REQUESTS) ---
   const handleAdminVerifyClick = (request: CorrectionRequest) => {
       setSelectedRequest(request);
       setAdminResponseNote(request.adminNote || '');
@@ -319,13 +299,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       });
   }, [currentStudent]);
 
-  // --- REUSABLE COMPONENTS ---
-  const SubHeader = ({ children }: { children?: React.ReactNode }) => (
-    <div className="bg-gray-200 px-2 py-1 text-[10px] font-bold border-y border-gray-300 text-center uppercase text-gray-700 mt-2 mb-1">
-        {children}
-    </div>
-  );
-
   const FormField = ({ label, value, fieldKey }: { label: string, value: string | number | undefined, fieldKey?: string }) => {
       const pendingReq = fieldKey ? currentStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING') : null;
       const displayValue = isEditingData && editFormData && fieldKey ? getNestedValue(editFormData, fieldKey) : value;
@@ -355,6 +328,12 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
         </div>
       );
   };
+
+  const SectionHeader = ({ icon: Icon, title }: { icon: any, title: string }) => (
+      <div className="flex items-center gap-2 text-sm font-bold text-blue-800 border-b border-blue-200 pb-2 mb-3 mt-6 uppercase">
+          <Icon className="w-4 h-4" /> {title}
+      </div>
+  );
 
   return (
     <div className="flex flex-col h-full animate-fade-in relative">
@@ -391,7 +370,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
         <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col xl:flex-row justify-between items-center gap-4 mb-4">
             <div className="flex gap-2 w-full xl:w-auto">
                 <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200"><Filter className="w-4 h-4 text-gray-500" /><select className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-24 md:w-auto" value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}><option value="">Pilih Kelas</option>{uniqueClasses.map(c => <option key={c} value={c}>Kelas {c}</option>)}</select></div>
-                <div className="relative flex-1 md:w-64"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" /><input type="text" placeholder="Cari Siswa..." className="w-full pl-9 pr-4 py-2 bg-gray-50 rounded-lg text-sm border border-gray-200 focus:bg-white transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
                 <select className="pl-3 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-bold text-gray-700 w-full md:w-auto" value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>{studentsInClass.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}</select>
             </div>
             <div className="flex gap-1 overflow-x-auto max-w-full pb-1 no-scrollbar">{availableDocTypes.map(type => { const doc = currentStudent?.documents.find(d => d.category === type.id); let colorClass = 'bg-white text-gray-600 border-gray-200'; if (doc?.status === 'APPROVED') colorClass = 'bg-green-50 text-green-700 border-green-200'; if (doc?.status === 'REVISION') colorClass = 'bg-red-50 text-red-700 border-red-200'; if (doc?.status === 'PENDING') colorClass = 'bg-yellow-50 text-yellow-700 border-yellow-200'; return (<button key={type.id} onClick={() => setActiveDocType(type.id)} className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors border ${activeDocType === type.id ? 'ring-2 ring-blue-500 border-blue-500 z-10' : ''} ${colorClass} hover:shadow-sm`}>{type.label}</button>); })}</div>
@@ -411,7 +389,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
                 <div className={`bg-white rounded-xl border border-gray-200 flex flex-col shadow-sm transition-all duration-300 ${layoutMode === 'full-doc' ? 'hidden' : 'flex-1'} overflow-hidden`}>
                     <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-                        <div><h3 className="font-bold text-gray-800 flex items-center gap-2"><ScrollText className="w-5 h-5 text-blue-600" /> Data Buku Induk</h3><p className="text-xs text-gray-500 mt-1">Data referensi untuk verifikasi dokumen.</p></div>
+                        <div><h3 className="font-bold text-gray-800 flex items-center gap-2"><ListChecks className="w-5 h-5 text-blue-600" /> Data Siswa</h3><p className="text-xs text-gray-500 mt-1">Cek kesesuaian data dengan dokumen.</p></div>
                         <div className="flex gap-2">
                             {isEditingData ? (<><button onClick={handleCancelEdit} disabled={isSaving} className="px-2 py-1 bg-white border border-gray-300 rounded text-[10px] hover:bg-gray-50 flex items-center gap-1"><X className="w-3 h-3" /> Batal</button><button onClick={handleSaveData} disabled={isSaving} className="px-2 py-1 bg-green-600 text-white rounded text-[10px] hover:bg-green-700 flex items-center gap-1">{isSaving ? <Loader2 className="w-3 h-3 animate-spin"/> : <Save className="w-3 h-3" />} Simpan</button></>) : (<button onClick={handleStartEdit} className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-[10px] font-bold hover:bg-blue-200 flex items-center gap-1"><Pencil className="w-3 h-3" /> Edit Data</button>)}
                         </div>
@@ -420,119 +398,168 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                     <div className="flex-1 flex flex-col overflow-hidden">
                         {allRequests.length > 0 && !isEditingData && (
                             <div className="border-b border-gray-200 bg-yellow-50 p-3 overflow-y-auto max-h-48">
-                                <div className="text-xs font-bold text-yellow-800 flex items-center gap-2 mb-2"><ListChecks className="w-4 h-4" /> Pengajuan Perubahan Data ({allRequests.length})</div>
+                                <div className="text-xs font-bold text-yellow-800 flex items-center gap-2 mb-2"><ListChecks className="w-4 h-4" /> Pengajuan Perubahan ({allRequests.length})</div>
                                 <div className="space-y-2">{allRequests.map(req => (<div key={req.id} className="bg-white border border-yellow-200 rounded-lg p-2 shadow-sm cursor-pointer hover:bg-yellow-100 transition-colors" onClick={() => handleAdminVerifyClick(req)}><div className="flex justify-between items-center"><p className="text-xs font-bold text-gray-800">{req.fieldName}</p><span className={`text-[9px] px-1 rounded font-bold ${req.status === 'PENDING' ? 'bg-yellow-200 text-yellow-800' : req.status === 'APPROVED' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{req.status}</span></div><div className="mt-1 flex items-center gap-1 text-[10px] text-gray-500"><span className="line-through decoration-red-300 truncate max-w-[40%]">{req.originalValue}</span><span>➔</span><span className="font-bold text-gray-800">{req.proposedValue}</span></div></div>))}</div>
                             </div>
                         )}
 
-                        <div className="flex-1 overflow-auto p-4 custom-scrollbar">
-                            <SubHeader>Identitas Peserta Didik</SubHeader>
-                            <FormField label="Nama Lengkap" value={currentStudent.fullName} fieldKey="fullName" />
-                            <div className="grid grid-cols-2 gap-4">
-                                <FormField label="NISN" value={currentStudent.nisn} fieldKey="nisn" />
-                                <FormField label="NIS" value={currentStudent.nis} fieldKey="nis" />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <FormField label="NIK" value={currentStudent.dapodik.nik} fieldKey="dapodik.nik" />
-                                <FormField label="No KK" value={currentStudent.dapodik.noKK} fieldKey="dapodik.noKK" />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <FormField label="Tempat Lahir" value={currentStudent.birthPlace} fieldKey="birthPlace" />
-                                <FormField label="Tanggal Lahir" value={currentStudent.birthDate} fieldKey="birthDate" />
-                            </div>
-                            <FormField label="Agama" value={currentStudent.religion} fieldKey="religion" />
-                            <FormField label="Kewarganegaraan" value={currentStudent.nationality} fieldKey="nationality" />
-                            <FormField label="Status" value={currentStudent.status} fieldKey="status" />
-                            <FormField label="Berkebutuhan Khusus" value={currentStudent.dapodik.specialNeeds} fieldKey="dapodik.specialNeeds" />
-
-                            <SubHeader>Alamat Domisili</SubHeader>
-                            <FormField label="Alamat Jalan" value={currentStudent.address} fieldKey="address" />
-                            <div className="grid grid-cols-2 gap-4">
-                                <FormField label="RT" value={currentStudent.dapodik.rt} fieldKey="dapodik.rt" />
-                                <FormField label="RW" value={currentStudent.dapodik.rw} fieldKey="dapodik.rw" />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <FormField label="Dusun" value={currentStudent.dapodik.dusun} fieldKey="dapodik.dusun" />
-                                <FormField label="Desa/Kelurahan" value={currentStudent.dapodik.kelurahan} fieldKey="dapodik.kelurahan" />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <FormField label="Kecamatan" value={currentStudent.subDistrict} fieldKey="subDistrict" />
-                                <FormField label="Kabupaten" value={currentStudent.district} fieldKey="district" />
-                            </div>
-                            <FormField label="Kode Pos" value={currentStudent.postalCode} fieldKey="postalCode" />
-                            <div className="grid grid-cols-2 gap-4">
-                                <FormField label="Lintang" value={currentStudent.dapodik.latitude} fieldKey="dapodik.latitude" />
-                                <FormField label="Bujur" value={currentStudent.dapodik.longitude} fieldKey="dapodik.longitude" />
-                            </div>
-                            <FormField label="Jenis Tinggal" value={currentStudent.dapodik.livingStatus} fieldKey="dapodik.livingStatus" />
-                            <FormField label="Alat Transportasi" value={currentStudent.dapodik.transportation} fieldKey="dapodik.transportation" />
+                        <div className="flex-1 overflow-auto p-6 space-y-8">
                             
-                            <SubHeader>Data Orang Tua</SubHeader>
-                            <div className="bg-blue-50 p-2 rounded mb-2">
-                                <p className="text-[10px] font-bold text-blue-800 mb-1">Data Ayah</p>
-                                <FormField label="Nama Ayah" value={currentStudent.father.name} fieldKey="father.name" />
-                                <FormField label="NIK Ayah" value={currentStudent.father.nik} fieldKey="father.nik" />
-                                <FormField label="Tahun Lahir" value={currentStudent.father.birthPlaceDate} fieldKey="father.birthPlaceDate" />
-                                <FormField label="Pendidikan" value={currentStudent.father.education} fieldKey="father.education" />
-                                <FormField label="Pekerjaan" value={currentStudent.father.job} fieldKey="father.job" />
-                                <FormField label="Penghasilan" value={currentStudent.father.income} fieldKey="father.income" />
-                                <FormField label="No HP" value={currentStudent.father.phone} fieldKey="father.phone" />
-                            </div>
-                            <div className="bg-pink-50 p-2 rounded">
-                                <p className="text-[10px] font-bold text-pink-800 mb-1">Data Ibu</p>
-                                <FormField label="Nama Ibu" value={currentStudent.mother.name} fieldKey="mother.name" />
-                                <FormField label="NIK Ibu" value={currentStudent.mother.nik} fieldKey="mother.nik" />
-                                <FormField label="Tahun Lahir" value={currentStudent.mother.birthPlaceDate} fieldKey="mother.birthPlaceDate" />
-                                <FormField label="Pendidikan" value={currentStudent.mother.education} fieldKey="mother.education" />
-                                <FormField label="Pekerjaan" value={currentStudent.mother.job} fieldKey="mother.job" />
-                                <FormField label="Penghasilan" value={currentStudent.mother.income} fieldKey="mother.income" />
-                                <FormField label="No HP" value={currentStudent.mother.phone} fieldKey="mother.phone" />
-                            </div>
-                            
-                            <SubHeader>Data Wali</SubHeader>
-                            <FormField label="Nama Wali" value={currentStudent.guardian?.name} fieldKey="guardian.name" />
-                            <FormField label="NIK Wali" value={currentStudent.guardian?.nik} fieldKey="guardian.nik" />
-                            <FormField label="Tahun Lahir" value={currentStudent.guardian?.birthPlaceDate} fieldKey="guardian.birthPlaceDate" />
-                            <FormField label="Pekerjaan" value={currentStudent.guardian?.job} fieldKey="guardian.job" />
-                            <FormField label="Penghasilan" value={currentStudent.guardian?.income} fieldKey="guardian.income" />
-                            
-                            <SubHeader>Data Periodik</SubHeader>
-                            <div className="grid grid-cols-2 gap-4">
-                                <FormField label="Tinggi Badan (cm)" value={currentStudent.height} fieldKey="height" />
-                                <FormField label="Berat Badan (kg)" value={currentStudent.weight} fieldKey="weight" />
-                            </div>
-                            <FormField label="Lingkar Kepala" value={currentStudent.dapodik.headCircumference} fieldKey="dapodik.headCircumference" />
-                            <FormField label="Golongan Darah" value={currentStudent.bloodType} fieldKey="bloodType" />
-                            <div className="grid grid-cols-2 gap-4">
-                                <FormField label="Jarak ke Sekolah (km)" value={currentStudent.dapodik.distanceToSchool} fieldKey="dapodik.distanceToSchool" />
-                                <FormField label="Waktu Tempuh (menit)" value={currentStudent.dapodik.travelTimeMinutes} fieldKey="dapodik.travelTimeMinutes" />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <FormField label="Anak ke-" value={currentStudent.childOrder} fieldKey="childOrder" />
-                                <FormField label="Jumlah Saudara" value={currentStudent.siblingCount} fieldKey="siblingCount" />
+                            {/* SECTION 1: DATA UTAMA */}
+                            <div>
+                                <div className="flex items-center gap-2 text-sm font-bold text-blue-800 border-b border-blue-200 pb-2 mb-3 uppercase">
+                                    <User className="w-4 h-4" /> A. Identitas Peserta Didik
+                                </div>
+                                <div className="space-y-3">
+                                    <FormField label="Nama Lengkap" value={currentStudent.fullName} fieldKey="fullName" />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField label="NISN" value={currentStudent.nisn} fieldKey="nisn" />
+                                        <FormField label="NIS Lokal" value={currentStudent.nis} fieldKey="nis" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField label="NIK" value={currentStudent.dapodik.nik} fieldKey="dapodik.nik" />
+                                        <FormField label="Jenis Kelamin" value={currentStudent.gender === 'L' ? 'Laki-laki' : 'Perempuan'} fieldKey="gender" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField label="Tempat Lahir" value={currentStudent.birthPlace} fieldKey="birthPlace" />
+                                        <FormField label="Tanggal Lahir" value={currentStudent.birthDate} fieldKey="birthDate" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField label="Agama" value={currentStudent.religion} fieldKey="religion" />
+                                        <FormField label="Kewarganegaraan" value={currentStudent.nationality} fieldKey="nationality" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField label="Kelas" value={currentStudent.className} fieldKey="className" />
+                                        <FormField label="Status" value={currentStudent.status} fieldKey="status" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField label="Tahun Masuk" value={currentStudent.entryYear} fieldKey="entryYear" />
+                                        <FormField label="Berkebutuhan Khusus" value={currentStudent.dapodik.specialNeeds} fieldKey="dapodik.specialNeeds" />
+                                    </div>
+                                    <FormField label="Sekolah Asal" value={currentStudent.previousSchool} fieldKey="previousSchool" />
+                                </div>
                             </div>
 
-                            <SubHeader>Kesejahteraan & Lainnya</SubHeader>
-                            <FormField label="No SKHUN" value={currentStudent.dapodik.skhun} fieldKey="dapodik.skhun" />
-                            <FormField label="No Peserta UN" value={currentStudent.dapodik.unExamNumber} fieldKey="dapodik.unExamNumber" />
-                            <FormField label="No Seri Ijazah" value={currentStudent.diplomaNumber} fieldKey="diplomaNumber" />
-                            <FormField label="No KKS" value={currentStudent.dapodik.kksNumber} fieldKey="dapodik.kksNumber" />
-                            <div className="grid grid-cols-2 gap-4">
-                                <FormField label="Penerima KIP" value={currentStudent.dapodik.kipReceiver} fieldKey="dapodik.kipReceiver" />
-                                <FormField label="No. KIP" value={currentStudent.dapodik.kipNumber} fieldKey="dapodik.kipNumber" />
+                            {/* SECTION 2: ALAMAT */}
+                            <div>
+                                <div className="flex items-center gap-2 text-sm font-bold text-blue-800 border-b border-blue-200 pb-2 mb-3 mt-6 uppercase">
+                                    <MapPin className="w-4 h-4" /> B. Alamat Domisili
+                                </div>
+                                <div className="space-y-3">
+                                    <FormField label="Alamat Jalan" value={currentStudent.address} fieldKey="address" />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField label="RT" value={currentStudent.dapodik.rt} fieldKey="dapodik.rt" />
+                                        <FormField label="RW" value={currentStudent.dapodik.rw} fieldKey="dapodik.rw" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField label="Dusun" value={currentStudent.dapodik.dusun} fieldKey="dapodik.dusun" />
+                                        <FormField label="Kelurahan/Desa" value={currentStudent.dapodik.kelurahan} fieldKey="dapodik.kelurahan" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField label="Kecamatan" value={currentStudent.subDistrict} fieldKey="subDistrict" />
+                                        <FormField label="Kabupaten/Kota" value={currentStudent.district} fieldKey="district" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField label="Kode Pos" value={currentStudent.postalCode} fieldKey="postalCode" />
+                                        <FormField label="No KK" value={currentStudent.dapodik.noKK} fieldKey="dapodik.noKK" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField label="Lintang" value={currentStudent.dapodik.latitude} fieldKey="dapodik.latitude" />
+                                        <FormField label="Bujur" value={currentStudent.dapodik.longitude} fieldKey="dapodik.longitude" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField label="Jenis Tinggal" value={currentStudent.dapodik.livingStatus} fieldKey="dapodik.livingStatus" />
+                                        <FormField label="Transportasi" value={currentStudent.dapodik.transportation} fieldKey="dapodik.transportation" />
+                                    </div>
+                                </div>
                             </div>
-                            <FormField label="Nama di KIP" value={currentStudent.dapodik.kipName} fieldKey="dapodik.kipName" />
-                            <div className="grid grid-cols-2 gap-4">
-                                <FormField label="Usulan PIP" value={currentStudent.dapodik.pipEligible} fieldKey="dapodik.pipEligible" />
-                                <FormField label="Alasan PIP" value={currentStudent.dapodik.pipReason} fieldKey="dapodik.pipReason" />
+
+                            {/* SECTION 3: ORANG TUA */}
+                            <div>
+                                <div className="flex items-center gap-2 text-sm font-bold text-blue-800 border-b border-blue-200 pb-2 mb-3 mt-6 uppercase">
+                                    <Users className="w-4 h-4" /> C. Data Orang Tua / Wali
+                                </div>
+                                
+                                <div className="bg-gray-50 p-3 rounded mb-3 border border-gray-100">
+                                    <h5 className="text-xs font-bold text-gray-500 mb-2 uppercase border-b pb-1">Ayah Kandung</h5>
+                                    <FormField label="Nama Ayah" value={currentStudent.father.name} fieldKey="father.name" />
+                                    <FormField label="NIK Ayah" value={currentStudent.father.nik} fieldKey="father.nik" />
+                                    <FormField label="Tahun Lahir" value={currentStudent.father.birthPlaceDate} fieldKey="father.birthPlaceDate" />
+                                    <FormField label="Pekerjaan" value={currentStudent.father.job} fieldKey="father.job" />
+                                    <FormField label="Pendidikan" value={currentStudent.father.education} fieldKey="father.education" />
+                                    <FormField label="Penghasilan" value={currentStudent.father.income} fieldKey="father.income" />
+                                    <FormField label="No HP" value={currentStudent.father.phone} fieldKey="father.phone" />
+                                </div>
+
+                                <div className="bg-gray-50 p-3 rounded mb-3 border border-gray-100">
+                                    <h5 className="text-xs font-bold text-gray-500 mb-2 uppercase border-b pb-1">Ibu Kandung</h5>
+                                    <FormField label="Nama Ibu" value={currentStudent.mother.name} fieldKey="mother.name" />
+                                    <FormField label="NIK Ibu" value={currentStudent.mother.nik} fieldKey="mother.nik" />
+                                    <FormField label="Tahun Lahir" value={currentStudent.mother.birthPlaceDate} fieldKey="mother.birthPlaceDate" />
+                                    <FormField label="Pekerjaan" value={currentStudent.mother.job} fieldKey="mother.job" />
+                                    <FormField label="Pendidikan" value={currentStudent.mother.education} fieldKey="mother.education" />
+                                    <FormField label="Penghasilan" value={currentStudent.mother.income} fieldKey="mother.income" />
+                                    <FormField label="No HP" value={currentStudent.mother.phone} fieldKey="mother.phone" />
+                                </div>
+
+                                <div className="bg-gray-50 p-3 rounded border border-gray-100">
+                                    <h5 className="text-xs font-bold text-gray-500 mb-2 uppercase border-b pb-1">Wali (Opsional)</h5>
+                                    <FormField label="Nama Wali" value={currentStudent.guardian?.name} fieldKey="guardian.name" />
+                                    <FormField label="NIK Wali" value={currentStudent.guardian?.nik} fieldKey="guardian.nik" />
+                                    <FormField label="Pekerjaan" value={currentStudent.guardian?.job} fieldKey="guardian.job" />
+                                    <FormField label="No HP" value={currentStudent.guardian?.phone} fieldKey="guardian.phone" />
+                                </div>
                             </div>
-                            <div className="mt-2 bg-gray-50 p-2 rounded border border-gray-200">
-                                <p className="text-[10px] font-bold text-gray-600 mb-1">Data Bank</p>
-                                <FormField label="Bank" value={currentStudent.dapodik.bank} fieldKey="dapodik.bank" />
-                                <FormField label="No Rekening" value={currentStudent.dapodik.bankAccount} fieldKey="dapodik.bankAccount" />
-                                <FormField label="Atas Nama" value={currentStudent.dapodik.bankAccountName} fieldKey="dapodik.bankAccountName" />
+
+                            {/* SECTION 4: DATA PERIODIK */}
+                            <div>
+                                <div className="flex items-center gap-2 text-sm font-bold text-blue-800 border-b border-blue-200 pb-2 mb-3 mt-6 uppercase">
+                                    <Heart className="w-4 h-4" /> D. Data Periodik
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <FormField label="Tinggi Badan (cm)" value={currentStudent.height} fieldKey="height" />
+                                    <FormField label="Berat Badan (kg)" value={currentStudent.weight} fieldKey="weight" />
+                                    <FormField label="Lingkar Kepala (cm)" value={currentStudent.dapodik.headCircumference} fieldKey="dapodik.headCircumference" />
+                                    <FormField label="Gol. Darah" value={currentStudent.bloodType} fieldKey="bloodType" />
+                                    <FormField label="Anak ke-" value={currentStudent.childOrder} fieldKey="childOrder" />
+                                    <FormField label="Jml Saudara" value={currentStudent.siblingCount} fieldKey="siblingCount" />
+                                    <FormField label="Jarak ke Sekolah (km)" value={currentStudent.dapodik.distanceToSchool} fieldKey="dapodik.distanceToSchool" />
+                                    <FormField label="Waktu Tempuh (menit)" value={currentStudent.dapodik.travelTimeMinutes} fieldKey="dapodik.travelTimeMinutes" />
+                                </div>
                             </div>
-                            <FormField label="Email" value={currentStudent.dapodik.email} fieldKey="dapodik.email" />
+
+                            {/* SECTION 5: KESEJAHTERAAN & LAINNYA */}
+                            <div>
+                                <div className="flex items-center gap-2 text-sm font-bold text-blue-800 border-b border-blue-200 pb-2 mb-3 mt-6 uppercase">
+                                    <Wallet className="w-4 h-4" /> E. Kesejahteraan & Admin
+                                </div>
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField label="No SKHUN" value={currentStudent.dapodik.skhun} fieldKey="dapodik.skhun" />
+                                        <FormField label="No Peserta UN" value={currentStudent.dapodik.unExamNumber} fieldKey="dapodik.unExamNumber" />
+                                    </div>
+                                    <FormField label="No Seri Ijazah (Lama)" value={currentStudent.diplomaNumber} fieldKey="diplomaNumber" />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField label="No KKS" value={currentStudent.dapodik.kksNumber} fieldKey="dapodik.kksNumber" />
+                                        <FormField label="No KPS" value={currentStudent.dapodik.kpsNumber} fieldKey="dapodik.kpsNumber" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField label="Penerima KIP" value={currentStudent.dapodik.kipReceiver} fieldKey="dapodik.kipReceiver" />
+                                        <FormField label="No KIP" value={currentStudent.dapodik.kipNumber} fieldKey="dapodik.kipNumber" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField label="Layak PIP" value={currentStudent.dapodik.pipEligible} fieldKey="dapodik.pipEligible" />
+                                        <FormField label="Alasan Layak PIP" value={currentStudent.dapodik.pipReason} fieldKey="dapodik.pipReason" />
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <FormField label="Bank" value={currentStudent.dapodik.bank} fieldKey="dapodik.bank" />
+                                        <FormField label="No Rekening" value={currentStudent.dapodik.bankAccount} fieldKey="dapodik.bankAccount" />
+                                        <FormField label="Atas Nama" value={currentStudent.dapodik.bankAccountName} fieldKey="dapodik.bankAccountName" />
+                                    </div>
+                                    <FormField label="Email Pribadi" value={currentStudent.dapodik.email} fieldKey="dapodik.email" />
+                                </div>
+                            </div>
+
                         </div>
                     </div>
                 </div>

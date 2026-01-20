@@ -11,7 +11,6 @@ interface RecapViewProps {
 }
 
 const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', loggedInStudent }) => {
-  const [searchTerm, setSearchTerm] = useState('');
   const [dbClassFilter, setDbClassFilter] = useState<string>('ALL');
   const [selected5SemSubjects, setSelected5SemSubjects] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'SUMMARY' | 'DETAIL'>('SUMMARY');
@@ -89,9 +88,8 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
   const effectiveStudents = (userRole === 'STUDENT' && loggedInStudent) ? [loggedInStudent] : students;
 
   const filteredStudents = effectiveStudents.filter(s => {
-      const matchSearch = s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || s.nisn.includes(searchTerm);
       const matchClass = userRole === 'STUDENT' ? true : (dbClassFilter === 'ALL' || s.className === dbClassFilter);
-      return matchSearch && matchClass;
+      return matchClass;
   });
 
   const getScore = (s: Student, subjKey: string, sem: number) => {
@@ -367,10 +365,6 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
             </div>
             
             <div className="flex gap-2 w-full xl:w-auto">
-                <div className="relative flex-1 md:w-64">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <input type="text" placeholder="Cari Siswa..." className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-lg text-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                </div>
                 <button onClick={handleDownloadExcel} className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-green-700 flex items-center gap-2 whitespace-nowrap"><FileSpreadsheet className="w-4 h-4" /> Excel</button>
             </div>
         </div>

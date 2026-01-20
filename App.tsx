@@ -177,97 +177,168 @@ function App() {
       const list: DashboardNotification[] = [];
 
       students.forEach(s => {
-          // 1. CHECK DOCUMENTS (UPLOADED & PENDING)
-          s.documents.forEach(doc => {
-              if (doc.status === 'PENDING') {
-                  if (doc.category === 'RAPOR') {
-                      // Upload Rapor -> Verifikasi Nilai
-                      list.push({
-                          id: `doc-${doc.id}`,
-                          type: 'ADMIN_GRADE_VERIFY',
-                          title: 'Upload Rapor Baru',
-                          description: `${s.fullName} mengupload Rapor Semester ${doc.subType?.semester || '-'}`,
-                          date: doc.uploadDate,
-                          priority: 'MEDIUM',
-                          data: s.id
-                      });
-                  } else if (doc.category === 'IJAZAH' || doc.category === 'SKL') {
-                      // Upload Ijazah -> Verifikasi Ijazah
-                      list.push({
-                          id: `doc-${doc.id}`,
-                          type: 'ADMIN_IJAZAH_VERIFY',
-                          title: 'Upload Dokumen Ijazah',
-                          description: `${s.fullName} mengupload file ${doc.category}`,
-                          date: doc.uploadDate,
-                          priority: 'HIGH',
-                          data: s.id
-                      });
-                  } else {
-                      // Upload Dokumen Lain (KK, Akta, dll) -> Verifikasi Buku Induk
-                      list.push({
-                          id: `doc-${doc.id}`,
-                          type: 'ADMIN_DOC_VERIFY',
-                          title: 'Dokumen Buku Induk',
-                          description: `${s.fullName} mengupload ${doc.name} (${doc.category})`,
-                          date: doc.uploadDate,
-                          priority: 'MEDIUM',
-                          data: s.id
-                      });
-                  }
-              }
-          });
-
-          // 2. CHECK CORRECTION REQUESTS (EDIT DATA & PENDING)
-          if (s.correctionRequests) {
-              s.correctionRequests.forEach(req => {
-                  if (req.status === 'PENDING') {
-                      let type: DashboardNotification['type'] = 'ADMIN_BIO_VERIFY';
-                      let title = 'Pengajuan Perubahan Data';
-
-                      // Routing Logic based on Field Key
-                      if (req.fieldKey.startsWith('grade-') || req.fieldKey.startsWith('class-')) {
-                          // Edit Nilai/Kelas -> Verifikasi Nilai
-                          type = 'ADMIN_GRADE_VERIFY';
-                          title = 'Koreksi Nilai/Kelas';
-                      } else if (req.fieldKey.startsWith('ijazah-') || req.fieldKey === 'diplomaNumber') {
-                          // Edit Ijazah -> Verifikasi Ijazah
-                          type = 'ADMIN_IJAZAH_VERIFY';
-                          title = 'Koreksi Data Ijazah';
+          // --- LOGIC ADMIN (Melihat semua siswa) ---
+          if (userRole === 'ADMIN' || userRole === 'GURU') {
+              // 1. CHECK DOCUMENTS (UPLOADED & PENDING)
+              s.documents.forEach(doc => {
+                  if (doc.status === 'PENDING') {
+                      if (doc.category === 'RAPOR') {
+                          // Upload Rapor -> Verifikasi Nilai
+                          list.push({
+                              id: `doc-${doc.id}`,
+                              type: 'ADMIN_GRADE_VERIFY',
+                              title: 'Upload Rapor Baru',
+                              description: `${s.fullName} mengupload Rapor Semester ${doc.subType?.semester || '-'}`,
+                              date: doc.uploadDate,
+                              priority: 'MEDIUM',
+                              data: s.id
+                          });
+                      } else if (doc.category === 'IJAZAH' || doc.category === 'SKL') {
+                          // Upload Ijazah -> Verifikasi Ijazah
+                          list.push({
+                              id: `doc-${doc.id}`,
+                              type: 'ADMIN_IJAZAH_VERIFY',
+                              title: 'Upload Dokumen Ijazah',
+                              description: `${s.fullName} mengupload file ${doc.category}`,
+                              date: doc.uploadDate,
+                              priority: 'HIGH',
+                              data: s.id
+                          });
                       } else {
-                          // Edit Biodata -> Verifikasi Buku Induk
-                          type = 'ADMIN_BIO_VERIFY';
-                          title = 'Koreksi Data Buku Induk';
+                          // Upload Dokumen Lain (KK, Akta, dll) -> Verifikasi Buku Induk
+                          list.push({
+                              id: `doc-${doc.id}`,
+                              type: 'ADMIN_DOC_VERIFY',
+                              title: 'Dokumen Buku Induk',
+                              description: `${s.fullName} mengupload ${doc.name} (${doc.category})`,
+                              date: doc.uploadDate,
+                              priority: 'MEDIUM',
+                              data: s.id
+                          });
                       }
+                  }
+              });
 
+              // 2. CHECK CORRECTION REQUESTS (EDIT DATA & PENDING)
+              if (s.correctionRequests) {
+                  s.correctionRequests.forEach(req => {
+                      if (req.status === 'PENDING') {
+                          let type: DashboardNotification['type'] = 'ADMIN_BIO_VERIFY';
+                          let title = 'Pengajuan Perubahan Data';
+
+                          // Routing Logic based on Field Key
+                          if (req.fieldKey.startsWith('grade-') || req.fieldKey.startsWith('class-')) {
+                              // Edit Nilai/Kelas -> Verifikasi Nilai
+                              type = 'ADMIN_GRADE_VERIFY';
+                              title = 'Koreksi Nilai/Kelas';
+                          } else if (req.fieldKey.startsWith('ijazah-') || req.fieldKey === 'diplomaNumber') {
+                              // Edit Ijazah -> Verifikasi Ijazah
+                              type = 'ADMIN_IJAZAH_VERIFY';
+                              title = 'Koreksi Data Ijazah';
+                          } else {
+                              // Edit Biodata -> Verifikasi Buku Induk
+                              type = 'ADMIN_BIO_VERIFY';
+                              title = 'Koreksi Data Buku Induk';
+                          }
+
+                          list.push({
+                              id: `req-${req.id}`,
+                              type: type,
+                              title: title,
+                              description: `${s.fullName} mengajukan perubahan pada ${req.fieldName}`,
+                              date: new Date(req.requestDate).toISOString().split('T')[0],
+                              priority: 'HIGH',
+                              data: s.id
+                          });
+                      }
+                  });
+              }
+          } 
+          
+          // --- LOGIC SISWA (Hanya melihat notifikasi miliknya sendiri) ---
+          else if (userRole === 'STUDENT' && currentUser?.id === s.id) {
+              // 1. Cek Dokumen Revisi
+              s.documents.forEach(doc => {
+                  if (doc.status === 'REVISION') {
+                      let title = 'Revisi Dokumen';
+                      if (doc.category === 'RAPOR') title = 'Revisi Rapor';
+                      else if (doc.category === 'IJAZAH' || doc.category === 'SKL') title = 'Revisi Ijazah/SKL';
+                      
                       list.push({
-                          id: `req-${req.id}`,
-                          type: type,
+                          id: `doc-rev-${doc.id}`,
+                          type: 'STUDENT_REVISION',
                           title: title,
-                          description: `${s.fullName} mengajukan perubahan pada ${req.fieldName}`,
-                          date: new Date(req.requestDate).toISOString().split('T')[0],
+                          description: `Dokumen ${doc.category} perlu diperbaiki. Catatan: ${doc.adminNote || '-'}`,
+                          date: doc.verificationDate || doc.uploadDate,
                           priority: 'HIGH',
-                          data: s.id
+                          data: s.id,
+                          verifierName: doc.verifierName
                       });
                   }
               });
+
+              // 2. Cek Status Pengajuan (Ditolak/Disetujui)
+              if (s.correctionRequests) {
+                  s.correctionRequests.forEach(req => {
+                      if (req.status === 'REJECTED' || req.status === 'APPROVED') {
+                          let title = 'Status Pengajuan Data';
+                          // Context Title
+                          if (req.fieldKey.startsWith('grade-')) title = 'Pengajuan Nilai';
+                          else if (req.fieldKey.startsWith('ijazah-')) title = 'Pengajuan Ijazah';
+                          else title = 'Pengajuan Buku Induk';
+
+                          title += ` ${req.status === 'APPROVED' ? 'Disetujui' : 'Ditolak'}`;
+
+                          list.push({
+                              id: `req-stat-${req.id}`,
+                              type: req.status === 'APPROVED' ? 'STUDENT_APPROVED' : 'STUDENT_REVISION',
+                              title: title,
+                              description: `Pengajuan perubahan ${req.fieldName} telah ${req.status === 'APPROVED' ? 'disetujui' : 'ditolak'}.`,
+                              date: req.processedDate || req.requestDate,
+                              priority: 'MEDIUM',
+                              data: s.id,
+                              verifierName: req.verifierName
+                          });
+                      }
+                  });
+              }
           }
       });
 
       // Sort by date descending
       return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [students]);
+  }, [students, userRole, currentUser]);
 
   // --- NOTIFICATION HANDLER ---
   const handleNotificationClick = (notif: DashboardNotification) => {
       setTargetNotificationStudentId(notif.data); // Set the target ID for view to consume
 
-      // Route to correct view based on type
-      if (notif.type === 'ADMIN_DOC_VERIFY' || notif.type === 'ADMIN_BIO_VERIFY') {
-          setCurrentView('verification'); // Go to Buku Induk Verification
-      } else if (notif.type === 'ADMIN_GRADE_VERIFY') {
-          setCurrentView('grade-verification'); // Go to Grade Verification
-      } else if (notif.type === 'ADMIN_IJAZAH_VERIFY') {
-          setCurrentView('ijazah-verification'); // Go to Ijazah Verification
+      if (userRole === 'STUDENT') {
+          // --- LOGIC ROUTING SISWA ---
+          const titleLower = notif.title.toLowerCase();
+          const descLower = notif.description.toLowerCase();
+
+          if (titleLower.includes('rapor') || descLower.includes('rapor')) {
+              setCurrentView('upload-rapor');
+          } else if (titleLower.includes('ijazah') || titleLower.includes('skl') || descLower.includes('ijazah')) {
+              setCurrentView('data-ijazah');
+          } else if (titleLower.includes('nilai') || titleLower.includes('grade') || descLower.includes('nilai')) {
+              setCurrentView('grades');
+          } else if (titleLower.includes('buku induk') || titleLower.includes('biodata') || descLower.includes('data diri')) {
+              setCurrentView('dapodik');
+          } else {
+              // Default ke dokumen saya jika tidak spesifik
+              setCurrentView('documents');
+          }
+      } else {
+          // --- LOGIC ROUTING ADMIN/GURU ---
+          if (notif.type === 'ADMIN_DOC_VERIFY' || notif.type === 'ADMIN_BIO_VERIFY') {
+              setCurrentView('verification'); // Go to Buku Induk Verification
+          } else if (notif.type === 'ADMIN_GRADE_VERIFY') {
+              setCurrentView('grade-verification'); // Go to Grade Verification
+          } else if (notif.type === 'ADMIN_IJAZAH_VERIFY') {
+              setCurrentView('ijazah-verification'); // Go to Ijazah Verification
+          }
       }
   };
 

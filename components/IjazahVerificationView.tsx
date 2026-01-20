@@ -153,8 +153,18 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
   const filteredStudents = useMemo(() => {
       let filtered = students;
       if (selectedClassFilter !== 'ALL') filtered = filtered.filter(s => s.className === selectedClassFilter);
-      if (searchTerm) filtered = filtered.filter(s => s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || s.nisn.includes(searchTerm));
-      return filtered.sort((a, b) => a.fullName.localeCompare(b.fullName));
+      
+      // SAFE SEARCH FILTER
+      if (searchTerm) {
+          const term = searchTerm.toLowerCase();
+          filtered = filtered.filter(s => {
+              const name = (s.fullName || '').toLowerCase();
+              const nisn = (s.nisn || '').toString();
+              return name.includes(term) || nisn.includes(term);
+          });
+      }
+      
+      return filtered.sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
   }, [students, searchTerm, selectedClassFilter]);
   
   // Init Selection logic (handle targetStudentId)
@@ -170,7 +180,7 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
               setSelectedStudentId(filteredStudents[0].id);
           }
       } else { setSelectedStudentId(''); }
-  }, [filteredStudents, targetStudentId]); // Removed selectedStudentId from deps to fix infinite loop if it relies on filtered
+  }, [filteredStudents, targetStudentId]); 
 
   const currentStudent = students.find(s => s.id === selectedStudentId);
   const currentDoc = useMemo(() => currentStudent?.documents.find(d => d.category === activeDocType), [currentStudent, activeDocType, forceUpdate]);
@@ -403,7 +413,6 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
 
         {/* Top Controls */}
         <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col xl:flex-row justify-between items-center gap-4 mb-4">
-            {/* ... (Keep existing toolbar logic) ... */}
             <div className="flex gap-2 w-full xl:w-auto">
                 <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200"><Filter className="w-4 h-4 text-gray-500" /><select className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-24 md:w-auto" value={selectedClassFilter} onChange={(e) => setSelectedClassFilter(e.target.value)}><option value="ALL">Semua Kelas</option>{uniqueClasses.map(c => <option key={c} value={c}>Kelas {c}</option>)}</select></div>
                 <div className="relative flex-1 md:w-64"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" /><input type="text" placeholder="Cari Siswa..." className="w-full pl-9 pr-4 py-2 bg-gray-50 rounded-lg text-sm border border-gray-200 focus:bg-white transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
@@ -416,7 +425,6 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
             <div className="flex-1 flex flex-col lg:flex-row gap-4 overflow-hidden relative">
                 {/* Document Viewer */}
                 <div className={`flex flex-col bg-gray-800 rounded-xl overflow-hidden shadow-lg transition-all duration-300 ${layoutMode === 'full-doc' ? 'w-full absolute inset-0 z-20' : 'w-full lg:w-3/5 h-full'}`}>
-                    {/* ... (Viewer implementation same as original) ... */}
                     <div className="h-14 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-4 text-gray-300"><span className="font-bold text-white text-sm hidden md:block">{availableDocTypes.find(t => t.id === activeDocType)?.label}</span><div className="flex items-center gap-2"><button onClick={()=>setZoomLevel(z=>Math.max(0.5, z-0.2))} className="p-1 hover:bg-gray-700 rounded"><ZoomOut className="w-4 h-4" /></button><span className="text-xs w-8 text-center">{Math.round(zoomLevel*100)}%</span><button onClick={()=>setZoomLevel(z=>Math.min(3, z+0.2))} className="p-1 hover:bg-gray-700 rounded"><ZoomIn className="w-4 h-4" /></button><button onClick={()=>setLayoutMode(m=>m==='full-doc'?'split':'full-doc')} className="p-1 hover:bg-gray-700 rounded ml-2"><Maximize2 className="w-4 h-4" /></button></div></div>
                     <div className="flex-1 overflow-auto p-4 bg-gray-900/50 flex items-start justify-center pb-32 relative">
                         <div style={{ transform: `scale(${useFallbackViewer || (isDriveUrl && !isImageFile(currentDoc)) ? 1 : zoomLevel})`, transformOrigin: 'top center', width: '100%', display: 'flex', justifyContent: 'center' }}>

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { Student } from '../types';
 import { Search, Printer, User, ArrowLeft, ChevronRight, School, FileDown, Loader2, Filter, Files } from 'lucide-react';
@@ -230,7 +231,6 @@ const BukuIndukTemplate = ({ student }: { student: Student }) => {
 
 // --- MAIN VIEW COMPONENT ---
 const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
-  const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
@@ -262,15 +262,12 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
   // Main Filter Logic
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
-        const matchesSearch = s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                              s.nisn.includes(searchTerm) ||
-                              s.nis.includes(searchTerm);
         const matchesClass = classFilter === 'ALL' || s.className === classFilter;
         const matchesStudent = studentFilter === 'ALL' || s.id === studentFilter;
 
-        return matchesSearch && matchesClass && matchesStudent;
+        return matchesClass && matchesStudent;
     });
-  }, [students, searchTerm, classFilter, studentFilter]);
+  }, [students, classFilter, studentFilter]);
 
   // Dynamically extract unique classes from the filtered student list to render groups
   const availableClasses = useMemo(() => {
@@ -429,17 +426,6 @@ const BukuIndukView: React.FC<BukuIndukViewProps> = ({ students }) => {
                             <option key={s.id} value={s.id}>{s.fullName}</option>
                         ))}
                     </select>
-                </div>
-
-                <div className="relative w-full md:w-64">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <input
-                        type="text"
-                        placeholder="Cari Nama atau NISN..."
-                        className="w-full pl-10 pr-4 py-2 bg-gray-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
                 </div>
 
                 <button 

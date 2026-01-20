@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Search, CreditCard, Download, Eye, FileText } from 'lucide-react';
 import { Student } from '../types';
@@ -10,11 +11,15 @@ interface DapodikListProps {
 const DapodikList: React.FC<DapodikListProps> = ({ students, onSelectStudent }) => {
   const [searchTerm, setSearchTerm] = useState('');
   
-  const filteredStudents = students.filter(student => 
-    student.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    student.dapodik.nik.includes(searchTerm) ||
-    student.nisn.includes(searchTerm)
-  );
+  const filteredStudents = students.filter(student => {
+    // SAFE GUARD: Handle undefined/null values
+    const name = (student.fullName || '').toLowerCase();
+    const nik = (student.dapodik?.nik || '').toString();
+    const nisn = (student.nisn || '').toString();
+    const term = searchTerm.toLowerCase();
+
+    return name.includes(term) || nik.includes(term) || nisn.includes(term);
+  });
 
   const Th: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
     <th className={`px-6 py-4 bg-gray-50 text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200 text-left ${className}`}>

@@ -233,7 +233,6 @@ const SKLTemplate = ({ student, config, activeYear, headmasterName, headmasterNi
 };
 
 const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedInStudent }) => {
-  const [searchTerm, setSearchTerm] = useState('');
   const [selectedClass, setSelectedClass] = useState('ALL');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [appSettings, setAppSettings] = useState<any>(null);
@@ -295,11 +294,10 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
       if (userRole === 'STUDENT' && loggedInStudent) return [loggedInStudent];
       
       return students.filter(s => {
-          const matchSearch = s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || s.nisn.includes(searchTerm);
           const matchClass = selectedClass === 'ALL' || s.className === selectedClass;
-          return matchSearch && matchClass;
+          return matchClass;
       }).sort((a, b) => a.fullName.localeCompare(b.fullName));
-  }, [students, searchTerm, selectedClass, userRole, loggedInStudent]);
+  }, [students, selectedClass, userRole, loggedInStudent]);
 
   const activeYear = appSettings?.academicData?.activeYear || appSettings?.academicData?.year || new Date().getFullYear();
   const headmasterName = appSettings?.schoolData?.headmaster || 'DIDIK SULISTYO, M.M.Pd';
@@ -404,19 +402,6 @@ const SKLView: React.FC<SKLViewProps> = ({ students, userRole = 'ADMIN', loggedI
             </div>
 
             <div className="flex gap-2 w-full md:w-auto">
-                {userRole !== 'STUDENT' && (
-                    <div className="relative flex-1 md:w-64">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                        <input 
-                            type="text" 
-                            placeholder="Cari Siswa..." 
-                            className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-lg text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-200 transition-all" 
-                            value={searchTerm} 
-                            onChange={(e) => setSearchTerm(e.target.value)} 
-                        />
-                    </div>
-                )}
-
                 {userRole === 'ADMIN' && (
                     <button 
                         onClick={handleDownloadAll} 

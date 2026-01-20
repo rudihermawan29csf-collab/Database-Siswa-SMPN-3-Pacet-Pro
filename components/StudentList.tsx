@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Search, Filter, MoreHorizontal, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
 import { Student } from '../types';
@@ -12,9 +13,14 @@ const StudentList: React.FC<StudentListProps> = ({ students, onSelectStudent }) 
   const [filterClass, setFilterClass] = useState('ALL');
 
   const filteredStudents = students.filter(student => {
-    const matchSearch = student.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                        student.nisn.includes(searchTerm);
+    // SAFE GUARD: Handle null/undefined values to prevent app crash
+    const name = (student.fullName || '').toLowerCase();
+    const nisn = (student.nisn || '').toString();
+    const term = searchTerm.toLowerCase();
+
+    const matchSearch = name.includes(term) || nisn.includes(term);
     const matchClass = filterClass === 'ALL' || student.className === filterClass;
+    
     return matchSearch && matchClass;
   });
 
@@ -69,7 +75,7 @@ const StudentList: React.FC<StudentListProps> = ({ students, onSelectStudent }) 
                   <td className="px-6 py-3">
                     <div className="flex items-center">
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 text-white flex items-center justify-center text-xs font-bold mr-3">
-                            {student.fullName.charAt(0)}
+                            {student.fullName ? student.fullName.charAt(0) : '?'}
                         </div>
                         <div>
                             <div className="font-medium text-gray-900">{student.fullName}</div>

@@ -47,7 +47,7 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
   // Filter Students based on selected Class
   const filteredStudents = useMemo(() => {
       if (!selectedClass) return [];
-      return students.filter(s => s.className === selectedClass).sort((a, b) => a.fullName.localeCompare(b.fullName));
+      return students.filter(s => s.className === selectedClass).sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
   }, [students, selectedClass]);
 
   const currentStudent = students.find(s => s.id === selectedStudentId);

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Student } from '../types';
 import { KeyRound, Search, Filter, Download, CreditCard, FileSpreadsheet, Loader2, GraduationCap, Eye } from 'lucide-react';
@@ -105,13 +106,26 @@ const AccessDataView: React.FC<AccessDataViewProps> = ({ students }) => {
 
   const filteredStudents = useMemo(() => {
       let filtered = students;
+      
+      // Filter by Class
       if (selectedClass !== 'ALL') {
           filtered = filtered.filter(s => s.className === selectedClass);
       }
+      
+      // Filter by Search (SAFE)
       if (searchTerm) {
-          filtered = filtered.filter(s => s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || s.nisn.includes(searchTerm));
+          const term = searchTerm.toLowerCase();
+          filtered = filtered.filter(s => {
+              const name = (s.fullName || '').toLowerCase();
+              const nisn = (s.nisn || '').toString();
+              return name.includes(term) || nisn.includes(term);
+          });
       }
-      return filtered.sort((a, b) => a.className.localeCompare(b.className) || a.fullName.localeCompare(b.fullName));
+      
+      return filtered.sort((a, b) => 
+          (a.className || '').localeCompare(b.className || '') || 
+          (a.fullName || '').localeCompare(b.fullName || '')
+      );
   }, [students, selectedClass, searchTerm]);
 
   // EXPORT EXCEL

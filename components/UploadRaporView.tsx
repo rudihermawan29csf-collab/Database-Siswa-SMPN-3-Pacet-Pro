@@ -1,4 +1,5 @@
-import React, { useState, useRef, useMemo } from 'react';
+
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Student, DocumentFile } from '../types';
 import { UploadCloud, CheckCircle2, Eye, Trash2, AlertCircle, FileText, Image as ImageIcon, X, Lock, RefreshCw, Loader2, Maximize2 } from 'lucide-react';
 import { api } from '../services/api';
@@ -13,25 +14,21 @@ const SEMESTERS = [1, 2, 3, 4, 5, 6];
 // Helper untuk format URL Google Drive agar bisa dipreview/tampil
 const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
     if (!url) return '';
-    if (url.startsWith('blob:')) return url; // Handle local preview blobs
+    if (url.startsWith('blob:')) return url; 
 
     // Cek pattern Google Drive
     if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
         let id = '';
-        // Ekstrak ID dari berbagai format URL Drive
-        const matchId = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-        const matchIdParam = new URLSearchParams(new URL(url).search).get('id');
-
-        if (matchId && matchId[1]) {
-            id = matchId[1];
-        } else if (matchIdParam) {
-            id = matchIdParam;
+        const parts = url.split(/\/d\//);
+        if (parts.length > 1) {
+            id = parts[1].split('/')[0];
+        } else {
+            const match = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+            if (match) id = match[1];
         }
 
         if (id) {
-            // Preview: Cocok untuk PDF/Iframe
             if (type === 'preview') return `https://drive.google.com/file/d/${id}/preview`;
-            // Direct: Cocok untuk tag <img src="...">
             if (type === 'direct') return `https://drive.google.com/uc?export=view&id=${id}`;
         }
     }
@@ -46,6 +43,12 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
   
   // State untuk Modal Preview
   const [previewDoc, setPreviewDoc] = useState<DocumentFile | null>(null);
+  const [useFallbackViewer, setUseFallbackViewer] = useState(false);
+
+  // Reset fallback state when doc changes
+  useEffect(() => {
+      setUseFallbackViewer(false);
+  }, [previewDoc]);
 
   // Dynamic Page Count from Settings
   const pagesPerSemester = useMemo(() => {
@@ -153,6 +156,10 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
       }
   };
 
+  const isImage = (doc: DocumentFile) => {
+      return doc.type === 'IMAGE' || doc.name.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp)$/);
+  };
+
   return (
     <div className="flex flex-col h-full space-y-4 animate-fade-in relative">
         {/* Loading Overlay */}
@@ -181,7 +188,7 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
                         </div>
                         <div className="flex items-center gap-2">
                             <a 
-                                href={previewDoc.url} 
+                                href={getDriveUrl(previewDoc.url, 'preview')} 
                                 target="_blank" 
                                 rel="noreferrer"
                                 className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold rounded-lg transition-colors"
@@ -198,18 +205,21 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
                     </div>
 
                     {/* Modal Content */}
-                    <div className="flex-1 bg-black/50 flex items-center justify-center overflow-auto p-4">
-                        {previewDoc.type === 'PDF' ? (
-                            <iframe 
-                                src={getDriveUrl(previewDoc.url, 'preview')} 
-                                className="w-full h-full rounded bg-white shadow-lg" 
-                                title="PDF Viewer"
-                            />
-                        ) : (
+                    <div className="flex-1 bg-black/50 flex items-center justify-center overflow-auto p-4 relative">
+                        {!useFallbackViewer && isImage(previewDoc) ? (
                             <img 
                                 src={getDriveUrl(previewDoc.url, 'direct')} 
                                 alt="Preview" 
                                 className="max-w-full max-h-full object-contain rounded shadow-lg" 
+                                referrerPolicy="no-referrer"
+                                onError={() => setUseFallbackViewer(true)}
+                            />
+                        ) : (
+                            <iframe 
+                                src={getDriveUrl(previewDoc.url, 'preview')} 
+                                className="w-full h-full rounded bg-white shadow-lg" 
+                                title="PDF Viewer"
+                                allow="autoplay"
                             />
                         )}
                     </div>
@@ -286,8 +296,16 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
                             >
                                 {doc ? (
                                     <>
-                                        {doc.type === 'IMAGE' ? (
-                                            <img src={getDriveUrl(doc.url, 'direct')} alt={`Hal ${page}`} className="w-full h-full object-cover rounded-lg shadow-sm" />
+                                        {isImage(doc) ? (
+                                            <img 
+                                                src={getDriveUrl(doc.url, 'direct')} 
+                                                alt={`Hal ${page}`} 
+                                                className="w-full h-full object-cover rounded-lg shadow-sm"
+                                                referrerPolicy="no-referrer"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).src = 'https://placehold.co/400x300?text=Error+Loading';
+                                                }}
+                                            />
                                         ) : (
                                             <div className="flex flex-col items-center justify-center text-center">
                                                 <FileText className="w-12 h-12 text-red-500 mb-2" />
