@@ -348,6 +348,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -387,7 +388,8 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       if (userRole === 'STUDENT' && loggedInStudent) return [loggedInStudent];
       
       return students.filter(s => {
-          const matchClass = selectedClass === 'ALL' || s.className === selectedClass;
+          // STRICT CLASS FILTER FIX
+          const matchClass = selectedClass === 'ALL' || s.className.trim() === selectedClass.trim();
           return matchClass;
       }).sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [students, selectedClass, userRole, loggedInStudent]);
@@ -443,12 +445,13 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       xlsx.writeFile(wb, `Template_Nilai_Semester_${selectedSemester}_${selectedClass}.xlsx`);
   };
 
-  // --- EXCEL IMPORT (BATCH PROCESSING OPTIMIZATION) ---
+  // --- EXCEL IMPORT (PARALLEL BATCH PROCESSING OPTIMIZATION) ---
   const handleImportGrades = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
 
       setIsImporting(true);
+      setImportProgress(0);
       
       // @ts-ignore
       const xlsx = window.XLSX;
@@ -467,9 +470,8 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
               // FIX: Explicitly type the Map to avoid 'unknown' inference for values
               const currentStudentsMap = new Map<string, Student>(students.map(s => [String(s.nisn).trim(), s] as [string, Student]));
               
-              // 2. Prepare Batch Updates
-              const updatesToSync: Student[] = [];
-              let successCount = 0;
+              // 2. Prepare Updates List
+              const updatesList: Student[] = [];
               let failCount = 0;
               
               for (const row of data as any[]) {
@@ -516,34 +518,33 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                       };
                   });
 
-                  // Add to batch list
-                  updatesToSync.push(updatedStudent);
-                  successCount++;
+                  updatesList.push(updatedStudent);
               }
 
-              // 3. Send SINGLE Batch Request if there are updates
-              if (updatesToSync.length > 0) {
-                  // We need to merge these updates into the full student list because syncInitialData usually replaces
-                  // or upserts based on implementation. 
-                  // Assuming syncInitialData performs an upsert or replace, we send the full updated list of students we modified
-                  // combined with the untouched ones? 
-                  // Based on DatabaseView implementation logic, it seems safer to construct a full list if syncInitialData replaces data.
-                  // However, if syncInitialData acts as a bulk upsert (merging by ID), sending just updated is better.
-                  // Checking api.ts (mental check): usually syncData takes the array and saves it. 
-                  // SAFER STRATEGY: Construct the full new state locally, then sync.
+              // 3. Process Updates in Chunks (Parallel Batch)
+              // This is significantly faster than sequential updateStudent and safer than massive syncInitialData
+              if (updatesList.length > 0) {
+                  const BATCH_SIZE = 5; // Process 5 students in parallel
+                  let processed = 0;
                   
-                  const updatedFullList = students.map(s => {
-                      const updated = updatesToSync.find(u => u.id === s.id);
-                      return updated || s;
-                  });
+                  // Helper function to process a batch
+                  const processBatch = async (batch: Student[]) => {
+                      const promises = batch.map(s => api.updateStudent(s));
+                      await Promise.all(promises);
+                  };
 
-                  // Call API
-                  await api.syncInitialData(updatedFullList);
+                  // Chunk loop
+                  for (let i = 0; i < updatesList.length; i += BATCH_SIZE) {
+                      const chunk = updatesList.slice(i, i + BATCH_SIZE);
+                      await processBatch(chunk);
+                      processed += chunk.length;
+                      setImportProgress(Math.round((processed / updatesList.length) * 100));
+                  }
                   
-                  // Update UI immediately
+                  // Update UI immediately (Optimistic UI could be added here, but for now strict refresh)
                   if (onUpdate) onUpdate(); 
                   
-                  alert(`Proses Selesai.\n\nBerhasil Diperbarui: ${successCount} Data\nData tidak ditemukan/Gagal: ${failCount}`);
+                  alert(`Proses Selesai.\n\nBerhasil Diperbarui: ${updatesList.length} Data\nData tidak ditemukan/Gagal: ${failCount}`);
               } else {
                   alert("Tidak ada data valid yang ditemukan untuk diimpor.");
               }
@@ -553,6 +554,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
               alert("Gagal impor file Excel. Pastikan format file benar.");
           } finally {
               setIsImporting(false);
+              setImportProgress(0);
               if (fileInputRef.current) fileInputRef.current.value = '';
           }
       };
@@ -865,8 +867,16 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                             disabled={isImporting}
                             className="bg-green-600 text-white px-3 py-2 rounded-lg text-xs font-bold hover:bg-green-700 flex items-center gap-2 whitespace-nowrap shadow-sm disabled:opacity-50"
                         >
-                            {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
-                            Import Nilai
+                            {isImporting ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    {importProgress > 0 ? `${importProgress}%` : 'Memproses...'}
+                                </>
+                            ) : (
+                                <>
+                                    <UploadCloud className="w-4 h-4" /> Import Nilai
+                                </>
+                            )}
                         </button>
                         <div className="w-px h-8 bg-gray-200 mx-1 hidden xl:block"></div>
                         <button 
