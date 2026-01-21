@@ -15,6 +15,7 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
   const [selected5SemSubjects, setSelected5SemSubjects] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'SUMMARY' | 'DETAIL'>('SUMMARY');
 
+  // MATCHING SUBJECT MAP EXACTLY WITH GRADESVIEW.TSX FOR CONSISTENCY
   const SUBJECT_MAP = [
       { key: 'PAI', label: 'PAI', full: 'Pendidikan Agama dan Budi Pekerti' },
       { key: 'Pendidikan Pancasila', label: 'PPKn', full: 'Pendidikan Pancasila' },
@@ -23,11 +24,39 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
       { key: 'IPA', label: 'IPA', full: 'Ilmu Pengetahuan Alam' },
       { key: 'IPS', label: 'IPS', full: 'Ilmu Pengetahuan Sosial' },
       { key: 'Bahasa Inggris', label: 'BIG', full: 'Bahasa Inggris' },
-      { key: 'PJOK', label: 'PJOK', full: 'PJOK' },
+      { key: 'PJOK', label: 'PJOK', full: 'Pendidikan Jasmani, Olahraga, dan Kesehatan' },
       { key: 'Informatika', label: 'INF', full: 'Informatika' },
       { key: 'Seni dan Prakarya', label: 'SENI', full: 'Seni dan Prakarya' },
       { key: 'Bahasa Jawa', label: 'B.JAWA', full: 'Bahasa Jawa' },
   ];
+
+  // ROBUST SUBJECT FINDER (COPIED FROM GRADESVIEW TO ENSURE SYNC)
+  const findSubjectRecord = (subjects: any[], mapItem: any) => {
+      if (!subjects) return undefined;
+      return subjects.find(s => {
+          const sName = (s.subject || '').toLowerCase().trim();
+          const full = (mapItem.full || '').toLowerCase().trim();
+          const key = (mapItem.key || '').toLowerCase().trim();
+          const label = (mapItem.label || '').toLowerCase().trim();
+          
+          // Exact match on any field
+          if (sName === full) return true;
+          if (sName === key) return true;
+          if (sName === label) return true;
+
+          // Partial matches
+          if (sName.includes(full)) return true;
+          if (full.includes(sName) && sName.length > 3) return true; 
+
+          // Specific cases for commonly mismatched subjects
+          if (key === 'pai' && sName.includes('agama')) return true;
+          if (key === 'pjok' && (sName.includes('jasmani') || sName.includes('olahraga'))) return true;
+          if ((key.includes('pancasila') || label === 'ppkn') && (sName.includes('pancasila') || sName.includes('ppkn'))) return true;
+          if ((key.includes('seni') || label === 'seni') && (sName.includes('seni') || sName.includes('budaya') || sName.includes('prakarya'))) return true;
+          
+          return false;
+      });
+  };
 
   // Helper for Score Color
   const getScoreColor = (score: number) => {
@@ -88,25 +117,21 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
   const effectiveStudents = (userRole === 'STUDENT' && loggedInStudent) ? [loggedInStudent] : students;
 
   const filteredStudents = effectiveStudents.filter(s => {
-      const matchClass = userRole === 'STUDENT' ? true : (dbClassFilter === 'ALL' || s.className === dbClassFilter);
+      const matchClass = userRole === 'STUDENT' ? true : (dbClassFilter === 'ALL' || s.className.trim() === dbClassFilter.trim());
       return matchClass;
   });
 
+  // UPDATED GET SCORE USING ROBUST FINDER
   const getScore = (s: Student, subjKey: string, sem: number) => {
-      const record = s.academicRecords?.[sem];
+      // Handle string or number keys safely
+      const record = s.academicRecords ? (s.academicRecords[sem] || s.academicRecords[String(sem)]) : null;
       if (!record) return 0;
-      const mapItem = SUBJECT_MAP.find(m => m.key === subjKey);
       
-      const subj = record.subjects.find(sub => {
-           if (mapItem) {
-               return sub.subject === mapItem.full || 
-                      sub.subject === mapItem.key ||
-                      sub.subject.startsWith(mapItem.key) || 
-                      (mapItem.key === 'PAI' && sub.subject.includes('Agama'));
-           }
-           return sub.subject.startsWith(subjKey);
-      });
-      return subj ? subj.score : 0;
+      const mapItem = SUBJECT_MAP.find(m => m.key === subjKey);
+      if (!mapItem) return 0;
+
+      const subjData = findSubjectRecord(record.subjects, mapItem);
+      return subjData ? subjData.score : 0;
   };
 
   const calculate5SemAvg = (student: Student, subjectKey: string): number => {
@@ -134,7 +159,6 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
   }
 
   // Calculate Semester Average (Row Average per Semester)
-  // UPDATED: Now only calculates average based on selected subjects
   const calculateSemesterAvg = (student: Student, semester: number): number => {
       let total = 0;
       let count = 0;
@@ -185,8 +209,6 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
                   };
 
                   [1, 2, 3, 4, 5].forEach(sem => {
-                      // Only export selected subjects in detail mode as well? 
-                      // Or export all? Usually detail exports all, but let's stick to config for consistency
                       selected5SemSubjects.forEach(key => {
                           const label = SUBJECT_MAP.find(sub => sub.key === key)?.label || key;
                           row[`S${sem} - ${label}`] = getScore(s, key, sem) || 0;
