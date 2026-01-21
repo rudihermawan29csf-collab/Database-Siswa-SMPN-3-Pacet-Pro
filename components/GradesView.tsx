@@ -22,7 +22,7 @@ const SUBJECT_MAP = [
     { key: 'IPA', label: 'IPA', full: 'Ilmu Pengetahuan Alam' },
     { key: 'IPS', label: 'IPS', full: 'Ilmu Pengetahuan Sosial' },
     { key: 'Bahasa Inggris', label: 'BIG', full: 'Bahasa Inggris' },
-    { key: 'PJOK', label: 'PJOK', full: 'PJOK' },
+    { key: 'PJOK', label: 'PJOK', full: 'Pendidikan Jasmani, Olahraga, dan Kesehatan' },
     { key: 'Informatika', label: 'INF', full: 'Informatika' },
     { key: 'Seni dan Prakarya', label: 'SENI', full: 'Seni dan Prakarya' },
     { key: 'Bahasa Jawa', label: 'B.JAWA', full: 'Bahasa Jawa' },
@@ -31,11 +31,11 @@ const SUBJECT_MAP = [
 // --- HELPER FUNCTIONS ---
 
 const getScoreColor = (score: number) => {
-    if (!score && score !== 0) return '';
-    if (score === 0) return 'text-gray-400';
-    if (score < 70) return 'bg-red-100 text-red-700 font-bold';
-    if (score < 85) return 'bg-yellow-100 text-yellow-800 font-bold';
-    return 'bg-green-100 text-green-700 font-bold';
+    if (!score && score !== 0) return 'text-gray-300';
+    if (score === 0) return 'text-gray-300';
+    if (score < 70) return 'text-red-600 font-bold bg-red-50';
+    if (score < 85) return 'text-yellow-700 font-bold';
+    return 'text-green-600 font-bold';
 };
 
 const getCompetencyDescription = (score: number, subjectName: string) => {
@@ -47,6 +47,35 @@ const getCompetencyDescription = (score: number, subjectName: string) => {
     else predikat = 'Perlu bimbingan';
 
     return `${predikat} dalam memahami materi ${subjectName}.`;
+};
+
+// ROBUST SUBJECT FINDER
+const findSubjectRecord = (subjects: any[], mapItem: any) => {
+    if (!subjects) return undefined;
+    return subjects.find(s => {
+        const sName = (s.subject || '').toLowerCase().trim();
+        const full = (mapItem.full || '').toLowerCase().trim();
+        const key = (mapItem.key || '').toLowerCase().trim();
+        const label = (mapItem.label || '').toLowerCase().trim();
+        
+        // Exact match on any field
+        if (sName === full) return true;
+        if (sName === key) return true;
+        if (sName === label) return true;
+
+        // Partial matches
+        if (sName.includes(full)) return true;
+        // Inverse check for cases where stored name is short but map is long
+        if (full.includes(sName) && sName.length > 3) return true; 
+
+        // Specific cases for commonly mismatched subjects
+        if (key === 'pai' && sName.includes('agama')) return true;
+        if (key === 'pjok' && (sName.includes('jasmani') || sName.includes('olahraga'))) return true;
+        if ((key.includes('pancasila') || label === 'ppkn') && (sName.includes('pancasila') || sName.includes('ppkn'))) return true;
+        if ((key.includes('seni') || label === 'seni') && (sName.includes('seni') || sName.includes('budaya') || sName.includes('prakarya'))) return true;
+        
+        return false;
+    });
 };
 
 // Helper: Format Name Title Case & Gelar Correctly
@@ -155,11 +184,13 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
     } else {
         // Ensure all subjects are mapped even if not in DB
         const filledSubjects = SUBJECT_MAP.map((mapItem, idx) => {
-            const existingSub = record!.subjects.find(s => 
-                s.subject === mapItem.full || s.subject.startsWith(mapItem.key) || (mapItem.key === 'PAI' && s.subject.includes('Agama'))
-            );
+            const existingSub = findSubjectRecord(record!.subjects, mapItem);
+            
             const score = existingSub ? existingSub.score : 0;
-            const competency = getCompetencyDescription(score, mapItem.full);
+            const competency = existingSub?.competency && existingSub.competency !== '-' 
+                ? existingSub.competency 
+                : getCompetencyDescription(score, mapItem.full);
+                
             return { no: idx + 1, subject: mapItem.full, score: score, competency: competency };
         });
         
@@ -394,7 +425,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
 
           // Fill existing scores if any
           SUBJECT_MAP.forEach(sub => {
-              const subjRecord = record?.subjects.find(r => r.subject.includes(sub.key) || r.subject === sub.full);
+              const subjRecord = findSubjectRecord(record?.subjects || [], sub);
               row[`${sub.key}_Nilai`] = subjRecord ? subjRecord.score : '';
           });
 
@@ -412,7 +443,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       xlsx.writeFile(wb, `Template_Nilai_Semester_${selectedSemester}_${selectedClass}.xlsx`);
   };
 
-  // --- EXCEL IMPORT ---
+  // --- EXCEL IMPORT (BATCH PROCESSING OPTIMIZATION) ---
   const handleImportGrades = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -431,25 +462,28 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
               const ws = wb.Sheets[wsname];
               const data = xlsx.utils.sheet_to_json(ws);
 
-              // Process Data
-              let processedCount = 0;
+              // 1. Create a quick lookup map for current students to avoid O(N^2) complexity
+              // Use NISN as key (String)
+              // FIX: Explicitly type the Map to avoid 'unknown' inference for values
+              const currentStudentsMap = new Map<string, Student>(students.map(s => [String(s.nisn).trim(), s] as [string, Student]));
               
-              // We need to update students. Iterate through imported rows.
-              // Strategy: Update local state -> Send updates to API one by one or batch if possible.
-              // Ideally API supports batch update, but we will iterate for now to ensure safety.
+              // 2. Prepare Batch Updates
+              const updatesToSync: Student[] = [];
+              let successCount = 0;
+              let failCount = 0;
               
               for (const row of data as any[]) {
-                  const nisn = row['NISN'];
-                  if (!nisn) continue;
+                  const nisn = String(row['NISN']).trim();
+                  if (!nisn) { failCount++; continue; }
 
-                  // Find Student
-                  const student = students.find(s => String(s.nisn) === String(nisn));
-                  if (!student) continue;
+                  const student = currentStudentsMap.get(nisn);
+                  if (!student) { failCount++; continue; }
 
-                  // Prepare Record Update
+                  // Prepare Record Update (Deep Clone to avoid direct mutation before sync)
                   const updatedStudent = JSON.parse(JSON.stringify(student));
                   if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
                   
+                  // Initialize Semester Record if missing
                   let record = updatedStudent.academicRecords[selectedSemester];
                   if (!record) {
                       record = {
@@ -472,7 +506,8 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
 
                   // Update Scores
                   record.subjects = SUBJECT_MAP.map((sub, idx) => {
-                      const score = Number(row[`${sub.key}_Nilai`]) || 0;
+                      const key = `${sub.key}_Nilai`;
+                      const score = Number(row[key]) || 0;
                       return {
                           no: idx + 1,
                           subject: sub.full,
@@ -481,17 +516,41 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                       };
                   });
 
-                  // Save via API
-                  await api.updateStudent(updatedStudent);
-                  processedCount++;
+                  // Add to batch list
+                  updatesToSync.push(updatedStudent);
+                  successCount++;
               }
 
-              alert(`Berhasil mengimpor nilai untuk ${processedCount} siswa.`);
-              if (onUpdate) onUpdate(); // Refresh Parent
+              // 3. Send SINGLE Batch Request if there are updates
+              if (updatesToSync.length > 0) {
+                  // We need to merge these updates into the full student list because syncInitialData usually replaces
+                  // or upserts based on implementation. 
+                  // Assuming syncInitialData performs an upsert or replace, we send the full updated list of students we modified
+                  // combined with the untouched ones? 
+                  // Based on DatabaseView implementation logic, it seems safer to construct a full list if syncInitialData replaces data.
+                  // However, if syncInitialData acts as a bulk upsert (merging by ID), sending just updated is better.
+                  // Checking api.ts (mental check): usually syncData takes the array and saves it. 
+                  // SAFER STRATEGY: Construct the full new state locally, then sync.
+                  
+                  const updatedFullList = students.map(s => {
+                      const updated = updatesToSync.find(u => u.id === s.id);
+                      return updated || s;
+                  });
+
+                  // Call API
+                  await api.syncInitialData(updatedFullList);
+                  
+                  // Update UI immediately
+                  if (onUpdate) onUpdate(); 
+                  
+                  alert(`Proses Selesai.\n\nBerhasil Diperbarui: ${successCount} Data\nData tidak ditemukan/Gagal: ${failCount}`);
+              } else {
+                  alert("Tidak ada data valid yang ditemukan untuk diimpor.");
+              }
 
           } catch (err) {
               console.error(err);
-              alert("Gagal impor file Excel.");
+              alert("Gagal impor file Excel. Pastikan format file benar.");
           } finally {
               setIsImporting(false);
               if (fileInputRef.current) fileInputRef.current.value = '';
@@ -527,6 +586,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
               }).catch((err: any) => {
                   console.error(err);
                   setIsGenerating(false);
+                  alert("Library PDF belum siap.");
               });
           } else {
               setIsGenerating(false);
@@ -615,7 +675,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
       return selectedStudent?.correctionRequests?.find(r => r.fieldKey === key && r.status === 'PENDING');
   };
 
-  // IF SINGLE STUDENT SELECTED
+  // IF SINGLE STUDENT SELECTED (Or Student View)
   if (selectedStudent) {
       const currentRecord = selectedStudent.academicRecords?.[selectedSemester];
       
@@ -734,12 +794,10 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                               </thead>
                               <tbody className="divide-y divide-gray-100">
                                   {SUBJECT_MAP.map((mapItem, idx) => {
-                                      // Logic to find subject score safely
-                                      const existingSub = currentRecord.subjects.find(s => 
-                                          s.subject === mapItem.full || s.subject.startsWith(mapItem.key) || (mapItem.key === 'PAI' && s.subject.includes('Agama'))
-                                      );
+                                      // Logic to find subject score safely using Robust Finder
+                                      const existingSub = findSubjectRecord(currentRecord.subjects, mapItem);
                                       const score = existingSub ? existingSub.score : 0;
-                                      const competency = getCompetencyDescription(score, mapItem.full);
+                                      const competency = existingSub?.competency || getCompetencyDescription(score, mapItem.full);
                                       
                                       const gradeKey = `grade-${selectedSemester}-${mapItem.full}`;
                                       const gradePending = getPendingRequest(gradeKey);
@@ -784,7 +842,7 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
                 {userRole === 'ADMIN' && (
                     <>
                         <select className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium" value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}>
-                            {uniqueClasses.map(c => <option key={c} value={c}>{c === 'ALL' ? 'Semua Kelas' : `Kelas ${c}`}</option>)}
+                            {CLASS_LIST.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                         <select className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium" value={selectedSemester} onChange={(e) => setSelectedSemester(Number(e.target.value))}>
                             {[1, 2, 3, 4, 5, 6].map(s => <option key={s} value={s}>Semester {s}</option>)}
@@ -827,31 +885,62 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
         {/* Table List */}
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex-1 overflow-hidden flex flex-col">
             <div className="overflow-auto flex-1 w-full pb-32">
-                <table className="w-full text-left border-collapse">
-                    <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-700 uppercase">
+                <table className="border-collapse min-w-max text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-700 uppercase sticky top-0 z-10 shadow-sm">
                         <tr>
-                            <th className="px-6 py-4 w-12 text-center">No</th>
-                            <th className="px-6 py-4">Nama Siswa</th>
-                            <th className="px-6 py-4">NISN</th>
-                            <th className="px-6 py-4">Kelas</th>
-                            <th className="px-6 py-4 text-center">Aksi</th>
+                            <th className="px-4 py-4 w-10 text-center sticky left-0 bg-gray-50 border-r z-20">No</th>
+                            <th className="px-6 py-4 sticky left-10 bg-gray-50 border-r z-20 min-w-[200px]">Nama Siswa</th>
+                            <th className="px-4 py-4 text-center">NISN</th>
+                            <th className="px-4 py-4 text-center">Kelas</th>
+                            
+                            {/* DYNAMIC SUBJECT HEADERS */}
+                            {SUBJECT_MAP.map(sub => (
+                                <th key={sub.key} className="px-2 py-4 text-center min-w-[50px] border-l border-gray-200" title={sub.full}>
+                                    {sub.key}
+                                </th>
+                            ))}
+                            
+                            <th className="px-6 py-4 text-center border-l border-gray-200">Aksi</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                        {filteredStudents.length > 0 ? filteredStudents.map((s, idx) => (
-                            <tr key={s.id} className="hover:bg-purple-50/30 transition-colors group cursor-pointer" onClick={() => setSelectedStudent(s)}>
-                                <td className="px-6 py-3 text-center text-gray-500">{idx + 1}</td>
-                                <td className="px-6 py-3 font-bold text-gray-800 group-hover:text-purple-600">{s.fullName}</td>
-                                <td className="px-6 py-3 font-mono text-xs text-gray-500">{s.nisn}</td>
-                                <td className="px-6 py-3"><span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-bold">{s.className}</span></td>
-                                <td className="px-6 py-3 text-center">
-                                    <button className="text-xs font-bold text-blue-600 border border-blue-200 px-3 py-1 rounded hover:bg-blue-600 hover:text-white transition-colors">
-                                        Lihat Rapor
-                                    </button>
-                                </td>
-                            </tr>
-                        )) : (
-                            <tr><td colSpan={5} className="p-8 text-center text-gray-500">Tidak ada data siswa.</td></tr>
+                        {filteredStudents.length > 0 ? filteredStudents.map((s, idx) => {
+                            const record = s.academicRecords ? (s.academicRecords[selectedSemester] || s.academicRecords[String(selectedSemester)]) : null;
+                            
+                            return (
+                                <tr key={s.id} className="hover:bg-purple-50/30 transition-colors group cursor-pointer" onClick={() => setSelectedStudent(s)}>
+                                    <td className="px-4 py-3 text-center text-gray-500 border-r sticky left-0 bg-white z-10">{idx + 1}</td>
+                                    <td className="px-6 py-3 font-bold text-gray-800 group-hover:text-purple-600 border-r sticky left-10 bg-white z-10 shadow-sm">
+                                        {s.fullName}
+                                    </td>
+                                    <td className="px-4 py-3 font-mono text-xs text-gray-500 text-center">{s.nisn}</td>
+                                    <td className="px-4 py-3 text-center">
+                                        <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-bold">{s.className}</span>
+                                    </td>
+
+                                    {/* DYNAMIC SUBJECT SCORES */}
+                                    {SUBJECT_MAP.map(sub => {
+                                        const subjData = findSubjectRecord(record?.subjects || [], sub);
+                                        const score = subjData ? subjData.score : 0;
+                                        
+                                        return (
+                                            <td key={sub.key} className="px-2 py-3 text-center border-l border-gray-100">
+                                                <span className={`text-xs ${getScoreColor(score)}`}>
+                                                    {score > 0 ? score : '-'}
+                                                </span>
+                                            </td>
+                                        );
+                                    })}
+
+                                    <td className="px-6 py-3 text-center border-l border-gray-200">
+                                        <button className="text-xs font-bold text-blue-600 border border-blue-200 px-3 py-1 rounded hover:bg-blue-600 hover:text-white transition-colors">
+                                            Lihat Rapor
+                                        </button>
+                                    </td>
+                                </tr>
+                            );
+                        }) : (
+                            <tr><td colSpan={SUBJECT_MAP.length + 5} className="p-8 text-center text-gray-500">Tidak ada data siswa.</td></tr>
                         )}
                     </tbody>
                 </table>
