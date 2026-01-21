@@ -113,19 +113,47 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
       return matchClass;
   });
 
+  // --- ROBUST SUBJECT FINDER (Standardized) ---
+  const findSubjectRecord = (subjects: any[], mapItem: any) => {
+      if (!subjects) return undefined;
+      return subjects.find(s => {
+          const sName = (s.subject || '').toLowerCase().trim();
+          const full = (mapItem.full || '').toLowerCase().trim();
+          const key = (mapItem.key || '').toLowerCase().trim();
+          const label = (mapItem.label || '').toLowerCase().trim();
+          
+          // Exact match on any field
+          if (sName === full) return true;
+          if (sName === key) return true;
+          if (sName === label) return true;
+
+          // Partial matches
+          if (sName.includes(full)) return true;
+          if (full.includes(sName) && sName.length > 3) return true; 
+
+          // Specific cases for commonly mismatched subjects
+          if (key === 'pai' && sName.includes('agama')) return true;
+          
+          // FIX PJOK MATCHING
+          if (key === 'pjok' && (sName.includes('jasmani') || sName.includes('olahraga') || sName.includes('pjok'))) return true;
+          
+          if ((key.includes('pancasila') || label === 'ppkn') && (sName.includes('pancasila') || sName.includes('ppkn'))) return true;
+          if ((key.includes('seni') || label === 'seni') && (sName.includes('seni') || sName.includes('budaya') || sName.includes('prakarya'))) return true;
+          
+          return false;
+      });
+  };
+
   // --- LOGIC NILAI ---
   const getScore = (s: Student, subjKey: string, sem: number) => {
       const record = s.academicRecords?.[sem];
       if (!record) return 0;
       
-      const subj = record.subjects.find(sub => {
-          if (subjKey === 'IPA') return sub.subject.includes('Alam') || sub.subject.includes('IPA');
-          if (subjKey === 'IPS') return sub.subject.includes('Sosial') || sub.subject.includes('IPS');
-          if (subjKey === 'PAI') return sub.subject.includes('Agama') || sub.subject.includes('PAI');
-          return sub.subject.startsWith(subjKey) || sub.subject === subjKey;
-      });
-      
-      return subj ? subj.score : 0;
+      const mapItem = SUBJECT_MAP.find(m => m.key === subjKey);
+      if (!mapItem) return 0;
+
+      const subjData = findSubjectRecord(record.subjects, mapItem);
+      return subjData ? subjData.score : 0;
   };
 
   // Rata-rata per Mapel (S1-S6) - DIVIDER FIX: Always 6
@@ -649,6 +677,8 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
                 {/* --- DETAIL VIEW (CERTIFICATE / TRANSCRIPT) --- */}
                 {activeTab === 'DATA' && viewMode === 'DETAIL' && selectedStudent && (
                     <div className="flex flex-col items-center p-8 bg-gray-100 min-h-full">
+                        {/* ... (Detail View code remains mostly same, logic for tables uses helper) */}
+                        {/* Ijazah & Transkrip rendering logic preserved ... */}
                         {detailType === 'CERTIFICATE' ? (
                             <div className="w-[210mm] min-h-[297mm] bg-white shadow-2xl p-12 text-center text-gray-900 font-serif relative">
                                 {/* CENTERED LAYOUT AS PER IMAGE REQUEST */}

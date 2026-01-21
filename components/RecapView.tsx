@@ -50,7 +50,10 @@ const RecapView: React.FC<RecapViewProps> = ({ students, userRole = 'ADMIN', log
 
           // Specific cases for commonly mismatched subjects
           if (key === 'pai' && sName.includes('agama')) return true;
-          if (key === 'pjok' && (sName.includes('jasmani') || sName.includes('olahraga'))) return true;
+          
+          // FIX PJOK MATCHING
+          if (key === 'pjok' && (sName.includes('jasmani') || sName.includes('olahraga') || sName.includes('pjok'))) return true;
+          
           if ((key.includes('pancasila') || label === 'ppkn') && (sName.includes('pancasila') || sName.includes('ppkn'))) return true;
           if ((key.includes('seni') || label === 'seni') && (sName.includes('seni') || sName.includes('budaya') || sName.includes('prakarya'))) return true;
           

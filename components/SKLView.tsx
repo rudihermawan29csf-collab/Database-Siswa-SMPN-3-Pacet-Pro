@@ -11,6 +11,7 @@ interface SKLViewProps {
 }
 
 // Subject mapping specifically for SKL format
+// UPDATED KEYS TO MATCH OTHER FILES FOR CONSISTENCY
 const SKL_SUBJECTS = [
     { key: 'PAI', label: 'Pendidikan Agama dan Budi Pekerti' },
     { key: 'Pendidikan Pancasila', label: 'Pendidikan Pancasila' },
@@ -43,10 +44,7 @@ const formatHeadmasterName = (name: string) => {
     });
     
     // 2. Perbaikan Khusus Gelar (Hardcoded fixes)
-    // Menangani M.M.Pd. (d kecil)
     formatted = formatted.replace(/M\.m\.pd\.?/gi, 'M.M.Pd.');
-    
-    // Gelar umum lainnya (opsional, untuk jaga-jaga)
     formatted = formatted.replace(/S\.pd\.?/gi, 'S.Pd.');
     formatted = formatted.replace(/M\.pd\.?/gi, 'M.Pd.');
     formatted = formatted.replace(/S\.ag\.?/gi, 'S.Ag.');
@@ -54,40 +52,68 @@ const formatHeadmasterName = (name: string) => {
     return formatted;
 };
 
+// --- ROBUST SUBJECT FINDER (COPIED FROM IJAZAH VIEW FOR SYNC) ---
+const findSubjectRecord = (subjects: any[], mapItem: any) => {
+    if (!subjects) return undefined;
+    return subjects.find(s => {
+        const sName = (s.subject || '').toLowerCase().trim();
+        // SKL uses 'label' as full name
+        const full = (mapItem.label || '').toLowerCase().trim(); 
+        const key = (mapItem.key || '').toLowerCase().trim();
+        
+        // Exact match on any field
+        if (sName === full) return true;
+        if (sName === key) return true;
+
+        // Partial matches
+        if (sName.includes(full)) return true;
+        if (full.includes(sName) && sName.length > 3) return true; 
+
+        // Specific cases for commonly mismatched subjects
+        if (key === 'pai' && sName.includes('agama')) return true;
+        
+        // FIX PJOK MATCHING
+        if (key === 'pjok' && (sName.includes('jasmani') || sName.includes('olahraga') || sName.includes('pjok'))) return true;
+        
+        if (key.includes('pancasila') && (sName.includes('pancasila') || sName.includes('ppkn'))) return true;
+        if (key.includes('seni') && (sName.includes('seni') || sName.includes('budaya') || sName.includes('prakarya'))) return true;
+        
+        return false;
+    });
+};
+
 const calculateAverageScore = (student: Student, subjectKey: string) => {
     let total = 0;
-    let count = 0;
+    // USE FIXED DIVISOR (6) TO MATCH IJAZAH LOGIC
+    const totalSemesters = 6; 
     
+    // Find the map item for this key
+    const mapItem = SKL_SUBJECTS.find(s => s.key === subjectKey);
+    if (!mapItem) return 0;
+
     for (let i = 1; i <= 6; i++) {
-        // Access safely with string or number key
         const record = student.academicRecords?.[i] || student.academicRecords?.[String(i)];
         if (record) {
-            const subj = record.subjects.find(s => 
-                s.subject === subjectKey || 
-                s.subject.startsWith(subjectKey) ||
-                (subjectKey === 'PAI' && s.subject.includes('Agama')) ||
-                (subjectKey === 'IPA' && (s.subject === 'IPA' || s.subject.includes('Alam'))) || 
-                (subjectKey === 'IPS' && (s.subject === 'IPS' || s.subject.includes('Sosial'))) || 
-                (subjectKey === 'Seni dan Prakarya' && (s.subject.includes('Seni') || s.subject.includes('Prakarya')))
-            );
+            // Use Robust Finder
+            const subj = findSubjectRecord(record.subjects, mapItem);
             
             if (subj && subj.score > 0) {
                 total += subj.score;
-                count++;
             }
         }
     }
-    return count > 0 ? (total / count) : 0;
+    // Divide by 6 always to sync with Ijazah logic (missing sem = 0)
+    return totalSemesters > 0 ? (total / totalSemesters) : 0;
 };
 
 const calculateTotalAverage = (student: Student) => {
     let sum = 0;
-    let count = 0;
+    // Divide by total subjects count to be consistent
+    const count = SKL_SUBJECTS.length; 
     SKL_SUBJECTS.forEach(sub => {
         const score = calculateAverageScore(student, sub.key);
         if (score > 0) {
             sum += score;
-            count++;
         }
     });
     return count > 0 ? (sum / count) : 0;
