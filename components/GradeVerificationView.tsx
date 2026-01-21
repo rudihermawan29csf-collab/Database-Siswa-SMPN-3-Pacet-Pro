@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, DocumentFile } from '../types';
 import { api } from '../services/api';
-import { CheckCircle2, XCircle, Loader2, AlertCircle, FileText, ZoomIn, ZoomOut, RotateCw, LayoutList, Filter, Search, Save, Calendar, ChevronRight, File, School, RefreshCw, UserCheck } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, AlertCircle, FileText, ZoomIn, ZoomOut, RotateCw, LayoutList, Filter, Search, Save, Calendar, ChevronRight, File, School, RefreshCw, UserCheck, Lock } from 'lucide-react';
 
 interface GradeVerificationViewProps {
   students: Student[];
@@ -153,26 +153,36 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       setAdminNote(currentDoc?.adminNote || '');
   }, [currentDoc]);
 
-  // --- HELPER: CALCULATE HISTORICAL YEAR ---
+  // --- HELPER: CALCULATE HISTORICAL YEAR (STRICT LOGIC) ---
   const calculateHistoricalYear = (studentCurrentClass: string, targetSemester: number) => {
+      // 1. Get Active Year from Settings (Default to current if missing)
       const currentActiveYear = appSettings?.academicData?.activeYear || '2024/2025';
       const [startYear, endYear] = currentActiveYear.split('/').map(Number);
       
       if (!startYear) return currentActiveYear;
 
+      // 2. Helper to get numeric level from class string
       const getLevel = (cls: string) => {
           if (!cls) return 7;
           const upper = cls.toUpperCase();
           if (upper.includes('IX')) return 9;
           if (upper.includes('VIII')) return 8;
           if (upper.includes('VII')) return 7;
-          return 7;
+          return 7; // Default
       };
       
+      // 3. Determine Levels
       const currentLevel = getLevel(studentCurrentClass);
+      
+      // Target Level based on Semester (1-2 = 7, 3-4 = 8, 5-6 = 9)
       const targetLevel = targetSemester <= 2 ? 7 : targetSemester <= 4 ? 8 : 9;
+      
+      // 4. Calculate Offset
+      // Example: Student is in Class 9 (IX), Viewing Semester 1 (Class 7).
+      // Offset = 9 - 7 = 2 years ago.
       const offset = currentLevel - targetLevel;
 
+      // 5. Calculate Historical Year
       let histStart = startYear - offset;
       
       // Ensure full format "YYYY/YYYY+1"
@@ -215,18 +225,10 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           }
           setSemesterClass(cls);
 
-          // Determine Academic Year
-          if (record?.year) {
-              if (!record.year.includes('/') && !isNaN(Number(record.year))) {
-                  const y = Number(record.year);
-                  setAcademicYear(`${y}/${y+1}`);
-              } else {
-                  setAcademicYear(record.year);
-              }
-          } else {
-              const autoYear = calculateHistoricalYear(currentStudent.className, activeSemester);
-              setAcademicYear(autoYear);
-          }
+          // Determine Academic Year - STRICT AUTO CALCULATION
+          const autoYear = calculateHistoricalYear(currentStudent.className, activeSemester);
+          setAcademicYear(autoYear);
+
       } else {
           setGradeData({});
           setAttendanceData({ sick: 0, permitted: 0, noReason: 0 });
@@ -255,7 +257,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       
       // Update Fields strictly - THESE ARE CRITICAL FOR REPORT SYNC
       record.className = semesterClass; 
-      record.year = academicYear;
+      record.year = academicYear; // Saved the auto-calculated year
       record.attendance = attendanceData; 
       
       // Map scores using FULL NAME to ensure compatibility with GradesView
@@ -518,7 +520,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                                     <div>
                                         <p className="font-bold">Instruksi:</p>
                                         <p>1. Cek dokumen di kiri.</p>
-                                        <p>2. Data Tahun & Kelas diisi otomatis, koreksi jika salah.</p>
+                                        <p>2. Data Tahun & Kelas diisi otomatis sesuai sistem.</p>
                                         <p>3. Input Nilai & Kehadiran sesuai Rapor.</p>
                                     </div>
                                 </div>
@@ -531,14 +533,17 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                                         </h4>
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
-                                        <div>
+                                        <div className="relative">
                                             <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Tahun Pelajaran</label>
-                                            <input 
-                                                className="w-full p-2 border border-blue-200 rounded text-xs font-bold text-gray-800 focus:ring-2 focus:ring-blue-500 outline-none bg-white"
-                                                value={academicYear}
-                                                onChange={(e) => setAcademicYear(e.target.value)}
-                                                placeholder="Contoh: 2024/2025"
-                                            />
+                                            <div className="relative">
+                                                <input 
+                                                    readOnly
+                                                    className="w-full p-2 border border-gray-200 rounded text-xs font-bold text-gray-600 bg-gray-100 cursor-not-allowed focus:outline-none"
+                                                    value={academicYear}
+                                                    title="Otomatis dari Pengaturan Tahun Pelajaran"
+                                                />
+                                                <Lock className="w-3 h-3 text-gray-400 absolute right-2 top-1/2 -translate-y-1/2" />
+                                            </div>
                                         </div>
                                         <div>
                                             <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Kelas</label>
