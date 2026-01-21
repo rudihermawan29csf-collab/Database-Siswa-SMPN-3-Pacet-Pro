@@ -34,18 +34,19 @@ const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
     return url;
 };
 
+// SAMA PERSIS DENGAN GRADESVIEW.TSX AGAR DATA SINKRON
 const SUBJECT_MAP = [
-    { key: 'PAI', label: 'PAI' },
-    { key: 'Pendidikan Pancasila', label: 'PPKn' },
-    { key: 'Bahasa Indonesia', label: 'BIN' },
-    { key: 'Matematika', label: 'MTK' },
-    { key: 'IPA', label: 'IPA' },
-    { key: 'IPS', label: 'IPS' },
-    { key: 'Bahasa Inggris', label: 'BIG' },
-    { key: 'PJOK', label: 'PJOK' },
-    { key: 'Informatika', label: 'INF' },
-    { key: 'Seni dan Prakarya', label: 'SENI' },
-    { key: 'Bahasa Jawa', label: 'B.JAWA' },
+    { key: 'PAI', label: 'PAI', full: 'Pendidikan Agama dan Budi Pekerti' },
+    { key: 'Pendidikan Pancasila', label: 'PPKn', full: 'Pendidikan Pancasila' },
+    { key: 'Bahasa Indonesia', label: 'BIN', full: 'Bahasa Indonesia' },
+    { key: 'Matematika', label: 'MTK', full: 'Matematika' },
+    { key: 'IPA', label: 'IPA', full: 'Ilmu Pengetahuan Alam' },
+    { key: 'IPS', label: 'IPS', full: 'Ilmu Pengetahuan Sosial' },
+    { key: 'Bahasa Inggris', label: 'BIG', full: 'Bahasa Inggris' },
+    { key: 'PJOK', label: 'PJOK', full: 'PJOK' },
+    { key: 'Informatika', label: 'INF', full: 'Informatika' },
+    { key: 'Seni dan Prakarya', label: 'SENI', full: 'Seni dan Prakarya' },
+    { key: 'Bahasa Jawa', label: 'B.JAWA', full: 'Bahasa Jawa' },
 ];
 
 const SEMESTERS = [1, 2, 3, 4, 5, 6];
@@ -189,11 +190,17 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   // --- INITIALIZE DATA WHEN STUDENT/SEMESTER CHANGES ---
   useEffect(() => {
       if (currentStudent) {
-          const record = currentStudent.academicRecords?.[activeSemester];
+          // Akses data akademik, handle key string/number
+          const record = currentStudent.academicRecords ? (currentStudent.academicRecords[activeSemester] || currentStudent.academicRecords[String(activeSemester)]) : null;
           const initialGrades: Record<string, number> = {};
           
           SUBJECT_MAP.forEach(sub => {
-              const subjData = record?.subjects.find(s => s.subject.includes(sub.key) || s.subject === sub.label);
+              // Robust find: Check FULL NAME (stored) or Key or Label
+              const subjData = record?.subjects.find(s => 
+                  s.subject === sub.full || 
+                  s.subject === sub.label || 
+                  s.subject.includes(sub.key)
+              );
               initialGrades[sub.key] = subjData ? subjData.score : 0;
           });
           setGradeData(initialGrades);
@@ -210,7 +217,6 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
           // Determine Academic Year
           if (record?.year) {
-              // FIX: If year is saved as "2024" instead of "2024/2025", fix it here
               if (!record.year.includes('/') && !isNaN(Number(record.year))) {
                   const y = Number(record.year);
                   setAcademicYear(`${y}/${y+1}`);
@@ -229,41 +235,48 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       }
   }, [currentStudent, activeSemester, appSettings]);
 
-  // Function to Save ONLY Data
+  // Function to Prepare Updated Record
+  const prepareUpdatedStudent = () => {
+      const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+          
+      if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
+      
+      let record = updatedStudent.academicRecords[activeSemester];
+      if (!record) {
+          record = {
+              semester: activeSemester,
+              classLevel: semesterClass.split(' ')[0] || 'VII',
+              year: academicYear,
+              subjects: [],
+              attendance: { sick: 0, permitted: 0, noReason: 0 }
+          };
+          updatedStudent.academicRecords[activeSemester] = record;
+      }
+      
+      // Update Fields strictly - THESE ARE CRITICAL FOR REPORT SYNC
+      record.className = semesterClass; 
+      record.year = academicYear;
+      record.attendance = attendanceData; 
+      
+      // Map scores using FULL NAME to ensure compatibility with GradesView
+      record.subjects = SUBJECT_MAP.map((sub: any, idx: number) => ({
+          no: idx + 1,
+          subject: sub.full, // SAVE FULL NAME (e.g., 'Matematika')
+          score: Number(gradeData[sub.key]) || 0,
+          competency: '-' // Report will generate competency if needed
+      }));
+
+      return updatedStudent;
+  };
+
   const handleSaveDataOnly = async () => {
       if (!currentStudent) return;
       setIsSavingData(true);
       try {
-          const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
-          
-          if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
-          
-          let record = updatedStudent.academicRecords[activeSemester];
-          if (!record) {
-              record = {
-                  semester: activeSemester,
-                  classLevel: semesterClass.split(' ')[0] || 'VII',
-                  year: academicYear,
-                  subjects: [],
-                  attendance: { sick: 0, permitted: 0, noReason: 0 }
-              };
-              updatedStudent.academicRecords[activeSemester] = record;
-          }
-          
-          // Update Fields
-          record.className = semesterClass;
-          record.year = academicYear;
-          record.attendance = attendanceData; // Save Attendance
-          record.subjects = SUBJECT_MAP.map((sub: any, idx: number) => ({
-              no: idx + 1,
-              subject: sub.label,
-              score: Number(gradeData[sub.key]) || 0,
-              competency: '-' 
-          }));
-
+          const updatedStudent = prepareUpdatedStudent();
           await api.updateStudent(updatedStudent);
-          onUpdate();
-          alert("Data akademik & kehadiran berhasil disimpan!");
+          onUpdate(); 
+          alert("Data akademik (Nilai, Kelas, Tahun, Absensi) berhasil disimpan!");
       } catch (e) {
           console.error(e);
           alert("Gagal menyimpan data.");
@@ -272,7 +285,6 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       }
   };
 
-  // Function to Verify Document AND Save Data
   const handleProcess = async (status: 'APPROVED' | 'REVISION') => {
       if (!currentStudent) return;
       if (status === 'REVISION' && !adminNote.trim()) {
@@ -282,7 +294,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
       setIsProcessing(true);
       try {
-          const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+          const updatedStudent = prepareUpdatedStudent();
           
           // 1. Update Document Status
           if (currentDoc) {
@@ -299,31 +311,6 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                   return d;
               });
           }
-
-          // 2. Update Grades, Class, Year, Attendance
-          if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
-          
-          let record = updatedStudent.academicRecords[activeSemester];
-          if (!record) {
-              record = {
-                  semester: activeSemester,
-                  classLevel: semesterClass.split(' ')[0] || 'VII',
-                  year: academicYear,
-                  subjects: [],
-                  attendance: { sick: 0, permitted: 0, noReason: 0 }
-              };
-              updatedStudent.academicRecords[activeSemester] = record;
-          }
-          
-          record.className = semesterClass;
-          record.year = academicYear;
-          record.attendance = attendanceData; // Save Attendance
-          record.subjects = SUBJECT_MAP.map((sub: any, idx: number) => ({
-              no: idx + 1,
-              subject: sub.label,
-              score: Number(gradeData[sub.key]) || 0,
-              competency: '-' 
-          }));
 
           await api.updateStudent(updatedStudent);
           onUpdate();
@@ -615,7 +602,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                                     </div>
                                     {SUBJECT_MAP.map((sub, idx) => (
                                         <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-50 hover:bg-gray-50 px-2 rounded">
-                                            <label className="text-xs font-bold text-gray-700 w-2/3 truncate" title={sub.label}>{idx+1}. {sub.label}</label>
+                                            <label className="text-xs font-bold text-gray-700 w-2/3 truncate" title={sub.full}>{idx+1}. {sub.label}</label>
                                             <input 
                                                 type="number" 
                                                 className="w-20 p-1.5 border rounded text-right text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none"

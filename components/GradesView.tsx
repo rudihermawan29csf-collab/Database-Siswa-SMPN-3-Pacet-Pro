@@ -92,17 +92,35 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
     const schoolName = appSettings?.schoolData?.name || 'SMP Negeri 3 Pacet';
     const schoolAddress = appSettings?.schoolData?.address || 'Jalan Raya Pacet No. 12'; 
     
-    const currentLevel = getGradeLevel(student.className);
+    // Safety check for academicRecords - Handle String/Number keys
+    let record = student.academicRecords ? (student.academicRecords[semester] || student.academicRecords[String(semester)]) : null;
+
+    // --- PRIORITIZE RECORD DATA (EDITED IN VERIFICATION) ---
+    // Class Name: Use record's class if available, else current class
+    const classCorrectionKey = `class-${semester}`;
+    const pendingClassReq = student.correctionRequests?.find(r => r.fieldKey === classCorrectionKey && r.status === 'PENDING');
+    
+    // Logic: Pending Request > Record Class (Verification) > Current Class
+    const displayClass = pendingClassReq ? pendingClassReq.proposedValue : (record?.className || student.className);
+    
+    const currentLevel = getGradeLevel(displayClass); // Use displayed class to get level
+
+    // Academic Year Logic: Priority = Record > Settings > Default
     let academicYear = '2024/2025';
     let reportDate = new Date().toLocaleDateString('id-ID');
 
-    // Calculate Academic Year from Settings
-    if (appSettings?.academicData) {
+    if (record?.year) {
+        academicYear = record.year;
+    } else if (appSettings?.academicData) {
         if (appSettings.academicData.semesterYears?.[currentLevel]?.[semester]) {
             academicYear = appSettings.academicData.semesterYears[currentLevel][semester];
         } else if (appSettings.academicData.semesterYears?.[semester]) {
             academicYear = appSettings.academicData.semesterYears[semester];
         }
+    }
+
+    // Report Date Logic
+    if (appSettings?.academicData) {
         if (appSettings.academicData.semesterDates?.[currentLevel]?.[semester]) {
             const dateStr = appSettings.academicData.semesterDates[currentLevel][semester];
             if (dateStr) {
@@ -122,16 +140,13 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
     const headmaster = appSettings?.schoolData?.headmaster || 'Didik Sulistyo, M.M.Pd';
     const headmasterNip = appSettings?.schoolData?.nip || '19660518 198901 1 002';
     
-    // Safety check for academicRecords - Handle String/Number keys
-    let record = student.academicRecords ? (student.academicRecords[semester] || student.academicRecords[String(semester)]) : null;
-    
     // If no record exists, creating a dummy one to ensure layout renders (for batch empty check)
     if (!record) {
         const level = (semester <= 2) ? 'VII' : (semester <= 4) ? 'VIII' : 'IX';
         record = {
             semester: semester,
             classLevel: level,
-            className: student.className,
+            className: displayClass,
             phase: 'D',
             year: academicYear,
             subjects: SUBJECT_MAP.map((s, i) => ({ no: i + 1, subject: s.full, score: 0, competency: '-' })),
@@ -148,10 +163,17 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
             return { no: idx + 1, subject: mapItem.full, score: score, competency: competency };
         });
         
-        // FIX: Ensure attendance object exists even if missing in DB record
+        // FIX: Ensure attendance object exists even if missing in DB record, PRIORITIZE EXISTING RECORD
         const attendance = record.attendance || { sick: 0, permitted: 0, noReason: 0 };
         
-        record = { ...record, subjects: filledSubjects, attendance: attendance };
+        // We reconstruct record using prioritised values to render
+        record = { 
+            ...record, 
+            subjects: filledSubjects, 
+            attendance: attendance, 
+            year: academicYear, // Forced priority
+            className: displayClass // Forced priority
+        };
     }
 
     // --- P5 LOGIC (UPDATED) ---
@@ -160,7 +182,7 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
 
     // 2. If Empty, Check Admin Settings based on Context (Year-Level-Semester)
     if (!p5DataToRender.length && appSettings?.p5DataMap) {
-        const p5Key = `${record.year || academicYear}-${currentLevel}-${semester}`;
+        const p5Key = `${academicYear}-${currentLevel}-${semester}`;
         const specificThemes = appSettings.p5DataMap[p5Key];
         if (specificThemes && specificThemes.length > 0) {
             p5DataToRender = specificThemes.map((t: any, i: number) => ({
@@ -179,10 +201,6 @@ const ReportTemplate: React.FC<ReportTemplateProps> = ({ student, semester, appS
             description: t.description
         }));
     }
-
-    const classCorrectionKey = `class-${semester}`;
-    const pendingClassReq = student.correctionRequests?.find(r => r.fieldKey === classCorrectionKey && r.status === 'PENDING');
-    const displayClass = pendingClassReq ? pendingClassReq.proposedValue : (record.className || student.className);
 
     const waliKey = `${academicYear}-${semester}-${displayClass}`;
     const waliData = appSettings?.classConfig?.[waliKey];
@@ -298,6 +316,9 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
   const [appSettings, setAppSettings] = useState<any>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- CORRECTION STATE (STUDENT) ---
   const [isCorrectionModalOpen, setIsCorrectionModalOpen] = useState(false);
@@ -345,6 +366,140 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
           setSelectedStudent(loggedInStudent);
       }
   }, [userRole, loggedInStudent]);
+
+  // --- EXCEL TEMPLATE DOWNLOAD ---
+  const handleDownloadTemplate = () => {
+      // @ts-ignore
+      const xlsx = window.XLSX;
+      if (!xlsx) { alert("Library Excel belum siap."); return; }
+
+      // Get students for current filter (or all if ALL)
+      const targetStudents = selectedClass === 'ALL' ? students : filteredStudents;
+
+      // Define Headers
+      const headers = [
+          'No', 'Nama Siswa', 'NISN', 'Kelas',
+          ...SUBJECT_MAP.flatMap(s => [`${s.key}_Nilai`]), // Minimalist template: Just scores
+          'Sakit', 'Izin', 'Alpha'
+      ];
+
+      const data = targetStudents.map((s, idx) => {
+          const record = s.academicRecords?.[selectedSemester];
+          const row: any = {
+              'No': idx + 1,
+              'Nama Siswa': s.fullName,
+              'NISN': s.nisn,
+              'Kelas': s.className,
+          };
+
+          // Fill existing scores if any
+          SUBJECT_MAP.forEach(sub => {
+              const subjRecord = record?.subjects.find(r => r.subject.includes(sub.key) || r.subject === sub.full);
+              row[`${sub.key}_Nilai`] = subjRecord ? subjRecord.score : '';
+          });
+
+          // Fill attendance
+          row['Sakit'] = record?.attendance?.sick || 0;
+          row['Izin'] = record?.attendance?.permitted || 0;
+          row['Alpha'] = record?.attendance?.noReason || 0;
+
+          return row;
+      });
+
+      const ws = xlsx.utils.json_to_sheet(data);
+      const wb = xlsx.utils.book_new();
+      xlsx.utils.book_append_sheet(wb, ws, `Nilai_Sem${selectedSemester}`);
+      xlsx.writeFile(wb, `Template_Nilai_Semester_${selectedSemester}_${selectedClass}.xlsx`);
+  };
+
+  // --- EXCEL IMPORT ---
+  const handleImportGrades = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setIsImporting(true);
+      
+      // @ts-ignore
+      const xlsx = window.XLSX;
+      const reader = new FileReader();
+      
+      reader.onload = async (evt) => {
+          try {
+              const bstr = evt.target?.result;
+              const wb = xlsx.read(bstr, { type: 'binary' });
+              const wsname = wb.SheetNames[0];
+              const ws = wb.Sheets[wsname];
+              const data = xlsx.utils.sheet_to_json(ws);
+
+              // Process Data
+              let processedCount = 0;
+              
+              // We need to update students. Iterate through imported rows.
+              // Strategy: Update local state -> Send updates to API one by one or batch if possible.
+              // Ideally API supports batch update, but we will iterate for now to ensure safety.
+              
+              for (const row of data as any[]) {
+                  const nisn = row['NISN'];
+                  if (!nisn) continue;
+
+                  // Find Student
+                  const student = students.find(s => String(s.nisn) === String(nisn));
+                  if (!student) continue;
+
+                  // Prepare Record Update
+                  const updatedStudent = JSON.parse(JSON.stringify(student));
+                  if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
+                  
+                  let record = updatedStudent.academicRecords[selectedSemester];
+                  if (!record) {
+                      record = {
+                          semester: selectedSemester,
+                          classLevel: getGradeLevel(student.className),
+                          className: student.className,
+                          year: appSettings?.academicData?.activeYear || '2024/2025',
+                          subjects: [],
+                          attendance: { sick: 0, permitted: 0, noReason: 0 }
+                      };
+                      updatedStudent.academicRecords[selectedSemester] = record;
+                  }
+
+                  // Update Attendance
+                  record.attendance = {
+                      sick: Number(row['Sakit']) || 0,
+                      permitted: Number(row['Izin']) || 0,
+                      noReason: Number(row['Alpha']) || 0
+                  };
+
+                  // Update Scores
+                  record.subjects = SUBJECT_MAP.map((sub, idx) => {
+                      const score = Number(row[`${sub.key}_Nilai`]) || 0;
+                      return {
+                          no: idx + 1,
+                          subject: sub.full,
+                          score: score,
+                          competency: getCompetencyDescription(score, sub.full)
+                      };
+                  });
+
+                  // Save via API
+                  await api.updateStudent(updatedStudent);
+                  processedCount++;
+              }
+
+              alert(`Berhasil mengimpor nilai untuk ${processedCount} siswa.`);
+              if (onUpdate) onUpdate(); // Refresh Parent
+
+          } catch (err) {
+              console.error(err);
+              alert("Gagal impor file Excel.");
+          } finally {
+              setIsImporting(false);
+              if (fileInputRef.current) fileInputRef.current.value = '';
+          }
+      };
+      
+      reader.readAsBinaryString(file);
+  };
 
   // --- PDF GENERATION LOGIC ---
   const handleDownloadPDF = () => {
@@ -619,28 +774,52 @@ const GradesView: React.FC<GradesViewProps> = ({ students, userRole = 'ADMIN', l
   // LIST VIEW (ADMIN/GURU)
   return (
     <div className="flex flex-col h-full animate-fade-in space-y-4 relative">
+        <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx,.xls" onChange={handleImportGrades} />
+
         <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col xl:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-3 w-full xl:w-auto">
                 <div className="flex items-center gap-2 bg-purple-50 text-purple-700 px-3 py-2 rounded-lg font-bold text-sm border border-purple-100">
                     <Activity className="w-4 h-4" /> Data Nilai & Rapor
                 </div>
                 {userRole === 'ADMIN' && (
-                    <select className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium" value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}>
-                        {uniqueClasses.map(c => <option key={c} value={c}>{c === 'ALL' ? 'Semua Kelas' : `Kelas ${c}`}</option>)}
-                    </select>
+                    <>
+                        <select className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium" value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}>
+                            {uniqueClasses.map(c => <option key={c} value={c}>{c === 'ALL' ? 'Semua Kelas' : `Kelas ${c}`}</option>)}
+                        </select>
+                        <select className="pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium" value={selectedSemester} onChange={(e) => setSelectedSemester(Number(e.target.value))}>
+                            {[1, 2, 3, 4, 5, 6].map(s => <option key={s} value={s}>Semester {s}</option>)}
+                        </select>
+                    </>
                 )}
             </div>
             
             <div className="flex gap-2 w-full xl:w-auto">
                 {userRole !== 'STUDENT' && (
-                    <button 
-                        onClick={handleDownloadBatch} 
-                        disabled={isBatchGenerating}
-                        className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-black flex items-center gap-2 shadow-lg disabled:opacity-50 whitespace-nowrap"
-                    >
-                        {isBatchGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Files className="w-4 h-4" />}
-                        {isBatchGenerating ? 'Memproses...' : 'Download Rapor Kelas (F4)'}
-                    </button>
+                    <>
+                        <button 
+                            onClick={handleDownloadTemplate} 
+                            className="bg-blue-50 text-blue-600 border border-blue-200 px-3 py-2 rounded-lg text-xs font-bold hover:bg-blue-100 flex items-center gap-2 whitespace-nowrap"
+                        >
+                            <FileDown className="w-4 h-4" /> Template Excel
+                        </button>
+                        <button 
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isImporting}
+                            className="bg-green-600 text-white px-3 py-2 rounded-lg text-xs font-bold hover:bg-green-700 flex items-center gap-2 whitespace-nowrap shadow-sm disabled:opacity-50"
+                        >
+                            {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
+                            Import Nilai
+                        </button>
+                        <div className="w-px h-8 bg-gray-200 mx-1 hidden xl:block"></div>
+                        <button 
+                            onClick={handleDownloadBatch} 
+                            disabled={isBatchGenerating}
+                            className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-black flex items-center gap-2 shadow-lg disabled:opacity-50 whitespace-nowrap"
+                        >
+                            {isBatchGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Files className="w-4 h-4" />}
+                            {isBatchGenerating ? 'Memproses...' : 'Download Rapor Kelas (F4)'}
+                        </button>
+                    </>
                 )}
             </div>
         </div>
