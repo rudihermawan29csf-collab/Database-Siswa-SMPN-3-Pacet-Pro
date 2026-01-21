@@ -125,11 +125,19 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
 
   const handleDelete = async (docId: string) => {
       if (window.confirm("Hapus file ini?")) {
-          const updatedDocs = student.documents.filter(d => d.id !== docId);
-          const updatedStudent = { ...student, documents: updatedDocs };
-          
-          await api.updateStudent(updatedStudent);
-          if (onUpdate) onUpdate();
+          setIsUploading(true); // Reuse loading overlay to show progress
+          try {
+              const updatedDocs = student.documents.filter(d => d.id !== docId);
+              const updatedStudent = { ...student, documents: updatedDocs };
+              
+              await api.updateStudent(updatedStudent);
+              if (onUpdate) onUpdate();
+          } catch (error) {
+              console.error(error);
+              alert("Gagal menghapus file.");
+          } finally {
+              setIsUploading(false);
+          }
       }
   };
 
@@ -166,7 +174,7 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
         {isUploading && (
             <div className="absolute inset-0 z-50 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-xl">
                 <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-2" />
-                <p className="text-gray-600 font-bold animate-pulse">Mengupload ke Google Drive...</p>
+                <p className="text-gray-600 font-bold animate-pulse">Memproses...</p>
                 <p className="text-xs text-gray-400">Mohon jangan tutup halaman ini.</p>
             </div>
         )}

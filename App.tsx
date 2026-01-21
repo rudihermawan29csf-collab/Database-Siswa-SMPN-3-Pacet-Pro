@@ -408,6 +408,24 @@ function App() {
       }
   };
 
+  // --- NEW: STUDENT DELETE HANDLER (FIX) ---
+  const handleStudentDelete = async (docId: string) => {
+      if (!selectedStudent) return;
+      if (window.confirm("Apakah Anda yakin ingin menghapus dokumen ini?")) {
+          const updatedDocs = selectedStudent.documents.filter(d => d.id !== docId);
+          const updatedStudent = { ...selectedStudent, documents: updatedDocs };
+          
+          try {
+              await api.updateStudent(updatedStudent);
+              refreshData();
+              alert("Dokumen berhasil dihapus.");
+          } catch (e) {
+              console.error(e);
+              alert("Gagal menghapus dokumen.");
+          }
+      }
+  };
+
   // --- TOP BAR DISPLAY INFO ---
   const getProfileInfo = () => {
       if (userRole === 'STUDENT' && selectedStudent) {
@@ -499,6 +517,7 @@ function App() {
                     <FileManager 
                         documents={studentContext.documents} 
                         onUpload={handleStudentUpload}
+                        onDelete={handleStudentDelete} // FIX: Pass the delete handler
                         allowedCategories={studentVisibleDocs}
                     />
                 </div>
