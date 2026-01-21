@@ -128,46 +128,37 @@ const IjazahView: React.FC<IjazahViewProps> = ({ students, userRole = 'ADMIN', l
       return subj ? subj.score : 0;
   };
 
-  // Rata-rata per Mapel (S1-S6)
+  // Rata-rata per Mapel (S1-S6) - DIVIDER FIX: Always 6
   const calculateSubjectAvg = (student: Student, subjectKey: string): number => {
       let total = 0;
-      let count = 0;
+      const totalSemesters = 6; // Fixed divisor to count empty values as 0
       for (let i = 1; i <= 6; i++) {
           const score = getScore(student, subjectKey, i);
-          if (score > 0) {
-              total += score;
-              count++;
-          }
+          total += score || 0;
       }
-      return count > 0 ? Number((total / count).toFixed(1)) : 0;
+      return Number((total / totalSemesters).toFixed(1));
   };
 
-  // Rata-rata Semester (Baris di Transkrip / Kolom di Layout Baru)
+  // Rata-rata Semester (Baris di Transkrip / Kolom di Layout Baru) - DIVIDER FIX: Subject Count
   const calculateSemesterRowAvg = (student: Student, sem: number): number => {
       let total = 0;
-      let count = 0;
+      const totalSubjects = SUBJECT_MAP.length; // Fixed divisor
       SUBJECT_MAP.forEach(sub => {
           const score = getScore(student, sub.key, sem);
-          if (score > 0) {
-              total += score;
-              count++;
-          }
+          total += score || 0;
       });
-      return count > 0 ? Number((total / count).toFixed(1)) : 0;
+      return Number((total / totalSubjects).toFixed(1));
   };
 
-  // Rata-rata Akhir Sekolah
+  // Rata-rata Akhir Sekolah - DIVIDER FIX: Subject Count
   const calculateFinalGrade = (student: Student): number => {
       let totalAvg = 0;
-      let count = 0;
+      const totalSubjects = SUBJECT_MAP.length; // Fixed divisor
       SUBJECT_MAP.forEach(sub => {
           const avg = calculateSubjectAvg(student, sub.key);
-          if (avg > 0) {
-              totalAvg += avg;
-              count++;
-          }
+          totalAvg += avg || 0;
       });
-      return count > 0 ? Number((totalAvg / count).toFixed(2)) : 0;
+      return Number((totalAvg / totalSubjects).toFixed(2));
   };
 
   const formatDateIndo = (dateStr: string) => {
