@@ -27,7 +27,7 @@ const formatDateIndo = (dateStr: string) => {
 
 const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode, readOnly = false, highlightFieldKey, onUpdate, onSave, currentUser }) => {
   // Layout State
-  const [activeTab, setActiveTab] = useState<'PROFILE' | 'ADDRESS' | 'PARENTS' | 'PERIODIC' | 'WELFARE'>('PROFILE');
+  const [activeTab, setActiveTab] = useState<'PROFILE' | 'ADDRESS' | 'PARENTS' | 'PERIODIK' | 'WELFARE'>('PROFILE');
 
   // Correction State
   const [correctionModalOpen, setCorrectionModalOpen] = useState(false);

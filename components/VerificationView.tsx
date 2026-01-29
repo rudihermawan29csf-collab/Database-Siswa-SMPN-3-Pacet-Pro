@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, DocumentFile } from '../types';
+import { Student, DocumentFile, CorrectionRequest } from '../types';
 import { api } from '../services/api';
-import { CheckCircle2, XCircle, Loader2, AlertCircle, FileText, ScrollText, ZoomIn, ZoomOut, RotateCw, User, MapPin, Calendar, CreditCard, Filter, Search, Save, ChevronDown, ChevronRight, Heart, Wallet, Users, LayoutGrid } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, AlertCircle, ScrollText, ZoomIn, ZoomOut, RotateCw, FileCheck2, User, Filter, Search, FileBadge, Save, GitPullRequest, Check, X, ArrowRight, FileText, MapPin, Users, Heart, Wallet } from 'lucide-react';
 
 interface VerificationViewProps {
   students: Student[];
@@ -59,7 +58,7 @@ const AccordionItem = ({ title, icon: Icon, isOpen, onToggle, children }: { titl
             <div className="flex items-center gap-2">
                 <Icon className="w-4 h-4" /> {title}
             </div>
-            {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            {isOpen ? <div className="transform rotate-180 transition-transform">▼</div> : <div className="transition-transform">▶</div>}
         </button>
         {isOpen && <div className="p-4 bg-white space-y-3">{children}</div>}
     </div>
@@ -82,6 +81,8 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   const [adminNote, setAdminNote] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingReqId, setProcessingReqId] = useState<string | null>(null);
+
   const [zoomLevel, setZoomLevel] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [useFallbackViewer, setUseFallbackViewer] = useState(false);
@@ -159,6 +160,17 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       return docs;
   }, [currentStudent, activeTab, allowedCategories]);
 
+  // Filter Pending Data Requests (Biodata only, exclude grades/class)
+  const pendingRequests = useMemo(() => {
+      if (!currentStudent || !currentStudent.correctionRequests) return [];
+      return currentStudent.correctionRequests.filter(r => 
+          r.status === 'PENDING' && 
+          !r.fieldKey.startsWith('grade-') && 
+          !r.fieldKey.startsWith('class-') &&
+          !r.fieldKey.startsWith('ijazah-')
+      );
+  }, [currentStudent]);
+
   // Auto-select first doc logic
   useEffect(() => {
       if (studentDocs.length > 0) {
@@ -174,6 +186,64 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   const currentDoc = studentDocs.find(d => d.id === selectedDocId);
 
+  // --- HANDLE DATA APPROVAL (Bio Correction) ---
+  const handleDataCorrection = async (request: CorrectionRequest, status: 'APPROVED' | 'REJECTED') => {
+      if (!currentStudent) return;
+      setProcessingReqId(request.id);
+
+      try {
+          const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+
+          // 1. Update Request Status
+          if (updatedStudent.correctionRequests) {
+              updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((r: CorrectionRequest) => {
+                  if (r.id === request.id) {
+                      return {
+                          ...r,
+                          status: status,
+                          verifierName: currentUser.name,
+                          processedDate: new Date().toISOString(),
+                          adminNote: status === 'APPROVED' ? 'Disetujui Admin.' : 'Ditolak Admin.'
+                      };
+                  }
+                  return r;
+              });
+          }
+
+          // 2. IF APPROVED: Update the actual data field
+          if (status === 'APPROVED') {
+              // Helper to set nested value by string path (e.g. "father.name")
+              const setNestedValue = (obj: any, path: string, value: any) => {
+                  const keys = path.split('.');
+                  let current = obj;
+                  for (let i = 0; i < keys.length - 1; i++) {
+                      if (!current[keys[i]]) current[keys[i]] = {};
+                      current = current[keys[i]];
+                  }
+                  // Handle numeric conversions if needed
+                  const lastKey = keys[keys.length - 1];
+                  if (['height', 'weight', 'siblingCount', 'childOrder'].includes(lastKey) || path.includes('circumference')) {
+                      current[lastKey] = Number(value) || 0;
+                  } else {
+                      current[lastKey] = value;
+                  }
+              };
+
+              setNestedValue(updatedStudent, request.fieldKey, request.proposedValue);
+          }
+
+          await api.updateStudent(updatedStudent);
+          onUpdate(); 
+          alert(status === 'APPROVED' ? "Data berhasil diperbarui." : "Permintaan ditolak.");
+
+      } catch (e) {
+          console.error(e);
+          alert("Gagal memproses permintaan.");
+      } finally {
+          setProcessingReqId(null);
+      }
+  };
+
   // Handle saving data + verifying document
   const handleProcess = async (status: 'APPROVED' | 'REVISION' | 'SAVE_ONLY') => {
       if (!currentStudent) return;
@@ -184,7 +254,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
       setIsProcessing(true);
       try {
-          // Merge form data into student object
+          // Merge form data into student object (Manual Edit)
           const updatedStudent = {
               ...currentStudent,
               ...formData,
@@ -196,7 +266,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
           // Update Document Status if not just saving data
           if (status !== 'SAVE_ONLY' && currentDoc) {
-              updatedStudent.documents = updatedStudent.documents.map(d => {
+              updatedStudent.documents = updatedStudent.documents.map((d: DocumentFile) => {
                   if (d.id === currentDoc.id) {
                       return {
                           ...d,
@@ -216,7 +286,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           if (status !== 'SAVE_ONLY') {
               setAdminNote('');
               // Move to next pending
-              const nextPending = updatedStudent.documents.find(d => d.status === 'PENDING' && allowedCategories.includes(d.category));
+              const nextPending = updatedStudent.documents.find((d: DocumentFile) => d.status === 'PENDING' && allowedCategories.includes(d.category));
               if (nextPending) setSelectedDocId(nextPending.id);
           } else {
               alert("Data berhasil disimpan.");
@@ -387,6 +457,47 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
                 {/* 2. Data Form (Bawah) - EDITABLE & COMPLETE WITH ACCORDION */}
                 <div className="flex-1 flex flex-col overflow-hidden bg-white">
+                    {/* NEW: PENDING REQUESTS PANEL */}
+                    {pendingRequests.length > 0 && (
+                        <div className="bg-yellow-50 border-b border-yellow-200 p-3 max-h-48 overflow-y-auto shadow-inner">
+                            <h3 className="text-xs font-bold text-yellow-800 flex items-center gap-2 mb-2 sticky top-0 bg-yellow-50 pb-1">
+                                <GitPullRequest className="w-4 h-4" /> Permintaan Perubahan Data ({pendingRequests.length})
+                            </h3>
+                            <div className="space-y-2">
+                                {pendingRequests.map(req => (
+                                    <div key={req.id} className="bg-white border border-yellow-200 rounded p-2 text-xs">
+                                        <div className="flex justify-between items-start mb-1">
+                                            <span className="font-bold text-gray-700">{req.fieldName}</span>
+                                            <span className="text-[9px] text-gray-400">{new Date(req.requestDate).toLocaleDateString()}</span>
+                                        </div>
+                                        <div className="grid grid-cols-[1fr,auto,1fr] gap-1 items-center mb-1 bg-gray-50 p-1.5 rounded">
+                                            <div className="text-red-500 font-medium line-through truncate" title="Lama">{req.originalValue || '(Kosong)'}</div>
+                                            <ArrowRight className="w-3 h-3 text-gray-400" />
+                                            <div className="text-blue-600 font-bold truncate" title="Baru">{req.proposedValue}</div>
+                                        </div>
+                                        {req.studentReason && <p className="italic text-gray-500 text-[10px] mb-2">"{req.studentReason}"</p>}
+                                        <div className="flex gap-2 justify-end">
+                                            <button 
+                                                onClick={() => handleDataCorrection(req, 'REJECTED')}
+                                                disabled={processingReqId === req.id}
+                                                className="px-2 py-1 bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 flex items-center gap-1 font-bold text-[10px]"
+                                            >
+                                                {processingReqId === req.id ? <Loader2 className="w-3 h-3 animate-spin"/> : <X className="w-3 h-3"/>} Tolak
+                                            </button>
+                                            <button 
+                                                onClick={() => handleDataCorrection(req, 'APPROVED')}
+                                                disabled={processingReqId === req.id}
+                                                className="px-2 py-1 bg-green-50 text-green-600 border border-green-200 rounded hover:bg-green-100 flex items-center gap-1 font-bold text-[10px]"
+                                            >
+                                                {processingReqId === req.id ? <Loader2 className="w-3 h-3 animate-spin"/> : <Check className="w-3 h-3"/>} Terima
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     <div className="p-3 bg-blue-50 border-b border-blue-100 text-xs text-blue-800 font-bold flex items-center justify-between">
                         <span className="flex items-center gap-2"><User className="w-3 h-3" /> Data Lengkap (Edit Mode)</span>
                         <button onClick={() => handleProcess('SAVE_ONLY')} className="text-blue-600 hover:text-blue-800" title="Simpan Perubahan Data"><Save className="w-4 h-4"/></button>

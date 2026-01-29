@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, DocumentFile } from '../types';
+import { Student, CorrectionRequest, DocumentFile } from '../types';
 import { api } from '../services/api';
-import { CheckCircle2, XCircle, Loader2, AlertCircle, FileText, ZoomIn, ZoomOut, RotateCw, LayoutList, Filter, Search, Save, Calendar, ChevronRight, File, School, RefreshCw, UserCheck, Lock } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, AlertCircle, FileText, ZoomIn, ZoomOut, RotateCw, LayoutList, Filter, Search, Save, Calendar, ChevronRight, File, School, RefreshCw, UserCheck, Lock, Check, X } from 'lucide-react';
 
 interface GradeVerificationViewProps {
   students: Student[];
@@ -43,7 +43,7 @@ const SUBJECT_MAP = [
     { key: 'IPA', label: 'IPA', full: 'Ilmu Pengetahuan Alam' },
     { key: 'IPS', label: 'IPS', full: 'Ilmu Pengetahuan Sosial' },
     { key: 'Bahasa Inggris', label: 'BIG', full: 'Bahasa Inggris' },
-    { key: 'PJOK', label: 'PJOK', full: 'PJOK' },
+    { key: 'PJOK', label: 'PJOK', full: 'Pendidikan Jasmani, Olahraga, dan Kesehatan' },
     { key: 'Informatika', label: 'INF', full: 'Informatika' },
     { key: 'Seni dan Prakarya', label: 'SENI', full: 'Seni dan Prakarya' },
     { key: 'Bahasa Jawa', label: 'B.JAWA', full: 'Bahasa Jawa' },
@@ -70,6 +70,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   const [adminNote, setAdminNote] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSavingData, setIsSavingData] = useState(false); 
+  const [processingReqId, setProcessingReqId] = useState<string | null>(null);
   
   // Global Settings for Year Calculation
   const [appSettings, setAppSettings] = useState<any>(null);
@@ -178,14 +179,11 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       const targetLevel = targetSemester <= 2 ? 7 : targetSemester <= 4 ? 8 : 9;
       
       // 4. Calculate Offset
-      // Example: Student is in Class 9 (IX), Viewing Semester 1 (Class 7).
-      // Offset = 9 - 7 = 2 years ago.
       const offset = currentLevel - targetLevel;
 
       // 5. Calculate Historical Year
       let histStart = startYear - offset;
       
-      // Ensure full format "YYYY/YYYY+1"
       return `${histStart}/${histStart + 1}`;
   };
 
@@ -269,6 +267,87 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       }));
 
       return updatedStudent;
+  };
+
+  // --- HANDLE GRADE REVISION APPROVAL/REJECTION ---
+  const handleCorrectionResponse = async (request: CorrectionRequest, status: 'APPROVED' | 'REJECTED') => {
+      if (!currentStudent) return;
+      setProcessingReqId(request.id);
+
+      try {
+          const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+          
+          // 1. Update Request Status
+          if (updatedStudent.correctionRequests) {
+              updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((r: CorrectionRequest) => {
+                  if (r.id === request.id) {
+                      return {
+                          ...r,
+                          status: status,
+                          verifierName: currentUser.name,
+                          processedDate: new Date().toISOString(),
+                          adminNote: status === 'APPROVED' ? 'Disetujui Admin.' : 'Ditolak Admin.'
+                      };
+                  }
+                  return r;
+              });
+          }
+
+          // 2. IF APPROVED: Apply the value to academicRecords AND gradeData immediately
+          if (status === 'APPROVED') {
+              // Extract subject full name from key: "grade-{sem}-{full}"
+              const keyParts = request.fieldKey.split(`grade-${activeSemester}-`);
+              if (keyParts.length > 1) {
+                  const subjectFull = keyParts[1];
+                  const mapItem = SUBJECT_MAP.find(m => m.full === subjectFull);
+                  
+                  if (mapItem) {
+                      const newScore = Number(request.proposedValue);
+                      
+                      // Update Local State for UI
+                      setGradeData(prev => ({ ...prev, [mapItem.key]: newScore }));
+
+                      // Update DB Record
+                      if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
+                      let record = updatedStudent.academicRecords[activeSemester];
+                      if (!record) {
+                          // Create if doesn't exist
+                          record = {
+                              semester: activeSemester,
+                              classLevel: semesterClass.split(' ')[0] || 'VII',
+                              year: academicYear,
+                              subjects: [],
+                              attendance: { sick: 0, permitted: 0, noReason: 0 }
+                          };
+                          updatedStudent.academicRecords[activeSemester] = record;
+                      }
+
+                      // Ensure subject exists in array
+                      const subjIndex = record.subjects.findIndex((s: any) => s.subject === subjectFull);
+                      if (subjIndex >= 0) {
+                          record.subjects[subjIndex].score = newScore;
+                      } else {
+                          record.subjects.push({
+                              no: record.subjects.length + 1,
+                              subject: subjectFull,
+                              score: newScore,
+                              competency: '-'
+                          });
+                      }
+                  }
+              }
+          }
+
+          await api.updateStudent(updatedStudent);
+          onUpdate(); // Trigger refresh
+          alert(status === 'APPROVED' ? "Revisi disetujui & nilai diperbarui." : "Revisi ditolak.");
+
+      } catch (e) {
+          console.error(e);
+          alert("Gagal memproses revisi.");
+      } finally {
+          setProcessingReqId(null);
+      }
   };
 
   const handleSaveDataOnly = async () => {
@@ -558,7 +637,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                                     </div>
                                 </div>
 
-                                {/* ATTENDANCE SECTION - NEW */}
+                                {/* ATTENDANCE SECTION */}
                                 <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
                                     <div className="flex justify-between items-center mb-2">
                                         <h4 className="text-xs font-bold text-gray-600 uppercase flex items-center gap-2">
@@ -600,23 +679,62 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                                 </div>
 
                                 {/* GRADE INPUT SECTION */}
-                                <div className="space-y-1">
+                                <div className="space-y-3">
                                     <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase border-b pb-2 mb-2">
                                         <span className="pl-2">Mata Pelajaran</span>
                                         <span className="pr-2">Nilai</span>
                                     </div>
-                                    {SUBJECT_MAP.map((sub, idx) => (
-                                        <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-50 hover:bg-gray-50 px-2 rounded">
-                                            <label className="text-xs font-bold text-gray-700 w-2/3 truncate" title={sub.full}>{idx+1}. {sub.label}</label>
-                                            <input 
-                                                type="number" 
-                                                className="w-20 p-1.5 border rounded text-right text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none"
-                                                value={gradeData[sub.key] || ''}
-                                                onChange={(e) => setGradeData({...gradeData, [sub.key]: Number(e.target.value)})}
-                                                placeholder="0"
-                                            />
-                                        </div>
-                                    ))}
+                                    {SUBJECT_MAP.map((sub, idx) => {
+                                        // Check for PENDING Correction Request specific to this subject and semester
+                                        const reqKey = `grade-${activeSemester}-${sub.full}`;
+                                        const pendingReq = currentStudent.correctionRequests?.find(r => r.fieldKey === reqKey && r.status === 'PENDING');
+
+                                        return (
+                                            <div key={idx} className="border border-gray-100 rounded-lg p-2 hover:bg-gray-50 transition-colors">
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <label className="text-xs font-bold text-gray-700 w-2/3 truncate" title={sub.full}>{idx+1}. {sub.label}</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className={`w-20 p-1.5 border rounded text-right text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none ${pendingReq ? 'border-yellow-400 bg-yellow-50' : 'border-gray-200'}`}
+                                                        value={gradeData[sub.key] || ''}
+                                                        onChange={(e) => setGradeData({...gradeData, [sub.key]: Number(e.target.value)})}
+                                                        placeholder="0"
+                                                    />
+                                                </div>
+                                                
+                                                {/* UI For Pending Request */}
+                                                {pendingReq && (
+                                                    <div className="mt-2 bg-yellow-50 border border-yellow-200 rounded p-2 flex flex-col gap-2 animate-fade-in">
+                                                        <div className="flex items-start gap-2">
+                                                            <AlertCircle className="w-3 h-3 text-yellow-600 mt-0.5 flex-shrink-0" />
+                                                            <div>
+                                                                <p className="text-[10px] text-yellow-800 font-bold">
+                                                                    Siswa Mengajukan Revisi: <span className="text-lg ml-1 text-blue-700">{pendingReq.proposedValue}</span>
+                                                                </p>
+                                                                <p className="text-[9px] text-gray-600 italic">"{pendingReq.studentReason}"</p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex justify-end gap-2">
+                                                            <button 
+                                                                onClick={() => handleCorrectionResponse(pendingReq, 'REJECTED')}
+                                                                disabled={processingReqId === pendingReq.id}
+                                                                className="px-2 py-1 bg-white border border-red-200 text-red-600 text-[10px] font-bold rounded hover:bg-red-50 flex items-center gap-1"
+                                                            >
+                                                                {processingReqId === pendingReq.id ? <Loader2 className="w-3 h-3 animate-spin"/> : <X className="w-3 h-3" />} Tolak
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => handleCorrectionResponse(pendingReq, 'APPROVED')}
+                                                                disabled={processingReqId === pendingReq.id}
+                                                                className="px-2 py-1 bg-green-600 text-white text-[10px] font-bold rounded hover:bg-green-700 flex items-center gap-1 shadow-sm"
+                                                            >
+                                                                {processingReqId === pendingReq.id ? <Loader2 className="w-3 h-3 animate-spin"/> : <Check className="w-3 h-3" />} Terima
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </>
                         ) : (
