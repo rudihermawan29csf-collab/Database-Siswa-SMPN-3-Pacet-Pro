@@ -1,8 +1,30 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Save, Pencil, AlertTriangle, X, CheckCircle2, XCircle, MessageSquare, Loader2, FileText, ListChecks, AlertCircle, User, MapPin, Users, Heart, Wallet, ChevronDown, ChevronUp } from 'lucide-react';
 import { Student, CorrectionRequest } from '../types';
 import { api } from '../services/api';
+
+const formatDateIndo = (dateStr: string) => {
+    if (!dateStr) return '-';
+    try {
+        // Manual split to avoid timezone shifting with new Date()
+        // Pastikan format masuk adalah YYYY-MM-DD
+        const parts = dateStr.split('-');
+        if (parts.length === 3) {
+            const y = parts[0];
+            const m = parseInt(parts[1]);
+            const d = parseInt(parts[2]);
+            const months = [
+                'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+                'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+            ];
+            return `${d} ${months[m - 1]} ${y}`;
+        }
+        
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return dateStr;
+        return new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
+    } catch { return dateStr; }
+};
 
 interface StudentDetailProps {
   student: Student;
@@ -15,15 +37,6 @@ interface StudentDetailProps {
   onSave?: (student: Student) => void;
   currentUser?: { name: string; role: string };
 }
-
-const formatDateIndo = (dateStr: string) => {
-    if (!dateStr) return '-';
-    try {
-        const date = new Date(dateStr);
-        if (isNaN(date.getTime())) return dateStr;
-        return new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
-    } catch { return dateStr; }
-};
 
 const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode, readOnly = false, highlightFieldKey, onUpdate, onSave, currentUser }) => {
   // Layout State
@@ -44,8 +57,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
   // Auto-scroll logic
   useEffect(() => {
     if (highlightFieldKey) {
-        // Map field keys to tabs if needed, for now mostly useful in admin view
-        // Logic to switch tab could be added here
         setTimeout(() => {
             const element = document.getElementById(`field-${highlightFieldKey}`);
             if (element) {
@@ -132,7 +143,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
           const lastKey = keys[keys.length - 1];
           const newValue = request.proposedValue;
           
-          // Type casting safety
           if (lastKey === 'height' || lastKey === 'weight' || lastKey === 'siblingCount' || lastKey === 'childOrder') {
                current[lastKey] = Number(newValue) || 0;
           } else {
@@ -203,15 +213,12 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
       );
   };
 
-  // --- NEW RENDER FIELD COMPONENT ---
   const RenderField = ({ label, value, fieldKey, type = 'text', fullWidth = false }: { label: string, value: any, fieldKey: string, type?: string, fullWidth?: boolean }) => {
       const pendingReq = student.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING');
       const displayValue = pendingReq ? pendingReq.proposedValue : (value || '-');
       const isDate = type === 'date';
       const formattedValue = isDate ? formatDateIndo(displayValue) : displayValue;
       
-      // If readOnly is TRUE (Student View), interaction is allowed (to correction).
-      // If readOnly is FALSE (Admin View), mostly static display unless we add edit feature here (but Admin uses Modal usually)
       const isInteractive = readOnly; 
 
       return (
@@ -266,7 +273,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full relative">
       
-      {/* Correction Modal (Student View) */}
       {correctionModalOpen && (
           <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
               <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col max-h-[90vh]">
@@ -300,7 +306,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
           </div>
       )}
 
-      {/* Rejection Modal (Admin View) */}
       {rejectModalOpen && (
           <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
               <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col">
@@ -314,7 +319,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
           </div>
       )}
 
-       {/* Header */}
        <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white">
             <div className="flex items-center gap-3">
                  <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ArrowLeft className="w-5 h-5 text-gray-600" /></button>
@@ -338,7 +342,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
             )}
        </div>
 
-       {/* Tabs */}
        <div className="flex overflow-x-auto border-b border-gray-200 bg-white no-scrollbar">
             <TabButton id="PROFILE" label="Data Utama" icon={User} />
             <TabButton id="ADDRESS" label="Alamat" icon={MapPin} />
@@ -347,10 +350,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
             <TabButton id="WELFARE" label="Kesejahteraan" icon={Wallet} />
        </div>
 
-       {/* Scrollable Content */}
        <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/50 flex flex-col md:flex-row gap-6 justify-center pb-32">
             
-            {/* Side Panel for Requests (Visible mostly to Admin or when History present) */}
             {allRequests.length > 0 && (
                 <div className="w-full md:w-80 md:sticky md:top-0 h-fit space-y-3 order-last md:order-first">
                     <div className="flex items-center gap-2 text-gray-700 font-bold text-sm mb-2 px-1 bg-white p-2 rounded shadow-sm border border-gray-100">
@@ -363,7 +364,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
             <div className="w-full max-w-[900px] flex-1">
                 <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
                     
-                    {/* SECTION 1: DATA UTAMA */}
                     {activeTab === 'PROFILE' && (
                         <div className="space-y-6 animate-fade-in">
                             <div className="border-b pb-2 mb-4"><h3 className="font-bold text-gray-800 text-lg">Identitas Peserta Didik</h3></div>
@@ -386,13 +386,12 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                         </div>
                     )}
 
-                    {/* SECTION 2: ALAMAT */}
                     {activeTab === 'ADDRESS' && (
                         <div className="space-y-6 animate-fade-in">
                             <div className="border-b pb-2 mb-4"><h3 className="font-bold text-gray-800 text-lg">Alamat & Domisili</h3></div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                                 <RenderField label="Alamat Jalan" value={student.address} fieldKey="address" fullWidth />
-                                <div className="grid grid-cols-3 gap-4 col-span-full md:col-span-2">
+                                <div className="grid grid-cols-3 gap-2 col-span-full">
                                     <RenderField label="RT" value={student.dapodik?.rt} fieldKey="dapodik.rt" />
                                     <RenderField label="RW" value={student.dapodik?.rw} fieldKey="dapodik.rw" />
                                     <RenderField label="Kode Pos" value={student.postalCode} fieldKey="postalCode" />
@@ -401,118 +400,92 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
                                 <RenderField label="Kelurahan / Desa" value={student.dapodik?.kelurahan} fieldKey="dapodik.kelurahan" />
                                 <RenderField label="Kecamatan" value={student.subDistrict} fieldKey="subDistrict" />
                                 <RenderField label="Kabupaten / Kota" value={student.district} fieldKey="district" />
-                                <RenderField label="Lintang" value={student.dapodik?.latitude} fieldKey="dapodik.latitude" />
-                                <RenderField label="Bujur" value={student.dapodik?.longitude} fieldKey="dapodik.longitude" />
+                                <div className="grid grid-cols-2 gap-4 col-span-full">
+                                    <RenderField label="Lintang" value={student.dapodik?.latitude} fieldKey="dapodik.latitude" />
+                                    <RenderField label="Bujur" value={student.dapodik?.longitude} fieldKey="dapodik.longitude" />
+                                </div>
                                 <RenderField label="Jenis Tinggal" value={student.dapodik?.livingStatus} fieldKey="dapodik.livingStatus" />
-                                <RenderField label="Transportasi" value={student.dapodik?.transportation} fieldKey="dapodik.transportation" />
-                                <RenderField label="No KK" value={student.dapodik?.noKK} fieldKey="dapodik.noKK" fullWidth />
+                                <RenderField label="Alat Transportasi" value={student.dapodik?.transportation} fieldKey="dapodik.transportation" />
+                                <RenderField label="Nomor Kartu Keluarga" value={student.dapodik?.noKK} fieldKey="dapodik.noKK" fullWidth />
                             </div>
                         </div>
                     )}
 
-                    {/* SECTION 3: ORANG TUA */}
                     {activeTab === 'PARENTS' && (
                         <div className="space-y-8 animate-fade-in">
-                            {/* AYAH */}
-                            <div>
-                                <div className="border-b pb-2 mb-4"><h3 className="font-bold text-blue-800 text-lg">Data Ayah Kandung</h3></div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                            <div className="bg-blue-50/50 p-6 rounded-xl border border-blue-100">
+                                <h3 className="font-bold text-blue-800 mb-4 flex items-center gap-2"><User className="w-4 h-4" /> Data Ayah Kandung</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <RenderField label="Nama Ayah" value={student.father.name} fieldKey="father.name" fullWidth />
                                     <RenderField label="NIK Ayah" value={student.father.nik} fieldKey="father.nik" />
                                     <RenderField label="Tahun Lahir" value={student.father.birthPlaceDate} fieldKey="father.birthPlaceDate" />
                                     <RenderField label="Pendidikan" value={student.father.education} fieldKey="father.education" />
                                     <RenderField label="Pekerjaan" value={student.father.job} fieldKey="father.job" />
                                     <RenderField label="Penghasilan" value={student.father.income} fieldKey="father.income" />
-                                    <RenderField label="No Handphone" value={student.father.phone} fieldKey="father.phone" />
+                                    <RenderField label="No. Handphone" value={student.father.phone} fieldKey="father.phone" />
                                 </div>
                             </div>
-
-                            {/* IBU */}
-                            <div>
-                                <div className="border-b pb-2 mb-4"><h3 className="font-bold text-pink-800 text-lg">Data Ibu Kandung</h3></div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                            <div className="bg-pink-50/50 p-6 rounded-xl border border-pink-100">
+                                <h3 className="font-bold text-pink-800 mb-4 flex items-center gap-2"><User className="w-4 h-4" /> Data Ibu Kandung</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <RenderField label="Nama Ibu" value={student.mother.name} fieldKey="mother.name" fullWidth />
                                     <RenderField label="NIK Ibu" value={student.mother.nik} fieldKey="mother.nik" />
                                     <RenderField label="Tahun Lahir" value={student.mother.birthPlaceDate} fieldKey="mother.birthPlaceDate" />
                                     <RenderField label="Pendidikan" value={student.mother.education} fieldKey="mother.education" />
                                     <RenderField label="Pekerjaan" value={student.mother.job} fieldKey="mother.job" />
                                     <RenderField label="Penghasilan" value={student.mother.income} fieldKey="mother.income" />
-                                    <RenderField label="No Handphone" value={student.mother.phone} fieldKey="mother.phone" />
-                                </div>
-                            </div>
-
-                            {/* WALI */}
-                            <div>
-                                <div className="border-b pb-2 mb-4"><h3 className="font-bold text-gray-600 text-lg">Data Wali (Opsional)</h3></div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-                                    <RenderField label="Nama Wali" value={student.guardian?.name} fieldKey="guardian.name" fullWidth />
-                                    <RenderField label="NIK Wali" value={student.guardian?.nik} fieldKey="guardian.nik" />
-                                    <RenderField label="Tahun Lahir" value={student.guardian?.birthPlaceDate} fieldKey="guardian.birthPlaceDate" />
-                                    <RenderField label="Pendidikan" value={student.guardian?.education} fieldKey="guardian.education" />
-                                    <RenderField label="Pekerjaan" value={student.guardian?.job} fieldKey="guardian.job" />
-                                    <RenderField label="Penghasilan" value={student.guardian?.income} fieldKey="guardian.income" />
-                                    <RenderField label="No Handphone" value={student.guardian?.phone} fieldKey="guardian.phone" />
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* SECTION 4: PERIODIK */}
                     {activeTab === 'PERIODIK' && (
                         <div className="space-y-6 animate-fade-in">
-                            <div className="border-b pb-2 mb-4"><h3 className="font-bold text-gray-800 text-lg">Data Periodik</h3></div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                            <div className="border-b pb-2 mb-4"><h3 className="font-bold text-gray-800 text-lg">Data Periodik Siswa</h3></div>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
                                 <RenderField label="Tinggi Badan (cm)" value={student.height} fieldKey="height" />
                                 <RenderField label="Berat Badan (kg)" value={student.weight} fieldKey="weight" />
                                 <RenderField label="Lingkar Kepala (cm)" value={student.dapodik?.headCircumference} fieldKey="dapodik.headCircumference" />
                                 <RenderField label="Golongan Darah" value={student.bloodType} fieldKey="bloodType" />
-                                <RenderField label="Jumlah Saudara Kandung" value={student.siblingCount} fieldKey="siblingCount" />
+                                <RenderField label="Jumlah Saudara" value={student.siblingCount} fieldKey="siblingCount" />
                                 <RenderField label="Anak Ke-berapa" value={student.childOrder} fieldKey="childOrder" />
-                                <RenderField label="Jarak ke Sekolah (km)" value={student.dapodik?.distanceToSchool} fieldKey="dapodik.distanceToSchool" />
-                                <RenderField label="Waktu Tempuh (menit)" value={student.dapodik?.travelTimeMinutes} fieldKey="dapodik.travelTimeMinutes" />
+                                <RenderField label="Jarak ke Sekolah" value={student.dapodik?.distanceToSchool} fieldKey="dapodik.distanceToSchool" />
+                                <RenderField label="Waktu Tempuh (Menit)" value={student.dapodik?.travelTimeMinutes} fieldKey="dapodik.travelTimeMinutes" />
                             </div>
                         </div>
                     )}
 
-                    {/* SECTION 5: KESEJAHTERAAN */}
                     {activeTab === 'WELFARE' && (
-                        <div className="space-y-8 animate-fade-in">
-                            <div>
-                                <div className="border-b pb-2 mb-4"><h3 className="font-bold text-gray-800 text-lg">Kartu Kesejahteraan & Registrasi</h3></div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-                                    <RenderField label="No SKHUN" value={student.dapodik?.skhun} fieldKey="dapodik.skhun" />
-                                    <RenderField label="No Peserta UN" value={student.dapodik?.unExamNumber} fieldKey="dapodik.unExamNumber" />
-                                    <RenderField label="No Seri Ijazah (SD)" value={student.diplomaNumber} fieldKey="diplomaNumber" />
-                                    <RenderField label="No Registrasi Akta Lahir" value={student.dapodik?.birthRegNumber} fieldKey="dapodik.birthRegNumber" />
-                                    <RenderField label="Nomor KKS" value={student.dapodik?.kksNumber} fieldKey="dapodik.kksNumber" />
-                                    <RenderField label="Penerima KPS/KPH" value={student.dapodik?.kpsReceiver} fieldKey="dapodik.kpsReceiver" />
-                                    <RenderField label="Nomor KPS" value={student.dapodik?.kpsNumber} fieldKey="dapodik.kpsNumber" />
-                                    <RenderField label="Email Pribadi" value={student.dapodik?.email} fieldKey="dapodik.email" fullWidth />
+                        <div className="space-y-6 animate-fade-in">
+                            <div className="border-b pb-2 mb-4"><h3 className="font-bold text-gray-800 text-lg">Kesejahteraan & Data Lain</h3></div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <RenderField label="No. SKHUN" value={student.dapodik?.skhun} fieldKey="dapodik.skhun" />
+                                <RenderField label="No. Peserta UN" value={student.dapodik?.unExamNumber} fieldKey="dapodik.unExamNumber" />
+                                <RenderField label="No. Ijazah (Lama)" value={student.diplomaNumber} fieldKey="diplomaNumber" />
+                                <RenderField label="No. Reg Akta Lahir" value={student.dapodik?.birthRegNumber} fieldKey="dapodik.birthRegNumber" />
+                                <RenderField label="No. KKS" value={student.dapodik?.kksNumber} fieldKey="dapodik.kksNumber" />
+                                <RenderField label="Email Pribadi" value={student.dapodik?.email} fieldKey="dapodik.email" />
+                                
+                                <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200 col-span-full space-y-4">
+                                    <h4 className="font-bold text-yellow-800 text-sm uppercase">Program KIP / PIP</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <RenderField label="Penerima KIP" value={student.dapodik?.kipReceiver} fieldKey="dapodik.kipReceiver" />
+                                        <RenderField label="Nomor KIP" value={student.dapodik?.kipNumber} fieldKey="dapodik.kipNumber" />
+                                        <RenderField label="Nama di KIP" value={student.dapodik?.kipName} fieldKey="dapodik.kipName" />
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200">
-                                <h4 className="font-bold text-yellow-800 mb-4 uppercase">Program Indonesia Pintar (PIP)</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-                                    <RenderField label="Penerima KIP" value={student.dapodik?.kipReceiver} fieldKey="dapodik.kipReceiver" />
-                                    <RenderField label="Nomor KIP" value={student.dapodik?.kipNumber} fieldKey="dapodik.kipNumber" />
-                                    <RenderField label="Nama tertera di KIP" value={student.dapodik?.kipName} fieldKey="dapodik.kipName" />
-                                    <RenderField label="Layak PIP (Usulan)" value={student.dapodik?.pipEligible} fieldKey="dapodik.pipEligible" />
-                                    <RenderField label="Alasan Layak PIP" value={student.dapodik?.pipReason} fieldKey="dapodik.pipReason" fullWidth />
-                                </div>
-                            </div>
-
-                            <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
-                                <h4 className="font-bold text-blue-800 mb-4 uppercase">Data Rekening Bank (PIP)</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-                                    <RenderField label="Nama Bank" value={student.dapodik?.bank} fieldKey="dapodik.bank" />
-                                    <RenderField label="Nomor Rekening" value={student.dapodik?.bankAccount} fieldKey="dapodik.bankAccount" />
-                                    <RenderField label="Rekening Atas Nama" value={student.dapodik?.bankAccountName} fieldKey="dapodik.bankAccountName" fullWidth />
+                                <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 col-span-full space-y-4">
+                                    <h4 className="font-bold text-blue-800 text-sm uppercase">Data Rekening Bank</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <RenderField label="Nama Bank" value={student.dapodik?.bank} fieldKey="dapodik.bank" />
+                                        <RenderField label="Nomor Rekening" value={student.dapodik?.bankAccount} fieldKey="dapodik.bankAccount" />
+                                        <RenderField label="Rekening Atas Nama" value={student.dapodik?.bankAccountName} fieldKey="dapodik.bankAccountName" />
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     )}
-
                 </div>
             </div>
        </div>

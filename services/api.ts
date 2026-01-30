@@ -7,30 +7,53 @@ const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxb8fmeWo7qN
 const normalizeStudentData = (rawData: any[]): Student[] => {
     if (!Array.isArray(rawData)) return [];
 
-    // Helper to clean date strings (remove ISO time part)
+    // Helper to clean date strings correctly (Handles Timezone Shift)
     const cleanDate = (val: any) => {
         if (!val) return '';
-        const str = String(val);
-        // If it looks like ISO (contains T), split it. e.g. 2010-08-11T17:00:00.000Z -> 2010-08-11
-        if (str.includes('T')) return str.split('T')[0];
-        return str;
+        
+        // 1. Jika sudah string YYYY-MM-DD, langsung ambil 10 karakter pertama
+        // Ini cara paling aman untuk menghindari pergeseran timezone
+        if (typeof val === 'string') {
+            const isoMatch = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (isoMatch) {
+                // Jika mengandung jam (bukan 00:00), kemungkinan ada pergeseran UTC dari Apps Script
+                if (val.includes('T') && !val.includes('T00:00:00')) {
+                    const d = new Date(val);
+                    if (!isNaN(d.getTime())) {
+                        const y = d.getFullYear();
+                        const m = String(d.getMonth() + 1).padStart(2, '0');
+                        const day = String(d.getDate()).padStart(2, '0');
+                        return `${y}-${m}-${day}`;
+                    }
+                }
+                return isoMatch[1];
+            }
+        }
+
+        const dateObj = new Date(val);
+        // Check if valid date
+        if (isNaN(dateObj.getTime())) return String(val).split('T')[0];
+        
+        // Extract local date components
+        const year = dateObj.getFullYear();
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        
+        return `${year}-${month}-${day}`;
     };
 
     return rawData.map((originalRow: any) => {
-        // Handle if rawData is array of arrays instead of objects (failsafe)
         if (Array.isArray(originalRow)) { return null as any; }
 
-        // Create a normalized object with lowercase keys for fuzzy matching
         const normalizedRow: Record<string, any> = {};
         Object.keys(originalRow).forEach(key => {
             if (key) {
                 const cleanKey = key.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
                 normalizedRow[cleanKey] = originalRow[key];
-                normalizedRow[key] = originalRow[key]; // Keep original too
+                normalizedRow[key] = originalRow[key];
             }
         });
 
-        // Helper to find value by multiple possible keys
         const findVal = (...keys: string[]) => {
             for (const k of keys) {
                 if (normalizedRow[k] !== undefined) return normalizedRow[k];
@@ -38,7 +61,6 @@ const normalizeStudentData = (rawData: any[]): Student[] => {
             return '';
         };
 
-        // If data is already in structured JSON format (from my own save)
         if (originalRow.id && originalRow.fullName && originalRow.dapodik) {
              const parseIfString = (val: any, def: any) => {
                  if (typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))) {
@@ -59,31 +81,23 @@ const normalizeStudentData = (rawData: any[]): Student[] => {
                  adminMessages: parseIfString(originalRow.adminMessages, [])
              } as Student;
 
-             // Ensure birthDate is clean even in existing JSON structure
              student.birthDate = cleanDate(student.birthDate);
              return student;
         }
 
-        // Fallback: Map from flat Spreadsheet columns (if data comes from raw sheet import)
-        // Adjust these mappings based on common Indonesian column headers
         return {
             id: findVal('id', 'nipd', 'no') || Math.random().toString(36).substr(2, 9),
             fullName: findVal('fullname', 'nama', 'namasiswa', 'namalengkap'),
             nis: findVal('nis', 'nipd', 'noinduk'),
             nisn: findVal('nisn'),
             gender: findVal('gender', 'jk', 'jeniskelamin', 'lp') === 'P' ? 'P' : 'L',
-            
-            // Critical Fixes
             birthPlace: findVal('birthplace', 'tempatlahir', 'tmplahir'),
-            birthDate: cleanDate(findVal('birthdate', 'tanggallahir', 'tgllahir')), // Applied cleanDate here
-            
-            // Fixed Missing fields
+            birthDate: cleanDate(findVal('birthdate', 'tanggallahir', 'tgllahir')), 
             previousSchool: findVal('previousschool', 'sekolahasal', 'sklasal', 'asalsekolah'), 
             graduationYear: Number(findVal('graduationyear', 'tahunlulus', 'lulusan')) || 0,
             diplomaNumber: findVal('diplomanumber', 'noseriijazah', 'noijazah'),
             averageScore: Number(findVal('averagescore', 'nilairatarata', 'rata2')) || 0,
             achievements: findVal('achievements', 'prestasi') ? String(findVal('achievements', 'prestasi')).split(',') : [],
-
             religion: findVal('religion', 'agama'),
             nationality: findVal('nationality', 'kewarganegaraan') || 'WNI',
             address: findVal('address', 'alamat', 'alamatjalan'),
@@ -91,16 +105,13 @@ const normalizeStudentData = (rawData: any[]): Student[] => {
             district: findVal('district', 'kabupaten', 'kota'),
             postalCode: findVal('postalcode', 'kodepos'),
             className: findVal('classname', 'kelas', 'rombel', 'rombelsaatini') || 'VII A',
-            
             height: Number(findVal('height', 'tinggibadan', 'tb')) || 0,
             weight: Number(findVal('weight', 'beratbadan', 'bb')) || 0,
             bloodType: findVal('bloodtype', 'golongandarah', 'goldar') || '-',
             siblingCount: Number(findVal('siblingcount', 'jmlsaudara', 'jumlahsaudara')) || 0,
             childOrder: Number(findVal('childorder', 'anakke')) || 1,
-            
             entryYear: new Date().getFullYear(),
             status: 'AKTIF',
-            
             father: {
                 name: findVal('fathername', 'namaayah'),
                 nik: findVal('fathernik', 'nikayah'),
@@ -128,7 +139,6 @@ const normalizeStudentData = (rawData: any[]): Student[] => {
                 income: findVal('guardianincome', 'penghasilanwali'),
                 phone: findVal('guardianphone', 'nohpwali')
             },
-            
             dapodik: {
                 nik: findVal('nik', 'niksiswa'),
                 noKK: findVal('nokk'),
@@ -175,13 +185,12 @@ const fetchWithTimeout = async (resource: string, options: RequestInit = {}) => 
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
   
-  // CRITICAL FIXES FOR GOOGLE APPS SCRIPT CORS
   const finalOptions: RequestInit = {
       ...options,
       signal: controller.signal,
-      mode: 'cors', // Explicit CORS mode
-      redirect: 'follow', // GAS redirects 302 to content, must follow
-      credentials: 'omit', // Prevent sending cookies which breaks CORS on public scripts
+      mode: 'cors',
+      redirect: 'follow',
+      credentials: 'omit',
   };
 
   try {
@@ -234,7 +243,7 @@ export const api = {
     try {
         const response = await fetchWithTimeout(GOOGLE_SCRIPT_URL, {
             method: 'POST', 
-            headers: { "Content-Type": "text/plain;charset=utf-8" }, // text/plain prevents OPTIONS preflight
+            headers: { "Content-Type": "text/plain;charset=utf-8" }, 
             body: JSON.stringify({ action: 'updateUsers', users: users })
         });
         const result = await response.json();
@@ -284,7 +293,7 @@ export const api = {
                 action: 'uploadFile', fileBase64: base64, fileName: file.name, mimeType: file.type,
                 studentId: studentId, category: category
             }),
-            timeout: 90000 // 90s timeout for uploads
+            timeout: 90000 
           } as any);
           const result = await response.json();
           if (result.status === 'success') resolve(result.url); else reject(result.message);
@@ -315,7 +324,7 @@ export const api = {
         method: 'POST', 
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({ action: 'syncData', students: students }),
-        timeout: 180000 // 3 min timeout for bulk sync
+        timeout: 180000 
       } as any);
       const result = await response.json();
       return result.status === 'success';

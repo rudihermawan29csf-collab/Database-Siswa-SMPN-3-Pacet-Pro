@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { Student } from '../types';
 import { Search, Printer, User, ArrowLeft, ChevronRight, School, FileDown, Loader2, Filter, Files } from 'lucide-react';
@@ -17,6 +16,19 @@ const formatClassName = (name: string) => {
 const formatDateIndo = (dateStr: string) => {
     if (!dateStr) return '-';
     try {
+        // Manual split to avoid timezone shifting
+        const parts = dateStr.split('-');
+        if (parts.length === 3) {
+            const y = parts[0];
+            const m = parseInt(parts[1]);
+            const d = parseInt(parts[2]);
+            const months = [
+                'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+                'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+            ];
+            return `${d} ${months[m - 1]} ${y}`;
+        }
+        
         const date = new Date(dateStr);
         if (isNaN(date.getTime())) return dateStr; 
         return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
