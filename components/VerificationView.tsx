@@ -132,20 +132,31 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       );
   }, [currentStudent]);
 
-  const handleDataCorrection = async (request: CorrectionRequest, status: 'APPROVED' | 'REJECTED') => {
+  const handleDataCorrection = async (e: React.MouseEvent, request: CorrectionRequest, status: 'APPROVED' | 'REJECTED') => {
+      e.preventDefault();
+      e.stopPropagation();
       if (!currentStudent) return;
+      
       setProcessingReqId(request.id);
       try {
           const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
           if (updatedStudent.correctionRequests) {
               updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((r: CorrectionRequest) => {
                   if (r.id === request.id) {
-                      return { ...r, status, verifierName: currentUser.name, processedDate: new Date().toISOString(), adminNote: status === 'APPROVED' ? 'Disetujui.' : 'Ditolak.' };
+                      return { 
+                          ...r, 
+                          status, 
+                          verifierName: currentUser.name, 
+                          processedDate: new Date().toISOString(), 
+                          adminNote: status === 'APPROVED' ? 'Disetujui.' : 'Ditolak.' 
+                      };
                   }
                   return r;
               });
           }
+
           if (status === 'APPROVED') {
+              // Apply value to updatedStudent for database
               const keys = request.fieldKey.split('.');
               let current = updatedStudent;
               for (let i = 0; i < keys.length - 1; i++) {
@@ -153,11 +164,28 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                   current = current[keys[i]];
               }
               const lastKey = keys[keys.length - 1];
-              current[lastKey] = (['height', 'weight', 'siblingCount', 'childOrder'].includes(lastKey) || request.fieldKey.includes('circumference')) ? Number(request.proposedValue) : request.proposedValue;
+              const val = (['height', 'weight', 'siblingCount', 'childOrder'].includes(lastKey) || request.fieldKey.includes('circumference')) ? Number(request.proposedValue) : request.proposedValue;
+              current[lastKey] = val;
+
+              // Synchronize local formData immediately for seamless UI
+              const newFormData = { ...formData };
+              let currentForm: any = newFormData;
+              for (let i = 0; i < keys.length - 1; i++) {
+                  if (!currentForm[keys[i]]) currentForm[keys[i]] = {};
+                  currentForm = currentForm[keys[i]];
+              }
+              currentForm[keys[keys.length - 1]] = val;
+              setFormData(newFormData);
           }
+
           await api.updateStudent(updatedStudent);
           onUpdate();
-      } catch (e) { alert("Gagal memproses."); } finally { setProcessingReqId(null); }
+          alert(`Berhasil ${status === 'APPROVED' ? 'menyetujui' : 'menolak'} perubahan.`);
+      } catch (e) { 
+          alert("Gagal memproses perubahan data."); 
+      } finally { 
+          setProcessingReqId(null); 
+      }
   };
 
   const handleProcess = async (status: 'APPROVED' | 'REVISION' | 'SAVE_ONLY') => {
@@ -177,14 +205,23 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           }
           await api.updateStudent(updatedStudent);
           onUpdate();
-          if (status !== 'SAVE_ONLY') { setAdminNote(''); const next = updatedStudent.documents.find((d: any) => d.status === 'PENDING' && allowedCategories.includes(d.category)); if (next) setSelectedDocId(next.id); }
-          else alert("Data disimpan.");
-      } catch (e) { alert("Gagal."); } finally { setIsProcessing(false); }
+          if (status !== 'SAVE_ONLY') { 
+              setAdminNote(''); 
+              const next = updatedStudent.documents.find((d: any) => d.status === 'PENDING' && allowedCategories.includes(d.category)); 
+              if (next) setSelectedDocId(next.id); 
+          }
+          else alert("Data berhasil disimpan.");
+      } catch (e) { 
+          alert("Gagal memproses data."); 
+      } finally { 
+          setIsProcessing(false); 
+      }
   };
 
   const RenderInput = ({ label, value, fieldKey, type = 'text', section }: { label: string, value: any, fieldKey: string, type?: string, section: string }) => {
       const pending = currentStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING');
       const isDate = type === 'date';
+      const isProcessingThis = pending && processingReqId === pending.id;
       
       return (
           <div className="space-y-1 group">
@@ -207,14 +244,28 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                       }}
                   />
                   {pending && (
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 group-hover:block hidden z-10">
-                          <div className="bg-yellow-100 border border-yellow-300 p-2 rounded shadow-lg text-[10px] w-48">
-                              <p className="font-bold text-yellow-800">Usulan Siswa:</p>
-                              <p className="text-blue-700 font-bold mb-1">{pending.proposedValue}</p>
-                              <p className="italic text-gray-600">"{pending.studentReason}"</p>
-                              <div className="flex gap-1 mt-2">
-                                  <button onClick={() => handleDataCorrection(pending, 'APPROVED')} className="bg-green-600 text-white px-2 py-0.5 rounded font-bold">Terima</button>
-                                  <button onClick={() => handleDataCorrection(pending, 'REJECTED')} className="bg-red-600 text-white px-2 py-0.5 rounded font-bold">Tolak</button>
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 group-hover:block hidden z-30">
+                          <div className="bg-white border border-yellow-300 p-3 rounded-lg shadow-xl text-[10px] w-56 animate-fade-in ring-1 ring-black/5">
+                              <p className="font-black text-yellow-800 uppercase text-[9px] mb-1">Usulan Siswa:</p>
+                              <p className="text-blue-700 font-bold text-sm bg-blue-50 px-2 py-1 rounded border border-blue-100 mb-2 truncate">
+                                {isDate ? new Date(pending.proposedValue).toLocaleDateString('id-ID') : pending.proposedValue}
+                              </p>
+                              <p className="italic text-gray-600 leading-tight mb-3">"{pending.studentReason}"</p>
+                              <div className="flex gap-1.5 pt-2 border-t border-gray-100">
+                                  <button 
+                                    onClick={(e) => handleDataCorrection(e, pending, 'APPROVED')} 
+                                    disabled={!!processingReqId}
+                                    className="flex-1 bg-green-600 hover:bg-green-700 text-white py-1.5 rounded font-bold transition-colors flex items-center justify-center gap-1"
+                                  >
+                                      {isProcessingThis ? <Loader2 className="w-3 h-3 animate-spin"/> : <Check className="w-3 h-3" />} Terima
+                                  </button>
+                                  <button 
+                                    onClick={(e) => handleDataCorrection(e, pending, 'REJECTED')} 
+                                    disabled={!!processingReqId}
+                                    className="flex-1 bg-red-600 hover:bg-red-700 text-white py-1.5 rounded font-bold transition-colors flex items-center justify-center gap-1"
+                                  >
+                                      {isProcessingThis ? <Loader2 className="w-3 h-3 animate-spin"/> : <X className="w-3 h-3" />} Tolak
+                                  </button>
                               </div>
                           </div>
                       </div>
@@ -305,9 +356,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                 <div className="flex-1 flex flex-col overflow-hidden">
                     <div className="p-3 bg-blue-50 border-y border-blue-100 flex justify-between items-center">
                         <span className="text-xs font-black text-blue-800 uppercase flex items-center gap-2"><User className="w-3.5 h-3.5" /> Isian Buku Induk</span>
-                        {/* 
-                            FIX: Replaced 'isSavingData' with 'isProcessing' which is the correct state variable used in handleProcess
-                        */}
                         <button onClick={() => handleProcess('SAVE_ONLY')} disabled={isProcessing} className="text-blue-600 hover:text-blue-800 p-1 bg-white rounded shadow-sm border border-blue-200">
                             {isProcessing ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4"/>}
                         </button>
