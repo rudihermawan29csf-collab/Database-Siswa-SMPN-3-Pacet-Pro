@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Student, DocumentFile } from '../types';
 import { Search, Filter, FolderOpen, FileText, Loader2 } from 'lucide-react';
 import FileManager from './FileManager';
@@ -23,6 +23,12 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
   const [activeTab, setActiveTab] = useState<'DOCS' | 'RAPOR'>('DOCS');
   const [isUploading, setIsUploading] = useState(false);
   const [studentVisibleDocs, setStudentVisibleDocs] = useState<string[] | undefined>(undefined);
+
+  // REF FIX: Keep track of latest students prop to avoid stale closures in async handlers
+  const studentsRef = useRef(students);
+  useEffect(() => {
+      studentsRef.current = students;
+  }, [students]);
 
   // Set default class saat data dimuat pertama kali
   useEffect(() => {
@@ -68,10 +74,11 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
     if (!currentStudent) return;
     setIsUploading(true);
     
-    // Optimistic Update (Temporary)
+    // Backup current docs for rollback
+    const originalDocs = [...currentStudent.documents];
+
+    // Optimistic Update (Temporary for UI)
     const tempId = 'temp-' + Math.random();
-    const newDocs = category === 'LAINNYA' ? [...currentStudent.documents] : currentStudent.documents.filter(d => d.category !== category);
-    
     const tempDoc: DocumentFile = {
         id: tempId,
         name: file.name,
@@ -83,7 +90,12 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
         status: 'APPROVED' // Admin uploads are auto-approved
     };
     
-    currentStudent.documents = [...newDocs, tempDoc];
+    // Mutate local prop reference for immediate UI feedback
+    const optimisticDocs = category === 'LAINNYA' 
+        ? [...currentStudent.documents, tempDoc] 
+        : [...currentStudent.documents.filter(d => d.category !== category), tempDoc];
+    
+    currentStudent.documents = optimisticDocs;
     
     try {
         // Upload to Drive via API
@@ -97,19 +109,41 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
                 size: `${(file.size / 1024 / 1024).toFixed(2)} MB`
             };
             
-            // Replace Temp with Real
-            currentStudent.documents = [...newDocs, realDoc];
+            // CRITICAL FIX: Get the LATEST student state from Ref to ensure we don't overwrite
+            // changes made by other uploads (race conditions) or background refreshes.
+            const latestStudent = studentsRef.current.find(s => s.id === currentStudent.id) || currentStudent;
+            
+            // Clean up the list based on the LATEST data
+            // 1. Remove any temp docs created by this specific action (although ID changed, just safe check)
+            // 2. Remove existing doc of same category (if not LAINNYA) to prevent duplicates
+            const cleanDocs = latestStudent.documents.filter(d => d.id !== tempId && (category === 'LAINNYA' || d.category !== category));
+            
+            const updatedStudent = {
+                ...latestStudent,
+                documents: [...cleanDocs, realDoc]
+            };
             
             // Save Metadata
-            await api.updateStudent(currentStudent);
+            await api.updateStudent(updatedStudent);
+            
+            // Update local ref immediately to reflect success before re-fetch happens
+            // This helps if user clicks another upload immediately
+            if (studentsRef.current) {
+                const idx = studentsRef.current.findIndex(s => s.id === updatedStudent.id);
+                if (idx !== -1) {
+                    studentsRef.current[idx] = updatedStudent;
+                }
+            }
+
             if (onUpdate) onUpdate();
         } else {
             alert("Gagal upload ke Drive. File hanya tersimpan lokal sementara.");
+            currentStudent.documents = originalDocs; // Rollback
         }
     } catch (e) {
         console.error(e);
         alert("Terjadi kesalahan saat upload.");
-        // Revert to prev state if needed, or keep local preview
+        currentStudent.documents = originalDocs; // Rollback
     } finally {
         setIsUploading(false);
     }
@@ -118,9 +152,19 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
   const handleDelete = async (id: string) => {
       if (!currentStudent) return;
       if (window.confirm('Hapus dokumen ini?')) {
-          currentStudent.documents = currentStudent.documents.filter(d => d.id !== id);
-          await api.updateStudent(currentStudent);
-          if (onUpdate) onUpdate();
+          // Use Ref for safety here too
+          const latestStudent = studentsRef.current.find(s => s.id === currentStudent.id) || currentStudent;
+          const updatedStudent = {
+              ...latestStudent,
+              documents: latestStudent.documents.filter(d => d.id !== id)
+          };
+
+          try {
+              await api.updateStudent(updatedStudent);
+              if (onUpdate) onUpdate();
+          } catch(e) {
+              alert("Gagal menghapus dokumen.");
+          }
       }
   };
 
