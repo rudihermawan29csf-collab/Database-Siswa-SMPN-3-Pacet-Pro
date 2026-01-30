@@ -72,6 +72,9 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   const [isSavingData, setIsSavingData] = useState(false); 
   const [processingReqId, setProcessingReqId] = useState<string | null>(null);
   
+  // FIX: Local processed IDs
+  const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
+
   // Global Settings for Year Calculation
   const [appSettings, setAppSettings] = useState<any>(null);
   
@@ -109,7 +112,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
               setSelectedClass(student.className);
               setSelectedStudentId(student.id);
               
-              const pendingDoc = student.documents.find(d => d.category === 'RAPOR' && d.status === 'PENDING');
+              const pendingDoc = student.documents.find(d => d.category === 'RAPOR' && d.status === 'PENDING' && !processedIds.has(d.id));
               if (pendingDoc && pendingDoc.subType?.semester) {
                   setActiveSemester(pendingDoc.subType.semester);
                   if (pendingDoc.subType.page) setActivePage(pendingDoc.subType.page);
@@ -339,7 +342,9 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           }
 
           await api.updateStudent(updatedStudent);
-          onUpdate(); // Trigger refresh
+          setProcessedIds(prev => new Set(prev).add(request.id)); // Hide processed item
+          
+          onUpdate(); 
           alert(status === 'APPROVED' ? "Revisi disetujui & nilai diperbarui." : "Revisi ditolak.");
 
       } catch (e) {
@@ -394,6 +399,8 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           }
 
           await api.updateStudent(updatedStudent);
+          if (currentDoc) setProcessedIds(prev => new Set(prev).add(currentDoc.id));
+          
           onUpdate();
           
           if (status === 'APPROVED') {
@@ -486,6 +493,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                         if (pageDoc) {
                             if (pageDoc.status === 'APPROVED') statusColor = 'bg-green-900/50 border-green-600 text-green-400';
                             else if (pageDoc.status === 'REVISION') statusColor = 'bg-red-900/50 border-red-600 text-red-400';
+                            else if (processedIds.has(pageDoc.id)) statusColor = 'bg-gray-700 border-gray-500 text-gray-400'; // Just processed
                             else statusColor = 'bg-yellow-900/50 border-yellow-600 text-yellow-400 animate-pulse';
                         }
 
@@ -687,7 +695,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                                     {SUBJECT_MAP.map((sub, idx) => {
                                         // Check for PENDING Correction Request specific to this subject and semester
                                         const reqKey = `grade-${activeSemester}-${sub.full}`;
-                                        const pendingReq = currentStudent.correctionRequests?.find(r => r.fieldKey === reqKey && r.status === 'PENDING');
+                                        const pendingReq = currentStudent.correctionRequests?.find(r => r.fieldKey === reqKey && r.status === 'PENDING' && !processedIds.has(r.id));
 
                                         return (
                                             <div key={idx} className="border border-gray-100 rounded-lg p-2 hover:bg-gray-50 transition-colors">

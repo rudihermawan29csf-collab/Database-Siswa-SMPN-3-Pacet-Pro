@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, DocumentFile, CorrectionRequest } from '../types';
 import { api } from '../services/api';
@@ -71,6 +72,10 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   const [adminNote, setAdminNote] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingReqId, setProcessingReqId] = useState<string | null>(null);
+  
+  // FIX: Local state to track processed IDs to prevent them from reappearing before server sync
+  const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
+
   const [zoomLevel, setZoomLevel] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [useFallbackViewer, setUseFallbackViewer] = useState(false);
@@ -118,19 +123,23 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   useEffect(() => {
       if (studentDocs.length > 0 && (!selectedDocId || !studentDocs.find(d => d.id === selectedDocId))) {
-          const pending = studentDocs.find(d => d.status === 'PENDING');
+          const pending = studentDocs.find(d => d.status === 'PENDING' && !processedIds.has(d.id));
           setSelectedDocId(pending ? pending.id : studentDocs[0].id);
       } else if (studentDocs.length === 0) { setSelectedDocId(null); }
-  }, [studentDocs]);
+  }, [studentDocs, processedIds]); // Added processedIds dependency
 
   const currentDoc = studentDocs.find(d => d.id === selectedDocId);
 
+  // FIX: Filter Pending Requests ensuring processed ones are excluded
   const pendingRequests = useMemo(() => {
       if (!currentStudent?.correctionRequests) return [];
       return currentStudent.correctionRequests.filter(r => 
-          r.status === 'PENDING' && !r.fieldKey.startsWith('grade-') && !r.fieldKey.startsWith('ijazah-')
+          r.status === 'PENDING' && 
+          !r.fieldKey.startsWith('grade-') && 
+          !r.fieldKey.startsWith('ijazah-') &&
+          !processedIds.has(r.id)
       );
-  }, [currentStudent]);
+  }, [currentStudent, processedIds]);
 
   const handleDataCorrection = async (e: React.MouseEvent, request: CorrectionRequest, status: 'APPROVED' | 'REJECTED') => {
       e.preventDefault();
@@ -156,7 +165,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           }
 
           if (status === 'APPROVED') {
-              // Apply value to updatedStudent for database
               const keys = request.fieldKey.split('.');
               let current = updatedStudent;
               for (let i = 0; i < keys.length - 1; i++) {
@@ -167,7 +175,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               const val = (['height', 'weight', 'siblingCount', 'childOrder'].includes(lastKey) || request.fieldKey.includes('circumference')) ? Number(request.proposedValue) : request.proposedValue;
               current[lastKey] = val;
 
-              // Synchronize local formData immediately for seamless UI
+              // Synchronize local formData immediately
               const newFormData = { ...formData };
               let currentForm: any = newFormData;
               for (let i = 0; i < keys.length - 1; i++) {
@@ -179,6 +187,10 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           }
 
           await api.updateStudent(updatedStudent);
+          
+          // FIX: Add ID to processed set to hide immediately
+          setProcessedIds(prev => new Set(prev).add(request.id));
+          
           onUpdate();
           alert(`Berhasil ${status === 'APPROVED' ? 'menyetujui' : 'menolak'} perubahan.`);
       } catch (e) { 
@@ -204,13 +216,17 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               updatedStudent.documents = updatedStudent.documents.map((d: any) => d.id === currentDoc.id ? { ...d, status, adminNote, verifierName: currentUser.name, verificationDate: new Date().toISOString() } : d);
           }
           await api.updateStudent(updatedStudent);
-          onUpdate();
-          if (status !== 'SAVE_ONLY') { 
+          
+          if (status !== 'SAVE_ONLY' && currentDoc) { 
+              // FIX: Hide document immediately
+              setProcessedIds(prev => new Set(prev).add(currentDoc.id));
               setAdminNote(''); 
-              const next = updatedStudent.documents.find((d: any) => d.status === 'PENDING' && allowedCategories.includes(d.category)); 
+              const next = updatedStudent.documents.find((d: any) => d.status === 'PENDING' && allowedCategories.includes(d.category) && !processedIds.has(d.id)); 
               if (next) setSelectedDocId(next.id); 
           }
-          else alert("Data berhasil disimpan.");
+          
+          onUpdate();
+          if (status === 'SAVE_ONLY') alert("Data berhasil disimpan.");
       } catch (e) { 
           alert("Gagal memproses data."); 
       } finally { 
@@ -219,7 +235,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   };
 
   const RenderInput = ({ label, value, fieldKey, type = 'text', section }: { label: string, value: any, fieldKey: string, type?: string, section: string }) => {
-      const pending = currentStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING');
+      const pending = currentStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING' && !processedIds.has(r.id));
       const isDate = type === 'date';
       const isProcessingThis = pending && processingReqId === pending.id;
       
@@ -341,15 +357,22 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                         ))}
                     </div>
                     <div className="max-h-32 overflow-y-auto border-t border-gray-100">
-                        {studentDocs.map(doc => (
-                            <div key={doc.id} onClick={() => setSelectedDocId(doc.id)} className={`p-2 px-4 border-b border-gray-50 cursor-pointer hover:bg-white flex items-center justify-between ${selectedDocId === doc.id ? 'bg-white border-l-4 border-l-blue-600 shadow-inner' : ''}`}>
-                                <div className="flex items-center gap-2 overflow-hidden">
-                                    <div className={`p-1 rounded ${doc.type === 'PDF' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>{doc.type === 'PDF' ? <FileText className="w-3 h-3" /> : <ScrollText className="w-3 h-3" />}</div>
-                                    <span className={`text-[11px] font-bold truncate ${selectedDocId === doc.id ? 'text-blue-700' : 'text-gray-600'}`}>{DOC_LABELS[doc.category] || doc.category}</span>
+                        {studentDocs.map(doc => {
+                            const isProcessed = processedIds.has(doc.id);
+                            return (
+                                <div key={doc.id} onClick={() => setSelectedDocId(doc.id)} className={`p-2 px-4 border-b border-gray-50 cursor-pointer hover:bg-white flex items-center justify-between ${selectedDocId === doc.id ? 'bg-white border-l-4 border-l-blue-600 shadow-inner' : ''}`}>
+                                    <div className="flex items-center gap-2 overflow-hidden">
+                                        <div className={`p-1 rounded ${doc.type === 'PDF' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>{doc.type === 'PDF' ? <FileText className="w-3 h-3" /> : <ScrollText className="w-3 h-3" />}</div>
+                                        <span className={`text-[11px] font-bold truncate ${selectedDocId === doc.id ? 'text-blue-700' : 'text-gray-600'}`}>{DOC_LABELS[doc.category] || doc.category}</span>
+                                    </div>
+                                    {isProcessed ? (
+                                        <Check className="w-3.5 h-3.5 text-gray-400" />
+                                    ) : (
+                                        doc.status === 'APPROVED' ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> : doc.status === 'REVISION' ? <XCircle className="w-3.5 h-3.5 text-red-500" /> : <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div>
+                                    )}
                                 </div>
-                                {doc.status === 'APPROVED' ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> : doc.status === 'REVISION' ? <XCircle className="w-3.5 h-3.5 text-red-500" /> : <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div>}
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
 

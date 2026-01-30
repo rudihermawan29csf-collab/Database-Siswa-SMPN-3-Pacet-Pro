@@ -86,6 +86,21 @@ function App() {
   const [studentVisibleDocs, setStudentVisibleDocs] = useState<string[] | undefined>(undefined);
   const [academicInfo, setAcademicInfo] = useState({ year: '2024/2025', semester: 1 }); // New State
   
+  // CRITICAL FIX: Sync selectedStudent with the latest data from students array
+  // This ensures that when students array updates (after save/upload), the Student View gets the new data immediately
+  useEffect(() => {
+      if (selectedStudent && students.length > 0) {
+          const freshStudentData = students.find(s => s.id === selectedStudent.id);
+          if (freshStudentData) {
+              // Only update if there are actual changes to prevent loops, 
+              // or simply update to ensure freshness (React handles diffing)
+              if (JSON.stringify(freshStudentData) !== JSON.stringify(selectedStudent)) {
+                  setSelectedStudent(freshStudentData);
+              }
+          }
+      }
+  }, [students, selectedStudent]);
+
   // TRIGGER RE-FETCH PROFILE (Callback from SettingsView)
   const refreshProfile = async () => {
       // Re-fetch Settings for Name & School Name
@@ -155,7 +170,8 @@ function App() {
     try {
       const data = await api.getStudents();
       if (data && data.length > 0) {
-        setStudents(data);
+        // Use functional state update to prevent stale closures
+        setStudents(prev => data);
       } else {
         setStudents(MOCK_STUDENTS); 
       }
@@ -397,7 +413,7 @@ function App() {
               updatedStudent.documents.push(newDoc);
               
               await api.updateStudent(updatedStudent);
-              refreshData();
+              refreshData(); // Triggers global update, which triggers useEffect sync for selectedStudent
               alert("File berhasil diupload!");
           } else {
               alert("Gagal upload file.");
@@ -408,7 +424,6 @@ function App() {
       }
   };
 
-  // --- NEW: STUDENT DELETE HANDLER (FIX) ---
   const handleStudentDelete = async (docId: string) => {
       if (!selectedStudent) return;
       if (window.confirm("Apakah Anda yakin ingin menghapus dokumen ini?")) {
@@ -442,13 +457,13 @@ function App() {
           return {
               name: currentUser?.name || 'Guru Pengajar',
               role: 'Guru Wali Kelas',
-              photo: null // Guru uses default icon
+              photo: null 
           };
       } else {
           return {
               name: adminProfile.name,
               role: 'Administrator',
-              photo: null // Admin uses default icon
+              photo: null 
           };
       }
   };
@@ -457,9 +472,8 @@ function App() {
 
   // --- RENDER CONTENT SWITCHER ---
   const renderContent = () => {
-    const studentContext = userRole === 'STUDENT' && selectedStudent 
-        ? students.find(s => s.id === selectedStudent.id) || selectedStudent 
-        : undefined;
+    // For student role, we always pass the *selectedStudent* which is kept fresh by useEffect
+    const studentContext = userRole === 'STUDENT' ? selectedStudent : undefined;
 
     switch (currentView) {
       case 'dashboard':
@@ -483,17 +497,17 @@ function App() {
       
       // SHARED VIEWS (Different props based on role)
       case 'grades':
-        return <GradesView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext} onUpdate={refreshData} />;
+        return <GradesView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext || undefined} onUpdate={refreshData} />;
       case 'recap':
-        return <RecapView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext} />;
+        return <RecapView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext || undefined} />;
       case 'skl':
-        return <SKLView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext} />;
+        return <SKLView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext || undefined} />;
       case 'data-ijazah':
-        return <IjazahView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext} />;
+        return <IjazahView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext || undefined} />;
       case 'history':
         return <HistoryView students={userRole === 'STUDENT' && studentContext ? [studentContext] : students} />;
       case 'monitoring':
-        return <MonitoringView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext} />;
+        return <MonitoringView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext || undefined} />;
 
       // STUDENT SPECIFIC VIEWS
       case 'dapodik': 
@@ -517,7 +531,7 @@ function App() {
                     <FileManager 
                         documents={studentContext.documents} 
                         onUpload={handleStudentUpload}
-                        onDelete={handleStudentDelete} // FIX: Pass the delete handler
+                        onDelete={handleStudentDelete} 
                         allowedCategories={studentVisibleDocs}
                     />
                 </div>
