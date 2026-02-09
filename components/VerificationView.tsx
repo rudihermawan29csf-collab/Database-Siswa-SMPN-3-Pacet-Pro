@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Student, DocumentFile, CorrectionRequest } from '../types';
 import { api } from '../services/api';
 import { 
@@ -73,8 +73,11 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingReqId, setProcessingReqId] = useState<string | null>(null);
   
-  // FIX: Local state to track processed IDs to prevent them from reappearing before server sync
+  // Local state to track processed IDs
   const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
+
+  // Ref to lock auto-selection when target is present
+  const isTargetingRef = useRef(false);
 
   const [zoomLevel, setZoomLevel] = useState(1);
   const [rotation, setRotation] = useState(0);
@@ -91,18 +94,33 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       fetchSettings();
   }, []);
 
+  // --- HANDLE NOTIFICATION TARGET ---
   useEffect(() => {
-      if (targetStudentId) {
+      if (targetStudentId && students.length > 0) {
           const student = students.find(s => s.id === targetStudentId);
-          if (student) { setSelectedClass(student.className); setSelectedStudentId(student.id); }
+          if (student) { 
+              isTargetingRef.current = true; // Lock auto-select
+              setSelectedClass(student.className); 
+              setSelectedStudentId(student.id); 
+              
+              // Unlock after a delay to allow UI to settle
+              setTimeout(() => { isTargetingRef.current = false; }, 800);
+          }
       }
   }, [targetStudentId, students]);
 
   const uniqueClasses = useMemo(() => Array.from(new Set(students.map(s => s.className))).sort(), [students]);
   const filteredStudents = useMemo(() => students.filter(s => s.className === selectedClass).sort((a, b) => a.fullName.localeCompare(b.fullName)), [students, selectedClass]);
   
+  // --- AUTO SELECT FIRST STUDENT (Only if NOT targeting) ---
   useEffect(() => {
-      if (!selectedStudentId && filteredStudents.length > 0) setSelectedStudentId(filteredStudents[0].id);
+      if (isTargetingRef.current) return; // Skip if processing target
+
+      if (!selectedStudentId && filteredStudents.length > 0) {
+          setSelectedStudentId(filteredStudents[0].id);
+      } else if (filteredStudents.length > 0 && !filteredStudents.find(s => s.id === selectedStudentId)) {
+          setSelectedStudentId(filteredStudents[0].id);
+      }
   }, [filteredStudents, selectedStudentId]);
 
   const currentStudent = useMemo(() => students.find(s => s.id === selectedStudentId), [students, selectedStudentId]);
@@ -126,11 +144,10 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           const pending = studentDocs.find(d => d.status === 'PENDING' && !processedIds.has(d.id));
           setSelectedDocId(pending ? pending.id : studentDocs[0].id);
       } else if (studentDocs.length === 0) { setSelectedDocId(null); }
-  }, [studentDocs, processedIds]); // Added processedIds dependency
+  }, [studentDocs, processedIds]);
 
   const currentDoc = studentDocs.find(d => d.id === selectedDocId);
 
-  // FIX: Filter Pending Requests ensuring processed ones are excluded
   const pendingRequests = useMemo(() => {
       if (!currentStudent?.correctionRequests) return [];
       return currentStudent.correctionRequests.filter(r => 
@@ -175,7 +192,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               const val = (['height', 'weight', 'siblingCount', 'childOrder'].includes(lastKey) || request.fieldKey.includes('circumference')) ? Number(request.proposedValue) : request.proposedValue;
               current[lastKey] = val;
 
-              // Synchronize local formData immediately
               const newFormData = { ...formData };
               let currentForm: any = newFormData;
               for (let i = 0; i < keys.length - 1; i++) {
@@ -187,8 +203,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           }
 
           await api.updateStudent(updatedStudent);
-          
-          // FIX: Add ID to processed set to hide immediately
           setProcessedIds(prev => new Set(prev).add(request.id));
           
           onUpdate();
@@ -218,7 +232,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           await api.updateStudent(updatedStudent);
           
           if (status !== 'SAVE_ONLY' && currentDoc) { 
-              // FIX: Hide document immediately
               setProcessedIds(prev => new Set(prev).add(currentDoc.id));
               setAdminNote(''); 
               const next = updatedStudent.documents.find((d: any) => d.status === 'PENDING' && allowedCategories.includes(d.category) && !processedIds.has(d.id)); 
@@ -234,13 +247,13 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       }
   };
 
-  const RenderInput = ({ label, value, fieldKey, type = 'text', section }: { label: string, value: any, fieldKey: string, type?: string, section: string }) => {
+  const renderField = ({ label, value, fieldKey, type = 'text', section }: { label: string, value: any, fieldKey: string, type?: string, section: string }) => {
       const pending = currentStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING' && !processedIds.has(r.id));
       const isDate = type === 'date';
       const isProcessingThis = pending && processingReqId === pending.id;
       
       return (
-          <div className="space-y-1 group">
+          <div className="space-y-1 group" key={fieldKey}>
               <div className="flex justify-between items-center">
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">{label}</label>
                   {pending && <span className="text-[8px] bg-yellow-400 text-yellow-900 px-1 rounded font-black animate-pulse">USULAN PERUBAHAN</span>}
@@ -326,12 +339,26 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                             <button onClick={() => setRotation(r => r + 90)} className="p-2 text-white hover:bg-white/20 rounded-full"><RotateCw className="w-4 h-4" /></button>
                             <button onClick={() => setUseFallbackViewer(v => !v)} className="px-3 py-1 text-[10px] font-bold text-white hover:bg-white/20 rounded-full border border-white/20 ml-1">{useFallbackViewer ? 'Mode Default' : 'Mode Alt'}</button>
                         </div>
-                        <div className="flex-1 overflow-auto flex items-center justify-center p-8">
-                            <div style={{ transform: `scale(${useFallbackViewer ? 1 : zoomLevel}) rotate(${rotation}deg)`, transformOrigin: 'center center' }} className="relative shadow-2xl transition-transform duration-200">
+                        
+                        {/* FIX: Use flex + m-auto for safe centering of wide documents (KK) */}
+                        <div className="flex-1 overflow-auto flex p-8">
+                            <div 
+                                style={{ 
+                                    transform: `scale(${useFallbackViewer ? 1 : zoomLevel}) rotate(${rotation}deg)`, 
+                                    transformOrigin: 'center center' 
+                                }} 
+                                className="relative shadow-2xl transition-transform duration-200 m-auto"
+                            >
                                 {(useFallbackViewer || (currentDoc.url.includes('drive.google.com') && !currentDoc.name.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp)$/))) ? (
                                     <iframe src={getDriveUrl(currentDoc.url, 'preview')} className="w-[800px] h-[1100px] bg-white rounded" title="Viewer" />
                                 ) : (
-                                    <img src={getDriveUrl(currentDoc.url, 'direct')} className="max-w-none h-auto object-contain bg-white rounded" style={{ maxHeight: '85vh', minWidth: '400px' }} alt="Doc" onError={() => setUseFallbackViewer(true)} />
+                                    <img 
+                                        src={getDriveUrl(currentDoc.url, 'direct')} 
+                                        className="max-w-full h-auto object-contain bg-white rounded" 
+                                        style={{ maxHeight: '85vh', minWidth: '400px' }} 
+                                        alt="Doc" 
+                                        onError={() => setUseFallbackViewer(true)} 
+                                    />
                                 )}
                             </div>
                         </div>
@@ -387,51 +414,51 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                     <div className="flex-1 overflow-y-auto custom-scrollbar bg-white">
                         <AccordionItem title="1. Identitas Utama" icon={User} isOpen={openSection === 'IDENTITY'} onToggle={() => setOpenSection(openSection === 'IDENTITY' ? '' : 'IDENTITY')}>
                             <div className="grid grid-cols-1 gap-4">
-                                <RenderInput label="Nama Lengkap" value={formData.fullName} fieldKey="fullName" section="IDENTITY" />
+                                {renderField({ label: "Nama Lengkap", value: formData.fullName, fieldKey: "fullName", section: "IDENTITY" })}
                                 <div className="grid grid-cols-2 gap-3">
-                                    <RenderInput label="NIS" value={formData.nis} fieldKey="nis" section="IDENTITY" />
-                                    <RenderInput label="NISN" value={formData.nisn} fieldKey="nisn" section="IDENTITY" />
+                                    {renderField({ label: "NIS", value: formData.nis, fieldKey: "nis", section: "IDENTITY" })}
+                                    {renderField({ label: "NISN", value: formData.nisn, fieldKey: "nisn", section: "IDENTITY" })}
                                 </div>
-                                <RenderInput label="NIK (Siswa)" value={formData.dapodik?.nik} fieldKey="dapodik.nik" section="IDENTITY" />
+                                {renderField({ label: "NIK (Siswa)", value: formData.dapodik?.nik, fieldKey: "dapodik.nik", section: "IDENTITY" })}
                                 <div className="grid grid-cols-2 gap-3">
-                                    <RenderInput label="Jenis Kelamin (L/P)" value={formData.gender} fieldKey="gender" section="IDENTITY" />
-                                    <RenderInput label="Agama" value={formData.religion} fieldKey="religion" section="IDENTITY" />
+                                    {renderField({ label: "Jenis Kelamin (L/P)", value: formData.gender, fieldKey: "gender", section: "IDENTITY" })}
+                                    {renderField({ label: "Agama", value: formData.religion, fieldKey: "religion", section: "IDENTITY" })}
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
-                                    <RenderInput label="Tempat Lahir" value={formData.birthPlace} fieldKey="birthPlace" section="IDENTITY" />
-                                    <RenderInput label="Tanggal Lahir" value={formData.birthDate} fieldKey="birthDate" type="date" section="IDENTITY" />
+                                    {renderField({ label: "Tempat Lahir", value: formData.birthPlace, fieldKey: "birthPlace", section: "IDENTITY" })}
+                                    {renderField({ label: "Tanggal Lahir", value: formData.birthDate, fieldKey: "birthDate", type: "date", section: "IDENTITY" })}
                                 </div>
-                                <RenderInput label="Kelas Saat Ini" value={formData.className} fieldKey="className" section="IDENTITY" />
-                                <RenderInput label="Status Siswa" value={formData.status} fieldKey="status" section="IDENTITY" />
-                                <RenderInput label="Kewarganegaraan" value={formData.nationality} fieldKey="nationality" section="IDENTITY" />
-                                <RenderInput label="Berkebutuhan Khusus" value={formData.dapodik?.specialNeeds} fieldKey="dapodik.specialNeeds" section="IDENTITY" />
-                                <RenderInput label="Sekolah Asal" value={formData.previousSchool} fieldKey="previousSchool" section="IDENTITY" />
+                                {renderField({ label: "Kelas Saat Ini", value: formData.className, fieldKey: "className", section: "IDENTITY" })}
+                                {renderField({ label: "Status Siswa", value: formData.status, fieldKey: "status", section: "IDENTITY" })}
+                                {renderField({ label: "Kewarganegaraan", value: formData.nationality, fieldKey: "nationality", section: "IDENTITY" })}
+                                {renderField({ label: "Berkebutuhan Khusus", value: formData.dapodik?.specialNeeds, fieldKey: "dapodik.specialNeeds", section: "IDENTITY" })}
+                                {renderField({ label: "Sekolah Asal", value: formData.previousSchool, fieldKey: "previousSchool", section: "IDENTITY" })}
                             </div>
                         </AccordionItem>
 
                         <AccordionItem title="2. Alamat & Domisili" icon={MapPin} isOpen={openSection === 'ADDRESS'} onToggle={() => setOpenSection(openSection === 'ADDRESS' ? '' : 'ADDRESS')}>
                             <div className="grid grid-cols-1 gap-4">
-                                <RenderInput label="Alamat Jalan" value={formData.address} fieldKey="address" section="ADDRESS" />
+                                {renderField({ label: "Alamat Jalan", value: formData.address, fieldKey: "address", section: "ADDRESS" })}
                                 <div className="grid grid-cols-3 gap-2">
-                                    <RenderInput label="RT" value={formData.dapodik?.rt} fieldKey="dapodik.rt" section="ADDRESS" />
-                                    <RenderInput label="RW" value={formData.dapodik?.rw} fieldKey="dapodik.rw" section="ADDRESS" />
-                                    <RenderInput label="Kode Pos" value={formData.postalCode} fieldKey="postalCode" section="ADDRESS" />
+                                    {renderField({ label: "RT", value: formData.dapodik?.rt, fieldKey: "dapodik.rt", section: "ADDRESS" })}
+                                    {renderField({ label: "RW", value: formData.dapodik?.rw, fieldKey: "dapodik.rw", section: "ADDRESS" })}
+                                    {renderField({ label: "Kode Pos", value: formData.postalCode, fieldKey: "postalCode", section: "ADDRESS" })}
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
-                                    <RenderInput label="Dusun" value={formData.dapodik?.dusun} fieldKey="dapodik.dusun" section="ADDRESS" />
-                                    <RenderInput label="Kelurahan" value={formData.dapodik?.kelurahan} fieldKey="dapodik.kelurahan" section="ADDRESS" />
+                                    {renderField({ label: "Dusun", value: formData.dapodik?.dusun, fieldKey: "dapodik.dusun", section: "ADDRESS" })}
+                                    {renderField({ label: "Kelurahan", value: formData.dapodik?.kelurahan, fieldKey: "dapodik.kelurahan", section: "ADDRESS" })}
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
-                                    <RenderInput label="Kecamatan" value={formData.subDistrict} fieldKey="subDistrict" section="ADDRESS" />
-                                    <RenderInput label="Kabupaten" value={formData.district} fieldKey="district" section="ADDRESS" />
+                                    {renderField({ label: "Kecamatan", value: formData.subDistrict, fieldKey: "subDistrict", section: "ADDRESS" })}
+                                    {renderField({ label: "Kabupaten", value: formData.district, fieldKey: "district", section: "ADDRESS" })}
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
-                                    <RenderInput label="Lintang" value={formData.dapodik?.latitude} fieldKey="dapodik.latitude" section="ADDRESS" />
-                                    <RenderInput label="Bujur" value={formData.dapodik?.longitude} fieldKey="dapodik.longitude" section="ADDRESS" />
+                                    {renderField({ label: "Lintang", value: formData.dapodik?.latitude, fieldKey: "dapodik.latitude", section: "ADDRESS" })}
+                                    {renderField({ label: "Bujur", value: formData.dapodik?.longitude, fieldKey: "dapodik.longitude", section: "ADDRESS" })}
                                 </div>
-                                <RenderInput label="Jenis Tinggal" value={formData.dapodik?.livingStatus} fieldKey="dapodik.livingStatus" section="ADDRESS" />
-                                <RenderInput label="Transportasi" value={formData.dapodik?.transportation} fieldKey="dapodik.transportation" section="ADDRESS" />
-                                <RenderInput label="No. Kartu Keluarga" value={formData.dapodik?.noKK} fieldKey="dapodik.noKK" section="ADDRESS" />
+                                {renderField({ label: "Jenis Tinggal", value: formData.dapodik?.livingStatus, fieldKey: "dapodik.livingStatus", section: "ADDRESS" })}
+                                {renderField({ label: "Transportasi", value: formData.dapodik?.transportation, fieldKey: "dapodik.transportation", section: "ADDRESS" })}
+                                {renderField({ label: "No. Kartu Keluarga", value: formData.dapodik?.noKK, fieldKey: "dapodik.noKK", section: "ADDRESS" })}
                             </div>
                         </AccordionItem>
 
@@ -440,24 +467,24 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                                 <div className="p-3 bg-blue-50/50 rounded-lg border border-blue-100">
                                     <p className="text-[10px] font-black text-blue-800 mb-3 uppercase tracking-wider">Ayah Kandung</p>
                                     <div className="space-y-3">
-                                        <RenderInput label="Nama Ayah" value={formData.father?.name} fieldKey="father.name" section="PARENTS" />
-                                        <RenderInput label="NIK Ayah" value={formData.father?.nik} fieldKey="father.nik" section="PARENTS" />
-                                        <RenderInput label="Tahun Lahir" value={formData.father?.birthPlaceDate} fieldKey="father.birthPlaceDate" section="PARENTS" />
-                                        <RenderInput label="Pendidikan" value={formData.father?.education} fieldKey="father.education" section="PARENTS" />
-                                        <RenderInput label="Pekerjaan" value={formData.father?.job} fieldKey="father.job" section="PARENTS" />
-                                        <RenderInput label="Penghasilan" value={formData.father?.income} fieldKey="father.income" section="PARENTS" />
-                                        <RenderInput label="No Handphone" value={formData.father?.phone} fieldKey="father.phone" section="PARENTS" />
+                                        {renderField({ label: "Nama Ayah", value: formData.father?.name, fieldKey: "father.name", section: "PARENTS" })}
+                                        {renderField({ label: "NIK Ayah", value: formData.father?.nik, fieldKey: "father.nik", section: "PARENTS" })}
+                                        {renderField({ label: "Tahun Lahir", value: formData.father?.birthPlaceDate, fieldKey: "father.birthPlaceDate", section: "PARENTS" })}
+                                        {renderField({ label: "Pendidikan", value: formData.father?.education, fieldKey: "father.education", section: "PARENTS" })}
+                                        {renderField({ label: "Pekerjaan", value: formData.father?.job, fieldKey: "father.job", section: "PARENTS" })}
+                                        {renderField({ label: "Penghasilan", value: formData.father?.income, fieldKey: "father.income", section: "PARENTS" })}
+                                        {renderField({ label: "No Handphone", value: formData.father?.phone, fieldKey: "father.phone", section: "PARENTS" })}
                                     </div>
                                 </div>
                                 <div className="p-3 bg-pink-50/50 rounded-lg border border-pink-100">
                                     <p className="text-[10px] font-black text-pink-800 mb-3 uppercase tracking-wider">Ibu Kandung</p>
                                     <div className="space-y-3">
-                                        <RenderInput label="Nama Ibu" value={formData.mother?.name} fieldKey="mother.name" section="PARENTS" />
-                                        <RenderInput label="NIK Ibu" value={formData.mother?.nik} fieldKey="mother.nik" section="PARENTS" />
-                                        <RenderInput label="Tahun Lahir" value={formData.mother?.birthPlaceDate} fieldKey="mother.birthPlaceDate" section="PARENTS" />
-                                        <RenderInput label="Pendidikan" value={formData.mother?.education} fieldKey="mother.education" section="PARENTS" />
-                                        <RenderInput label="Pekerjaan" value={formData.mother?.job} fieldKey="mother.job" section="PARENTS" />
-                                        <RenderInput label="Penghasilan" value={formData.mother?.income} fieldKey="mother.income" section="PARENTS" />
+                                        {renderField({ label: "Nama Ibu", value: formData.mother?.name, fieldKey: "mother.name", section: "PARENTS" })}
+                                        {renderField({ label: "NIK Ibu", value: formData.mother?.nik, fieldKey: "mother.nik", section: "PARENTS" })}
+                                        {renderField({ label: "Tahun Lahir", value: formData.mother?.birthPlaceDate, fieldKey: "mother.birthPlaceDate", section: "PARENTS" })}
+                                        {renderField({ label: "Pendidikan", value: formData.mother?.education, fieldKey: "mother.education", section: "PARENTS" })}
+                                        {renderField({ label: "Pekerjaan", value: formData.mother?.job, fieldKey: "mother.job", section: "PARENTS" })}
+                                        {renderField({ label: "Penghasilan", value: formData.mother?.income, fieldKey: "mother.income", section: "PARENTS" })}
                                     </div>
                                 </div>
                             </div>
@@ -465,36 +492,36 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
                         <AccordionItem title="4. Data Periodik" icon={Heart} isOpen={openSection === 'PERIODIK'} onToggle={() => setOpenSection(openSection === 'PERIODIK' ? '' : 'PERIODIK')}>
                             <div className="grid grid-cols-2 gap-4">
-                                <RenderInput label="Tinggi (cm)" value={formData.height} fieldKey="height" section="PERIODIK" />
-                                <RenderInput label="Berat (kg)" value={formData.weight} fieldKey="weight" section="PERIODIK" />
-                                <RenderInput label="Lingkar Kepala" value={formData.dapodik?.headCircumference} fieldKey="dapodik.headCircumference" section="PERIODIK" />
-                                <RenderInput label="Golongan Darah" value={formData.bloodType} fieldKey="bloodType" section="PERIODIK" />
-                                <RenderInput label="Jml Saudara" value={formData.siblingCount} fieldKey="siblingCount" section="PERIODIK" />
-                                <RenderInput label="Anak Ke-" value={formData.childOrder} fieldKey="childOrder" section="PERIODIK" />
-                                <RenderInput label="Jarak Sekolah" value={formData.dapodik?.distanceToSchool} fieldKey="dapodik.distanceToSchool" section="PERIODIK" />
-                                <RenderInput label="Waktu Tempuh" value={formData.dapodik?.travelTimeMinutes} fieldKey="dapodik.travelTimeMinutes" section="PERIODIK" />
+                                {renderField({ label: "Tinggi (cm)", value: formData.height, fieldKey: "height", section: "PERIODIK" })}
+                                {renderField({ label: "Berat (kg)", value: formData.weight, fieldKey: "weight", section: "PERIODIK" })}
+                                {renderField({ label: "Lingkar Kepala", value: formData.dapodik?.headCircumference, fieldKey: "dapodik.headCircumference", section: "PERIODIK" })}
+                                {renderField({ label: "Golongan Darah", value: formData.bloodType, fieldKey: "bloodType", section: "PERIODIK" })}
+                                {renderField({ label: "Jml Saudara", value: formData.siblingCount, fieldKey: "siblingCount", section: "PERIODIK" })}
+                                {renderField({ label: "Anak Ke-", value: formData.childOrder, fieldKey: "childOrder", section: "PERIODIK" })}
+                                {renderField({ label: "Jarak Sekolah", value: formData.dapodik?.distanceToSchool, fieldKey: "dapodik.distanceToSchool", section: "PERIODIK" })}
+                                {renderField({ label: "Waktu Tempuh", value: formData.dapodik?.travelTimeMinutes, fieldKey: "dapodik.travelTimeMinutes", section: "PERIODIK" })}
                             </div>
                         </AccordionItem>
 
                         <AccordionItem title="5. Kesejahteraan" icon={Wallet} isOpen={openSection === 'WELFARE'} onToggle={() => setOpenSection(openSection === 'WELFARE' ? '' : 'WELFARE')}>
                             <div className="space-y-4">
-                                <RenderInput label="No. SKHUN" value={formData.dapodik?.skhun} fieldKey="dapodik.skhun" section="WELFARE" />
-                                <RenderInput label="No. Peserta UN" value={formData.dapodik?.unExamNumber} fieldKey="dapodik.unExamNumber" section="WELFARE" />
-                                <RenderInput label="No. Ijazah (SD)" value={formData.diplomaNumber} fieldKey="diplomaNumber" section="WELFARE" />
-                                <RenderInput label="No. Reg Akta" value={formData.dapodik?.birthRegNumber} fieldKey="dapodik.birthRegNumber" section="WELFARE" />
-                                <RenderInput label="No. KKS" value={formData.dapodik?.kksNumber} fieldKey="dapodik.kksNumber" section="WELFARE" />
-                                <RenderInput label="Email Pribadi" value={formData.dapodik?.email} fieldKey="dapodik.email" section="WELFARE" />
+                                {renderField({ label: "No. SKHUN", value: formData.dapodik?.skhun, fieldKey: "dapodik.skhun", section: "WELFARE" })}
+                                {renderField({ label: "No. Peserta UN", value: formData.dapodik?.unExamNumber, fieldKey: "dapodik.unExamNumber", section: "WELFARE" })}
+                                {renderField({ label: "No. Ijazah (SD)", value: formData.diplomaNumber, fieldKey: "diplomaNumber", section: "WELFARE" })}
+                                {renderField({ label: "No. Reg Akta", value: formData.dapodik?.birthRegNumber, fieldKey: "dapodik.birthRegNumber", section: "WELFARE" })}
+                                {renderField({ label: "No. KKS", value: formData.dapodik?.kksNumber, fieldKey: "dapodik.kksNumber", section: "WELFARE" })}
+                                {renderField({ label: "Email Pribadi", value: formData.dapodik?.email, fieldKey: "dapodik.email", section: "WELFARE" })}
                                 <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-100 space-y-3">
                                     <p className="text-[10px] font-bold text-yellow-800 uppercase">Program PIP/KIP</p>
-                                    <RenderInput label="Penerima KIP" value={formData.dapodik?.kipReceiver} fieldKey="dapodik.kipReceiver" section="WELFARE" />
-                                    <RenderInput label="Nomor KIP" value={formData.dapodik?.kipNumber} fieldKey="dapodik.kipNumber" section="WELFARE" />
-                                    <RenderInput label="Nama di KIP" value={formData.dapodik?.kipName} fieldKey="dapodik.kipName" section="WELFARE" />
+                                    {renderField({ label: "Penerima KIP", value: formData.dapodik?.kipReceiver, fieldKey: "dapodik.kipReceiver", section: "WELFARE" })}
+                                    {renderField({ label: "Nomor KIP", value: formData.dapodik?.kipNumber, fieldKey: "dapodik.kipNumber", section: "WELFARE" })}
+                                    {renderField({ label: "Nama di KIP", value: formData.dapodik?.kipName, fieldKey: "dapodik.kipName", section: "WELFARE" })}
                                 </div>
                                 <div className="p-3 bg-blue-50 rounded-lg border border-blue-100 space-y-3">
                                     <p className="text-[10px] font-bold text-blue-800 uppercase">Rekening Bank (PIP)</p>
-                                    <RenderInput label="Nama Bank" value={formData.dapodik?.bank} fieldKey="dapodik.bank" section="WELFARE" />
-                                    <RenderInput label="Nomor Rekening" value={formData.dapodik?.bankAccount} fieldKey="dapodik.bankAccount" section="WELFARE" />
-                                    <RenderInput label="Atas Nama" value={formData.dapodik?.bankAccountName} fieldKey="dapodik.bankAccountName" section="WELFARE" />
+                                    {renderField({ label: "Nama Bank", value: formData.dapodik?.bank, fieldKey: "dapodik.bank", section: "WELFARE" })}
+                                    {renderField({ label: "Nomor Rekening", value: formData.dapodik?.bankAccount, fieldKey: "dapodik.bankAccount", section: "WELFARE" })}
+                                    {renderField({ label: "Atas Nama", value: formData.dapodik?.bankAccountName, fieldKey: "dapodik.bankAccountName", section: "WELFARE" })}
                                 </div>
                             </div>
                         </AccordionItem>

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Student, DocumentFile } from '../types';
 import { api } from '../services/api';
 import { CheckCircle2, XCircle, Loader2, AlertCircle, ScrollText, ZoomIn, ZoomOut, RotateCw, FileCheck2, User, Filter, Search, FileBadge, Save } from 'lucide-react';
@@ -70,6 +70,9 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
   const [rotation, setRotation] = useState(0);
   const [useFallbackViewer, setUseFallbackViewer] = useState(false);
 
+  // Ref to lock auto-selection when target is present
+  const isTargetingRef = useRef(false);
+
   // Fetch Settings for Document Tabs
   useEffect(() => {
       const fetchSettings = async () => {
@@ -89,11 +92,14 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
 
   // Initialize selection
   useEffect(() => {
-      if (targetStudentId) {
+      if (targetStudentId && students.length > 0) {
           const student = students.find(s => s.id === targetStudentId);
           if (student) {
+              isTargetingRef.current = true; // Lock
               setSelectedClass(student.className);
               setSelectedStudentId(student.id);
+              // Unlock after delay
+              setTimeout(() => { isTargetingRef.current = false; }, 800);
           }
       }
   }, [targetStudentId, students]);
@@ -108,7 +114,10 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
       return students.filter(s => s.className === selectedClass).sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [students, selectedClass]);
 
+  // --- AUTO SELECT (Only if not targeting) ---
   useEffect(() => {
+      if (isTargetingRef.current) return;
+
       if (!selectedStudentId && filteredStudents.length > 0) {
           setSelectedStudentId(filteredStudents[0].id);
       } else if (filteredStudents.length > 0 && !filteredStudents.find(s => s.id === selectedStudentId)) {

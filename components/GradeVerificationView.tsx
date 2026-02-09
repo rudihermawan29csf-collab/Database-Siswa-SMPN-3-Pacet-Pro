@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Student, CorrectionRequest, DocumentFile } from '../types';
 import { api } from '../services/api';
 import { CheckCircle2, XCircle, Loader2, AlertCircle, FileText, ZoomIn, ZoomOut, RotateCw, LayoutList, Filter, Search, Save, Calendar, ChevronRight, File, School, RefreshCw, UserCheck, Lock, Check, X } from 'lucide-react';
@@ -75,6 +75,9 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   // FIX: Local processed IDs
   const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
 
+  // Ref to lock auto-selection when target is present
+  const isTargetingRef = useRef(false);
+
   // Global Settings for Year Calculation
   const [appSettings, setAppSettings] = useState<any>(null);
   
@@ -106,9 +109,10 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
   // Initialize selection
   useEffect(() => {
-      if (targetStudentId) {
+      if (targetStudentId && students.length > 0) {
           const student = students.find(s => s.id === targetStudentId);
           if (student) {
+              isTargetingRef.current = true; // Lock auto-select
               setSelectedClass(student.className);
               setSelectedStudentId(student.id);
               
@@ -117,6 +121,9 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                   setActiveSemester(pendingDoc.subType.semester);
                   if (pendingDoc.subType.page) setActivePage(pendingDoc.subType.page);
               }
+
+              // Unlock after a delay to allow UI to settle
+              setTimeout(() => { isTargetingRef.current = false; }, 800);
           }
       }
   }, [targetStudentId, students]);
@@ -130,7 +137,10 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       return students.filter(s => s.className === selectedClass).sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [students, selectedClass]);
 
+  // --- AUTO SELECT FIRST STUDENT (Only if NOT targeting) ---
   useEffect(() => {
+      if (isTargetingRef.current) return; // Skip if processing target
+
       if (!selectedStudentId && filteredStudents.length > 0) {
           setSelectedStudentId(filteredStudents[0].id);
       } else if (filteredStudents.length > 0 && !filteredStudents.find(s => s.id === selectedStudentId)) {
