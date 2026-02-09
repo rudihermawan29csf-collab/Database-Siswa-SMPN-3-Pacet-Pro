@@ -73,7 +73,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingReqId, setProcessingReqId] = useState<string | null>(null);
   
-  // Local state to track processed IDs
+  // Local state to track processed IDs to prevent them from reappearing before server sync
   const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
 
   // Ref to lock auto-selection when target is present
@@ -164,6 +164,9 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       if (!currentStudent) return;
       
       setProcessingReqId(request.id);
+      // OPTIMISTIC UPDATE: Mark as processed immediately to hide from UI
+      setProcessedIds(prev => new Set(prev).add(request.id));
+
       try {
           const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
           if (updatedStudent.correctionRequests) {
@@ -192,6 +195,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               const val = (['height', 'weight', 'siblingCount', 'childOrder'].includes(lastKey) || request.fieldKey.includes('circumference')) ? Number(request.proposedValue) : request.proposedValue;
               current[lastKey] = val;
 
+              // Synchronize local formData immediately
               const newFormData = { ...formData };
               let currentForm: any = newFormData;
               for (let i = 0; i < keys.length - 1; i++) {
@@ -203,11 +207,15 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           }
 
           await api.updateStudent(updatedStudent);
-          setProcessedIds(prev => new Set(prev).add(request.id));
-          
           onUpdate();
           alert(`Berhasil ${status === 'APPROVED' ? 'menyetujui' : 'menolak'} perubahan.`);
       } catch (e) { 
+          // Rollback on error
+          setProcessedIds(prev => {
+              const next = new Set(prev);
+              next.delete(request.id);
+              return next;
+          });
           alert("Gagal memproses perubahan data."); 
       } finally { 
           setProcessingReqId(null); 
@@ -217,7 +225,12 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   const handleProcess = async (status: 'APPROVED' | 'REVISION' | 'SAVE_ONLY') => {
       if (!currentStudent) return;
       if (status === 'REVISION' && !adminNote.trim()) { alert("Mohon isi catatan revisi."); return; }
+      
       setIsProcessing(true);
+      if (status !== 'SAVE_ONLY' && currentDoc) {
+          setProcessedIds(prev => new Set(prev).add(currentDoc.id));
+      }
+
       try {
           const updatedStudent = {
               ...currentStudent, ...formData,
@@ -232,7 +245,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           await api.updateStudent(updatedStudent);
           
           if (status !== 'SAVE_ONLY' && currentDoc) { 
-              setProcessedIds(prev => new Set(prev).add(currentDoc.id));
               setAdminNote(''); 
               const next = updatedStudent.documents.find((d: any) => d.status === 'PENDING' && allowedCategories.includes(d.category) && !processedIds.has(d.id)); 
               if (next) setSelectedDocId(next.id); 
@@ -241,6 +253,14 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           onUpdate();
           if (status === 'SAVE_ONLY') alert("Data berhasil disimpan.");
       } catch (e) { 
+          // Rollback
+          if (status !== 'SAVE_ONLY' && currentDoc) {
+            setProcessedIds(prev => {
+                const next = new Set(prev);
+                next.delete(currentDoc.id);
+                return next;
+            });
+          }
           alert("Gagal memproses data."); 
       } finally { 
           setIsProcessing(false); 
@@ -332,15 +352,14 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                 {currentDoc ? (
                     <>
                         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex gap-2 bg-black/50 backdrop-blur-md p-1.5 rounded-full border border-white/10 shadow-lg">
-                            <button onClick={() => setZoomLevel(z => Math.max(0.5, z - 0.2))} className="p-2 text-white hover:bg-white/20 rounded-full"><ZoomOut className="w-4 h-4" /></button>
+                            <button onClick={() => setZoomLevel(z => Math.max(0.5, z - 0.2))} className="p-2 text-white hover:bg-white/20 rounded-full transition-colors" title="Zoom Out"><ZoomOut className="w-4 h-4" /></button>
                             <span className="text-white text-xs font-mono font-bold flex items-center px-2">{Math.round(zoomLevel * 100)}%</span>
-                            <button onClick={() => setZoomLevel(z => Math.min(3, z + 0.2))} className="p-2 text-white hover:bg-white/20 rounded-full"><ZoomIn className="w-4 h-4" /></button>
+                            <button onClick={() => setZoomLevel(z => Math.min(3, z + 0.2))} className="p-2 text-white hover:bg-white/20 rounded-full transition-colors" title="Zoom In"><ZoomIn className="w-4 h-4" /></button>
                             <div className="w-px h-4 bg-white/20 my-auto mx-1"></div>
-                            <button onClick={() => setRotation(r => r + 90)} className="p-2 text-white hover:bg-white/20 rounded-full"><RotateCw className="w-4 h-4" /></button>
-                            <button onClick={() => setUseFallbackViewer(v => !v)} className="px-3 py-1 text-[10px] font-bold text-white hover:bg-white/20 rounded-full border border-white/20 ml-1">{useFallbackViewer ? 'Mode Default' : 'Mode Alt'}</button>
+                            <button onClick={() => setRotation(r => r + 90)} className="p-2 text-white hover:bg-white/20 rounded-full transition-colors" title="Putar"><RotateCw className="w-4 h-4" /></button>
+                            <button onClick={() => setUseFallbackViewer(v => !v)} className="px-3 py-1 text-[10px] font-bold text-white hover:bg-white/20 rounded-full border border-white/20 ml-1 transition-colors">{useFallbackViewer ? 'Mode Default' : 'Mode Alt'}</button>
                         </div>
                         
-                        {/* FIX: Use flex + m-auto for safe centering of wide documents (KK) */}
                         <div className="flex-1 overflow-auto flex p-8">
                             <div 
                                 style={{ 
