@@ -192,7 +192,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                   current = current[keys[i]];
               }
               const lastKey = keys[keys.length - 1];
-              const val = (['height', 'weight', 'siblingCount', 'childOrder'].includes(lastKey) || request.fieldKey.includes('circumference')) ? Number(request.proposedValue) : request.proposedValue;
+              const val = (['height', 'weight', 'siblingCount', 'childOrder', 'entryYear'].includes(lastKey) || request.fieldKey.includes('circumference')) ? Number(request.proposedValue) : request.proposedValue;
               current[lastKey] = val;
 
               // Synchronize local formData immediately
@@ -448,6 +448,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                                     {renderField({ label: "Tanggal Lahir", value: formData.birthDate, fieldKey: "birthDate", type: "date", section: "IDENTITY" })}
                                 </div>
                                 {renderField({ label: "Kelas Saat Ini", value: formData.className, fieldKey: "className", section: "IDENTITY" })}
+                                {renderField({ label: "Tahun Masuk", value: formData.entryYear, fieldKey: "entryYear", section: "IDENTITY" })}
                                 {renderField({ label: "Status Siswa", value: formData.status, fieldKey: "status", section: "IDENTITY" })}
                                 {renderField({ label: "Kewarganegaraan", value: formData.nationality, fieldKey: "nationality", section: "IDENTITY" })}
                                 {renderField({ label: "Berkebutuhan Khusus", value: formData.dapodik?.specialNeeds, fieldKey: "dapodik.specialNeeds", section: "IDENTITY" })}
