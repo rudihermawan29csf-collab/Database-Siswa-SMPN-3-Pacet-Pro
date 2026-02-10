@@ -268,26 +268,41 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           }
 
           if (status === 'APPROVED') {
-              const keyParts = request.fieldKey.split(`grade-${activeSemester}-`);
-              if (keyParts.length > 1) {
-                  const subjectFull = keyParts[1];
-                  const mapItem = SUBJECT_MAP.find(m => m.full === subjectFull);
-                  if (mapItem) {
-                      const newScore = Number(request.proposedValue);
-                      setGradeData(prev => ({ ...prev, [mapItem.key]: newScore }));
-                      if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
-                      let record = updatedStudent.academicRecords[activeSemester];
-                      if (!record) {
-                          record = {
-                              semester: activeSemester, classLevel: semesterClass.split(' ')[0] || 'VII',
-                              year: academicYear, subjects: [], attendance: { sick: 0, permitted: 0, noReason: 0 }
-                          };
-                          updatedStudent.academicRecords[activeSemester] = record;
+              // --- HANDLE GRADE CORRECTION ---
+              if (request.fieldKey.startsWith(`grade-${activeSemester}-`)) {
+                  const keyParts = request.fieldKey.split(`grade-${activeSemester}-`);
+                  if (keyParts.length > 1) {
+                      const subjectFull = keyParts[1];
+                      const mapItem = SUBJECT_MAP.find(m => m.full === subjectFull);
+                      if (mapItem) {
+                          const newScore = Number(request.proposedValue);
+                          setGradeData(prev => ({ ...prev, [mapItem.key]: newScore }));
+                          if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
+                          let record = updatedStudent.academicRecords[activeSemester];
+                          if (!record) {
+                              record = {
+                                  semester: activeSemester, classLevel: semesterClass.split(' ')[0] || 'VII',
+                                  year: academicYear, subjects: [], attendance: { sick: 0, permitted: 0, noReason: 0 }
+                              };
+                              updatedStudent.academicRecords[activeSemester] = record;
+                          }
+                          const subjIndex = record.subjects.findIndex((s: any) => s.subject === subjectFull);
+                          if (subjIndex >= 0) record.subjects[subjIndex].score = newScore;
+                          else record.subjects.push({ no: record.subjects.length + 1, subject: subjectFull, score: newScore, competency: '-' });
                       }
-                      const subjIndex = record.subjects.findIndex((s: any) => s.subject === subjectFull);
-                      if (subjIndex >= 0) record.subjects[subjIndex].score = newScore;
-                      else record.subjects.push({ no: record.subjects.length + 1, subject: subjectFull, score: newScore, competency: '-' });
                   }
+              }
+              // --- HANDLE CLASS CORRECTION ---
+              else if (request.fieldKey === `class-${activeSemester}`) {
+                  const newClass = request.proposedValue;
+                  setSemesterClass(newClass);
+                  if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
+                  let record = updatedStudent.academicRecords[activeSemester];
+                  if (!record) {
+                      record = { semester: activeSemester, classLevel: newClass.split(' ')[0], year: academicYear, subjects: [], attendance: { sick: 0, permitted: 0, noReason: 0 } };
+                      updatedStudent.academicRecords[activeSemester] = record;
+                  }
+                  record.className = newClass;
               }
           }
           await api.updateStudent(updatedStudent);
@@ -355,6 +370,9 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           setIsProcessing(false);
       }
   };
+
+  // Check for pending class request
+  const pendingClassReq = currentStudent?.correctionRequests?.find(r => r.fieldKey === `class-${activeSemester}` && r.status === 'PENDING' && !processedIds.has(r.id));
 
   return (
     <div className="flex flex-col h-full animate-fade-in">
@@ -465,7 +483,24 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                                         </div>
                                         <div>
                                             <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Kelas</label>
-                                            <select className="w-full p-2 border border-blue-200 rounded text-xs font-bold text-gray-800 bg-white" value={semesterClass} onChange={(e) => setSemesterClass(e.target.value)}>{CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}</select>
+                                            <div className="relative">
+                                                <select className={`w-full p-2 border rounded text-xs font-bold text-gray-800 bg-white ${pendingClassReq ? 'border-yellow-400 bg-yellow-50' : 'border-blue-200'}`} value={semesterClass} onChange={(e) => setSemesterClass(e.target.value)}>{CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}</select>
+                                                {pendingClassReq && (
+                                                    <div className="mt-1 bg-white border border-yellow-300 p-2 rounded-lg shadow-sm text-[10px] animate-fade-in relative z-10">
+                                                        <div className="flex justify-between items-start">
+                                                            <div className="flex-1 mr-2">
+                                                                <div className="flex items-center gap-1 mb-1"><AlertCircle className="w-3 h-3 text-yellow-600" /><span className="font-bold text-yellow-800 uppercase text-[9px]">Usulan:</span></div>
+                                                                <p className="text-blue-700 font-bold text-sm bg-blue-50 px-2 py-1 rounded border border-blue-100 mb-1 inline-block">{pendingClassReq.proposedValue}</p>
+                                                                <p className="italic text-gray-600 leading-tight">"{pendingClassReq.studentReason}"</p>
+                                                            </div>
+                                                            <div className="flex flex-col gap-1">
+                                                                <button onClick={() => handleCorrectionResponse(pendingClassReq, 'APPROVED')} disabled={!!processingReqId} className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded font-bold transition-colors flex items-center justify-center gap-1 shadow-sm text-[9px]">{processingReqId === pendingClassReq.id ? <Loader2 className="w-3 h-3 animate-spin"/> : <Check className="w-3 h-3" />} Terima</button>
+                                                                <button onClick={() => handleCorrectionResponse(pendingClassReq, 'REJECTED')} disabled={!!processingReqId} className="bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded font-bold transition-colors flex items-center justify-center gap-1 shadow-sm text-[9px]">{processingReqId === pendingClassReq.id ? <Loader2 className="w-3 h-3 animate-spin"/> : <X className="w-3 h-3" />} Tolak</button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

@@ -276,7 +276,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           <div className="space-y-1 group" key={fieldKey}>
               <div className="flex justify-between items-center">
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">{label}</label>
-                  {pending && <span className="text-[8px] bg-yellow-400 text-yellow-900 px-1 rounded font-black animate-pulse">USULAN PERUBAHAN</span>}
               </div>
               <div className="relative">
                   <input 
@@ -293,25 +292,30 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                       }}
                   />
                   {pending && (
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 group-hover:block hidden z-30">
-                          <div className="bg-white border border-yellow-300 p-3 rounded-lg shadow-xl text-[10px] w-56 animate-fade-in ring-1 ring-black/5">
-                              <p className="font-black text-yellow-800 uppercase text-[9px] mb-1">Usulan Siswa:</p>
-                              <p className="text-blue-700 font-bold text-sm bg-blue-50 px-2 py-1 rounded border border-blue-100 mb-2 truncate">
-                                {isDate ? new Date(pending.proposedValue).toLocaleDateString('id-ID') : pending.proposedValue}
-                              </p>
-                              <p className="italic text-gray-600 leading-tight mb-3">"{pending.studentReason}"</p>
-                              <div className="flex gap-1.5 pt-2 border-t border-gray-100">
+                      <div className="mt-1 bg-white border border-yellow-300 p-2 rounded-lg shadow-sm text-[10px] animate-fade-in">
+                          <div className="flex justify-between items-start">
+                              <div className="flex-1 mr-2">
+                                  <div className="flex items-center gap-1 mb-1">
+                                      <AlertCircle className="w-3 h-3 text-yellow-600" />
+                                      <span className="font-bold text-yellow-800 uppercase text-[9px]">Usulan Perubahan:</span>
+                                  </div>
+                                  <p className="text-blue-700 font-bold text-sm bg-blue-50 px-2 py-1 rounded border border-blue-100 mb-1 inline-block">
+                                    {isDate ? new Date(pending.proposedValue).toLocaleDateString('id-ID') : pending.proposedValue}
+                                  </p>
+                                  <p className="italic text-gray-600 leading-tight">"{pending.studentReason}"</p>
+                              </div>
+                              <div className="flex flex-col gap-1">
                                   <button 
                                     onClick={(e) => handleDataCorrection(e, pending, 'APPROVED')} 
                                     disabled={!!processingReqId}
-                                    className="flex-1 bg-green-600 hover:bg-green-700 text-white py-1.5 rounded font-bold transition-colors flex items-center justify-center gap-1"
+                                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded font-bold transition-colors flex items-center justify-center gap-1 shadow-sm"
                                   >
                                       {isProcessingThis ? <Loader2 className="w-3 h-3 animate-spin"/> : <Check className="w-3 h-3" />} Terima
                                   </button>
                                   <button 
                                     onClick={(e) => handleDataCorrection(e, pending, 'REJECTED')} 
                                     disabled={!!processingReqId}
-                                    className="flex-1 bg-red-600 hover:bg-red-700 text-white py-1.5 rounded font-bold transition-colors flex items-center justify-center gap-1"
+                                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded font-bold transition-colors flex items-center justify-center gap-1 shadow-sm"
                                   >
                                       {isProcessingThis ? <Loader2 className="w-3 h-3 animate-spin"/> : <X className="w-3 h-3" />} Tolak
                                   </button>
