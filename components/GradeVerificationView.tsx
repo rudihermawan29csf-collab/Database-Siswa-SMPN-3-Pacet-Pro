@@ -77,6 +77,8 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
   // Ref to lock auto-selection when target is present
   const isTargetingRef = useRef(false);
+  // Ref to track handled target IDs to prevent re-jumping on data updates
+  const handledTargetRef = useRef<string | null>(null);
 
   // Global Settings for Year Calculation
   const [appSettings, setAppSettings] = useState<any>(null);
@@ -110,11 +112,16 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   // Initialize selection
   useEffect(() => {
       if (targetStudentId && students.length > 0) {
+          // FIX: Prevent re-running navigation logic if we already handled this targetId
+          // This stops the page from jumping when data is updated (onUpdate triggers students change)
+          if (handledTargetRef.current === targetStudentId) return;
+
           const student = students.find(s => s.id === targetStudentId);
           if (student) {
               isTargetingRef.current = true; // Lock auto-select
               setSelectedClass(student.className);
               setSelectedStudentId(student.id);
+              handledTargetRef.current = targetStudentId; // Mark as handled
               
               const pendingDoc = student.documents.find(d => d.category === 'RAPOR' && d.status === 'PENDING' && !processedIds.has(d.id));
               if (pendingDoc && pendingDoc.subType?.semester) {
@@ -333,7 +340,8 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           }
           await api.updateStudent(updatedStudent);
           onUpdate();
-          if (status === 'APPROVED' && activePage < totalPages) setActivePage(activePage + 1);
+          // FIX: Disable auto-page advance for document approval to keep user context on data
+          // if (status === 'APPROVED' && activePage < totalPages) setActivePage(activePage + 1);
       } catch (e) {
           if (currentDoc) {
             setProcessedIds(prev => {
