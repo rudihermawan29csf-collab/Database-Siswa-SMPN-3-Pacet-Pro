@@ -282,7 +282,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       pendingRequests.forEach(req => {
           newlyProcessedIds.add(req.id);
           
-          // Mark as Approved
+          // Mark as Approved in the array (CRITICAL)
           if (updatedStudent.correctionRequests) {
               const reqIndex = updatedStudent.correctionRequests.findIndex((r: CorrectionRequest) => r.id === req.id);
               if (reqIndex !== -1) {
@@ -320,8 +320,11 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       setProcessedIds(prev => new Set([...prev, ...newlyProcessedIds]));
 
       try {
+          // Send update to App.tsx (clears notifications)
+          onUpdate(updatedStudent);
+          
+          // Sync to server
           await api.updateStudent(updatedStudent);
-          onUpdate(updatedStudent); // Pass updated student
           alert("Semua revisi berhasil disetujui.");
       } catch (e) {
           console.error(e);
@@ -345,6 +348,8 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
       try {
           const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+          
+          // Update Status Explicitly
           if (updatedStudent.correctionRequests) {
               updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((r: CorrectionRequest) => {
                   if (r.id === request.id) {
@@ -395,9 +400,9 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                   record.className = newClass;
               }
           }
+          
+          onUpdate(updatedStudent);
           await api.updateStudent(updatedStudent);
-          onUpdate(updatedStudent); // Pass updated student
-          // alert(status === 'APPROVED' ? "Revisi disetujui & nilai diperbarui." : "Revisi ditolak.");
       } catch (e) {
           // Rollback
           setProcessedIds(prev => {
@@ -416,8 +421,8 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       setIsSavingData(true);
       try {
           const updatedStudent = prepareUpdatedStudent();
+          onUpdate(updatedStudent);
           await api.updateStudent(updatedStudent);
-          onUpdate(updatedStudent); 
           alert("Data akademik berhasil disimpan!");
       } catch (e) {
           alert("Gagal menyimpan data.");
@@ -443,10 +448,8 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                   return d;
               });
           }
-          await api.updateStudent(updatedStudent);
           onUpdate(updatedStudent);
-          // FIX: Disable auto-page advance for document approval to keep user context on data
-          // if (status === 'APPROVED' && activePage < totalPages) setActivePage(activePage + 1);
+          await api.updateStudent(updatedStudent);
       } catch (e) {
           if (currentDoc) {
             setProcessedIds(prev => {
@@ -556,9 +559,22 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                         <div className="flex items-center gap-2 mb-1"><LayoutList className="w-4 h-4 text-blue-700" /><span className="text-sm font-bold text-blue-800">Verifikasi Nilai</span></div>
                         <div className="text-xs text-blue-600 font-medium">Semester {activeSemester}</div>
                     </div>
-                    <button onClick={handleSaveDataOnly} disabled={isSavingData} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm">
-                        {isSavingData ? <Loader2 className="w-3 h-3 animate-spin"/> : <Save className="w-3 h-3" />} Simpan Data
-                    </button>
+                    <div className="flex gap-2">
+                        {pendingRequests.length > 0 && (
+                            <button 
+                                key="approve-all-btn" // Added key
+                                onClick={handleApproveAll} 
+                                disabled={isBulkApproving} 
+                                className="text-[10px] bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-full font-bold flex items-center gap-1 shadow-sm transition-all"
+                            >
+                                {isBulkApproving ? <Loader2 className="w-3 h-3 animate-spin"/> : <CheckCheck className="w-3 h-3"/>}
+                                Terima Semua ({pendingRequests.length})
+                            </button>
+                        )}
+                        <button onClick={handleSaveDataOnly} disabled={isSavingData} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm">
+                            {isSavingData ? <Loader2 className="w-3 h-3 animate-spin"/> : <Save className="w-3 h-3" />} Simpan Data
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex-1 flex flex-col overflow-hidden bg-white">

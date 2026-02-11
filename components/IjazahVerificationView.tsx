@@ -149,6 +149,7 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
       pendingRequests.forEach(req => {
           newlyProcessedIds.add(req.id);
           
+          // Mark as Approved in the array (CRITICAL)
           if (updatedStudent.correctionRequests) {
               const reqIndex = updatedStudent.correctionRequests.findIndex((r: CorrectionRequest) => r.id === req.id);
               if (reqIndex !== -1) {
@@ -173,8 +174,10 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
       setFormData(updatedStudent);
 
       try {
+          // Send update to App.tsx (clears notifications)
+          onUpdate(updatedStudent);
+          
           await api.updateStudent(updatedStudent);
-          onUpdate(updatedStudent); // Pass updated student
           alert("Semua usulan berhasil disetujui.");
       } catch (e) {
           console.error(e);
@@ -223,9 +226,8 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
               });
           }
           
+          onUpdate(updatedStudent); // Update global state
           await api.updateStudent(updatedStudent);
-          onUpdate(updatedStudent); // Pass updated student
-          // alert(`Berhasil memproses perubahan.`);
       } catch (e) {
           setProcessedIds(prev => { const next = new Set(prev); next.delete(request.id); return next; });
           alert("Gagal memproses.");
@@ -237,8 +239,8 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
       setIsSavingData(true);
       try {
           const updatedStudent = { ...currentStudent, ...formData, dapodik: { ...currentStudent.dapodik, ...formData.dapodik }, father: { ...currentStudent.father, ...formData.father } };
+          onUpdate(updatedStudent); // Update global state
           await api.updateStudent(updatedStudent);
-          onUpdate(updatedStudent);
           alert("Data berhasil disimpan.");
       } catch (e) { alert("Gagal menyimpan."); } finally { setIsSavingData(false); }
   };
@@ -251,8 +253,9 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
       try {
           const updatedStudent = { ...currentStudent, ...formData };
           updatedStudent.documents = updatedStudent.documents.map(d => d.id === currentDoc.id ? { ...d, status, adminNote, verifierName: currentUser.name, verificationDate: new Date().toISOString() } : d);
+          onUpdate(updatedStudent); // Update global state
           await api.updateStudent(updatedStudent);
-          onUpdate(updatedStudent);
+          
           setAdminNote('');
           const nextPending = updatedStudent.documents.find(d => d.status === 'PENDING' && allowedCategories.includes(d.category) && !processedIds.has(d.id));
           if(nextPending) setSelectedDocId(nextPending.id);

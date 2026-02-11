@@ -153,16 +153,17 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   const currentDoc = studentDocs.find(d => d.id === selectedDocId);
 
-  // STRICTLY FILTER PENDING REQUESTS
-  // EXCLUDES 'grade-' AND 'ijazah-' to show only BIO requests
+  // BROAD FILTER: Catch ALL requests that are NOT Grade or Ijazah specific
   const pendingRequests = useMemo(() => {
       if (!currentStudent?.correctionRequests) return [];
       return currentStudent.correctionRequests.filter(r => 
           r.status === 'PENDING' && 
           !r.fieldKey.startsWith('grade-') && 
-          !r.fieldKey.startsWith('class-') && // Added class- check
+          !r.fieldKey.startsWith('class-') &&
           !r.fieldKey.startsWith('ijazah-') &&
-          !['diplomaNumber'].includes(r.fieldKey) && // Exclude Ijazah fields if managed elsewhere
+          // diplomaNumber might appear here if user edited it in Buku Induk, 
+          // but we usually handle it in Ijazah view. 
+          // If we want "Terima Semua" to catch everything else, we leave it inclusive of everything except Grades/Ijazah Prefix
           !processedIds.has(r.id)
       );
   }, [currentStudent, processedIds]);
@@ -172,14 +173,16 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       if (!confirm(`Apakah Anda yakin ingin menyetujui ${pendingRequests.length} usulan perubahan data sekaligus?`)) return;
 
       setIsBulkApproving(true);
+      
+      // 1. Deep Clone for mutation
       const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
       const newlyProcessedIds = new Set<string>();
 
-      // Apply all pending requests
+      // 2. Iterate ALL pending requests found in the filter
       pendingRequests.forEach(req => {
           newlyProcessedIds.add(req.id);
           
-          // Update Status
+          // A. Update Status in Correction Requests Array (CRITICAL FOR NOTIFICATIONS)
           if (updatedStudent.correctionRequests) {
               const reqIndex = updatedStudent.correctionRequests.findIndex((r: CorrectionRequest) => r.id === req.id);
               if (reqIndex !== -1) {
@@ -193,7 +196,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               }
           }
 
-          // Update Fields
+          // B. Apply Value to Student Fields
           const keys = req.fieldKey.split('.');
           let current = updatedStudent;
           for (let i = 0; i < keys.length - 1; i++) {
@@ -205,17 +208,20 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           current[lastKey] = val;
       });
 
-      // Optimistic Update UI
+      // 3. Optimistic Update
       setProcessedIds(prev => new Set([...prev, ...newlyProcessedIds]));
       setFormData(updatedStudent); // Update form immediately
 
       try {
+          // 4. Send updated student (with APPROVED requests) to App.tsx to clear notifications
+          onUpdate(updatedStudent); 
+          
+          // 5. Sync to server
           await api.updateStudent(updatedStudent);
-          onUpdate(updatedStudent); // Pass updated student for instant notification update
           alert("Semua usulan berhasil disetujui.");
       } catch (e) {
           console.error(e);
-          // Rollback processed IDs
+          // Rollback
           setProcessedIds(prev => {
               const next = new Set(prev);
               newlyProcessedIds.forEach(id => next.delete(id));
@@ -233,11 +239,12 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       if (!currentStudent) return;
       
       setProcessingReqId(request.id);
-      // OPTIMISTIC UPDATE: Mark as processed immediately to hide from UI
       setProcessedIds(prev => new Set(prev).add(request.id));
 
       try {
           const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+          
+          // Update Request Status explicitly
           if (updatedStudent.correctionRequests) {
               updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((r: CorrectionRequest) => {
                   if (r.id === request.id) {
@@ -275,10 +282,11 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               setFormData(newFormData);
           }
 
+          // Pass updated student to App.tsx to clear notification
+          onUpdate(updatedStudent);
           await api.updateStudent(updatedStudent);
-          onUpdate(updatedStudent); // Pass updated student for instant notification update
       } catch (e) { 
-          // Rollback on error
+          // Rollback
           setProcessedIds(prev => {
               const next = new Set(prev);
               next.delete(request.id);
@@ -312,19 +320,17 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               updatedStudent.documents = updatedStudent.documents.map((d: any) => d.id === currentDoc.id ? { ...d, status, adminNote, verifierName: currentUser.name, verificationDate: new Date().toISOString() } : d);
           }
           
+          onUpdate(updatedStudent); // Update global state
           await api.updateStudent(updatedStudent);
           
           if (status !== 'SAVE_ONLY' && currentDoc) { 
               setAdminNote(''); 
-              // Move to next pending doc
               const next = updatedStudent.documents.find((d: any) => d.status === 'PENDING' && allowedCategories.includes(d.category) && !processedIds.has(d.id)); 
               if (next) setSelectedDocId(next.id); 
           }
           
-          onUpdate(updatedStudent); // Pass updated student
           if (status === 'SAVE_ONLY') alert("Data berhasil disimpan.");
       } catch (e) { 
-          // Rollback
           if (status !== 'SAVE_ONLY' && currentDoc) {
             setProcessedIds(prev => {
                 const next = new Set(prev);
@@ -338,14 +344,12 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       }
   };
 
+  // ... (renderField helper remains same)
   const renderField = ({ label, value, fieldKey, type = 'text', section }: { label: string, value: any, fieldKey: string, type?: string, section: string }) => {
-      // Find request in the original student object, BUT filter out if it's in processedIds
       const pending = currentStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING' && !processedIds.has(r.id));
-      
       const isDate = type === 'date';
       const isProcessingThis = pending && processingReqId === pending.id;
       
-      // Look up value in local formData (which receives optimistic updates)
       const getValueFromFormData = () => {
           const keys = fieldKey.split('.');
           let current: any = formData;
@@ -518,7 +522,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                         <div className="flex gap-2">
                             {pendingRequests.length > 0 && (
                                 <button 
-                                    key="approve-all-btn" // Added key for React stability
+                                    key="approve-all-btn" // Added key
                                     onClick={handleApproveAll} 
                                     disabled={isBulkApproving} 
                                     className="text-[10px] bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-full font-bold flex items-center gap-1 shadow-sm transition-all"
@@ -534,7 +538,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                     </div>
                     
                     <div className="flex-1 overflow-y-auto custom-scrollbar bg-white">
-                        {/* ... FIELDS RENDERING (Unchanged from previous logic) ... */}
                         <AccordionItem title="1. Identitas Utama" icon={User} isOpen={openSection === 'IDENTITY'} onToggle={() => setOpenSection(openSection === 'IDENTITY' ? '' : 'IDENTITY')}>
                             <div className="grid grid-cols-1 gap-4">
                                 {renderField({ label: "Nama Lengkap", value: formData.fullName, fieldKey: "fullName", section: "IDENTITY" })}
