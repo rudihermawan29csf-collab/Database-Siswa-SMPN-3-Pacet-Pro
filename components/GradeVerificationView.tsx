@@ -321,10 +321,27 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
               const subjectFull = req.fieldKey.split(`grade-${activeSemester}-`)[1];
               const newScore = Number(req.proposedValue);
               
+              const mapItem = SUBJECT_MAP.find(m => m.full === subjectFull);
+              
               // Update local state map for immediate UI
-              setGradeData(prev => ({ ...prev, [SUBJECT_MAP.find(m => m.full === subjectFull)?.key || '']: newScore }));
+              if (mapItem) {
+                  setGradeData(prev => ({ ...prev, [mapItem.key]: newScore }));
+              }
 
-              const subjIndex = record.subjects.findIndex((s: any) => s.subject === subjectFull);
+              // ROBUST SUBJECT MATCHING (FIX for IPA/IPS mismatch)
+              const subjIndex = record.subjects.findIndex((s: any) => {
+                  const sName = s.subject.toLowerCase().trim();
+                  const targetName = subjectFull.toLowerCase().trim();
+                  
+                  if (sName === targetName) return true;
+                  if (mapItem) {
+                      if (sName === mapItem.key.toLowerCase().trim()) return true;
+                      if (sName === mapItem.label.toLowerCase().trim()) return true;
+                      if (sName.includes(mapItem.key.toLowerCase()) && mapItem.key.length > 3) return true; // Loose check if not abbreviation
+                  }
+                  return false;
+              });
+
               if (subjIndex >= 0) record.subjects[subjIndex].score = newScore;
               else record.subjects.push({ no: record.subjects.length + 1, subject: subjectFull, score: newScore, competency: '-' });
 
@@ -356,7 +373,6 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
               if(nextId) setTimeout(() => setSelectedStudentId(nextId), 500);
           }
 
-          // alert("Semua revisi berhasil disetujui.");
       } catch (e) {
           console.error(e);
           // Rollback
@@ -412,7 +428,14 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                               };
                               updatedStudent.academicRecords[activeSemester] = record;
                           }
-                          const subjIndex = record.subjects.findIndex((s: any) => s.subject === subjectFull);
+                          // ROBUST MATCHING
+                          const subjIndex = record.subjects.findIndex((s: any) => {
+                              const sName = s.subject.toLowerCase().trim();
+                              return sName === subjectFull.toLowerCase().trim() || 
+                                     sName === mapItem.key.toLowerCase().trim() || 
+                                     sName === mapItem.label.toLowerCase().trim();
+                          });
+
                           if (subjIndex >= 0) record.subjects[subjIndex].score = newScore;
                           else record.subjects.push({ no: record.subjects.length + 1, subject: subjectFull, score: newScore, competency: '-' });
                       }
