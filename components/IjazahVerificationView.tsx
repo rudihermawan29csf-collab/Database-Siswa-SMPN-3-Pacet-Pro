@@ -92,12 +92,18 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
 
   const currentStudent = useMemo(() => students.find(s => s.id === selectedStudentId), [students, selectedStudentId]);
 
+  // RESET FORM DATA ONLY WHEN STUDENT CHANGES
   useEffect(() => {
       if (currentStudent) {
-          const safeData = JSON.parse(JSON.stringify(currentStudent));
-          if (!safeData.father) safeData.father = {};
-          if (!safeData.dapodik) safeData.dapodik = {};
-          setFormData(safeData);
+          // Check if it's the same student ID to preserve optimistic updates
+          setFormData(prev => {
+              if (prev.id === currentStudent.id) return prev;
+              
+              const safeData = JSON.parse(JSON.stringify(currentStudent));
+              if (!safeData.father) safeData.father = {};
+              if (!safeData.dapodik) safeData.dapodik = {};
+              return safeData;
+          });
           setActiveTab('ALL');
       }
   }, [currentStudent]);
@@ -124,7 +130,10 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
       e.preventDefault(); e.stopPropagation();
       if (!currentStudent) return;
       setProcessingReqId(request.id);
+      
+      // OPTIMISTIC: Hide request immediately
       setProcessedIds(prev => new Set(prev).add(request.id));
+      
       try {
           const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
           if (updatedStudent.correctionRequests) {
@@ -133,16 +142,26 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
                   return r;
               });
           }
+          
           if (status === 'APPROVED') {
               const keys = request.fieldKey.split('.');
               let current: any = updatedStudent;
               for (let i = 0; i < keys.length - 1; i++) { if (!current[keys[i]]) current[keys[i]] = {}; current = current[keys[i]]; }
               current[keys[keys.length - 1]] = request.proposedValue;
-              setFormData({...formData, ...updatedStudent});
+              
+              // OPTIMISTIC: Update Local Form Data
+              setFormData(prev => {
+                  const newFormData = JSON.parse(JSON.stringify(prev));
+                  let formCurr: any = newFormData;
+                  for (let i = 0; i < keys.length - 1; i++) { if (!formCurr[keys[i]]) formCurr[keys[i]] = {}; formCurr = formCurr[keys[i]]; }
+                  formCurr[keys[keys.length - 1]] = request.proposedValue;
+                  return newFormData;
+              });
           }
+          
           await api.updateStudent(updatedStudent);
           onUpdate();
-          alert(`Berhasil memproses perubahan.`);
+          // alert(`Berhasil memproses perubahan.`);
       } catch (e) {
           setProcessedIds(prev => { const next = new Set(prev); next.delete(request.id); return next; });
           alert("Gagal memproses.");
@@ -180,14 +199,29 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
   };
 
   const renderField = ({ label, value, fieldKey, type = 'text' }: { label: string, value: any, fieldKey: string, type?: string }) => {
+      // Find request in original object, but filter out processed IDs
       const pending = currentStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING' && !processedIds.has(r.id));
       const isDate = type === 'date';
       const isProcessingThis = pending && processingReqId === pending.id;
+      
+      // Get value from local formData which has the latest optimistic updates
+      const getValueFromFormData = () => {
+          const keys = fieldKey.split('.');
+          let current: any = formData;
+          for (const k of keys) {
+              if (current === undefined || current === null) return '';
+              current = current[k];
+          }
+          return current;
+      };
+      
+      const currentValue = getValueFromFormData();
+
       return (
           <div className="space-y-1 group" key={fieldKey}>
               <div className="flex justify-between items-center"><label className="text-[10px] font-bold text-gray-500 uppercase">{label}</label>{pending && <span className="text-[8px] bg-yellow-400 text-yellow-900 px-1 rounded font-black animate-pulse">REVISI</span>}</div>
               <div className="relative">
-                  <input type={isDate ? 'date' : 'text'} className={`w-full p-2 border rounded text-xs ${pending ? 'border-yellow-400 bg-yellow-50 pr-8' : 'border-gray-200'}`} value={value || ''} onChange={(e) => {
+                  <input type={isDate ? 'date' : 'text'} className={`w-full p-2 border rounded text-xs ${pending ? 'border-yellow-400 bg-yellow-50 pr-8' : 'border-gray-200'}`} value={currentValue || ''} onChange={(e) => {
                       const keys = fieldKey.split('.'); const newForm = { ...formData }; let curr: any = newForm;
                       for (let i = 0; i < keys.length - 1; i++) { if (!curr[keys[i]]) curr[keys[i]] = {}; curr = curr[keys[i]]; }
                       curr[keys[keys.length - 1]] = e.target.value; setFormData(newForm);

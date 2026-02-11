@@ -125,9 +125,13 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   const currentStudent = useMemo(() => students.find(s => s.id === selectedStudentId), [students, selectedStudentId]);
 
+  // RESET FORM DATA ONLY WHEN STUDENT ID CHANGES
   useEffect(() => {
       if (currentStudent) {
-          setFormData(JSON.parse(JSON.stringify(currentStudent)));
+          // Deep Copy to prevent mutation
+          const dataCopy = JSON.parse(JSON.stringify(currentStudent));
+          // Only update formData if the ID is different to prevent overwriting ongoing edits or optimistic updates
+          setFormData(prev => prev.id === currentStudent.id ? prev : dataCopy);
           setActiveTab('ALL');
       }
   }, [currentStudent]);
@@ -148,6 +152,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   const currentDoc = studentDocs.find(d => d.id === selectedDocId);
 
+  // STRICTLY FILTER PENDING REQUESTS
   const pendingRequests = useMemo(() => {
       if (!currentStudent?.correctionRequests) return [];
       return currentStudent.correctionRequests.filter(r => 
@@ -186,6 +191,8 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
           if (status === 'APPROVED') {
               const keys = request.fieldKey.split('.');
+              
+              // 1. Update the object that will be sent to API
               let current = updatedStudent;
               for (let i = 0; i < keys.length - 1; i++) {
                   if (!current[keys[i]]) current[keys[i]] = {};
@@ -195,20 +202,24 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               const val = (['height', 'weight', 'siblingCount', 'childOrder', 'entryYear'].includes(lastKey) || request.fieldKey.includes('circumference')) ? Number(request.proposedValue) : request.proposedValue;
               current[lastKey] = val;
 
-              // Synchronize local formData immediately
-              const newFormData = { ...formData };
-              let currentForm: any = newFormData;
-              for (let i = 0; i < keys.length - 1; i++) {
-                  if (!currentForm[keys[i]]) currentForm[keys[i]] = {};
-                  currentForm = currentForm[keys[i]];
-              }
-              currentForm[keys[keys.length - 1]] = val;
-              setFormData(newFormData);
+              // 2. IMPORTANT: Update Local FormData State IMMEDIATELY (Optimistic Update)
+              // This ensures the UI input shows the new value instantly
+              setFormData(prev => {
+                  const newFormData = JSON.parse(JSON.stringify(prev)); // Deep copy prev formData
+                  let formCurr = newFormData;
+                  for (let i = 0; i < keys.length - 1; i++) {
+                      if (!formCurr[keys[i]]) formCurr[keys[i]] = {};
+                      formCurr = formCurr[keys[i]];
+                  }
+                  formCurr[lastKey] = val;
+                  return newFormData;
+              });
           }
 
           await api.updateStudent(updatedStudent);
           onUpdate();
-          alert(`Berhasil ${status === 'APPROVED' ? 'menyetujui' : 'menolak'} perubahan.`);
+          // Alert is annoying for quick actions, better to just update UI
+          // alert(`Berhasil ${status === 'APPROVED' ? 'menyetujui' : 'menolak'} perubahan.`);
       } catch (e) { 
           // Rollback on error
           setProcessedIds(prev => {
@@ -239,13 +250,16 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               mother: { ...currentStudent.mother, ...formData.mother },
               guardian: { ...currentStudent.guardian, ...formData.guardian }
           };
+          
           if (status !== 'SAVE_ONLY' && currentDoc) {
               updatedStudent.documents = updatedStudent.documents.map((d: any) => d.id === currentDoc.id ? { ...d, status, adminNote, verifierName: currentUser.name, verificationDate: new Date().toISOString() } : d);
           }
+          
           await api.updateStudent(updatedStudent);
           
           if (status !== 'SAVE_ONLY' && currentDoc) { 
               setAdminNote(''); 
+              // Move to next pending doc
               const next = updatedStudent.documents.find((d: any) => d.status === 'PENDING' && allowedCategories.includes(d.category) && !processedIds.has(d.id)); 
               if (next) setSelectedDocId(next.id); 
           }
@@ -268,9 +282,24 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   };
 
   const renderField = ({ label, value, fieldKey, type = 'text', section }: { label: string, value: any, fieldKey: string, type?: string, section: string }) => {
+      // Find request in the original student object, BUT filter out if it's in processedIds
       const pending = currentStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING' && !processedIds.has(r.id));
+      
       const isDate = type === 'date';
       const isProcessingThis = pending && processingReqId === pending.id;
+      
+      // Look up value in local formData (which receives optimistic updates)
+      const getValueFromFormData = () => {
+          const keys = fieldKey.split('.');
+          let current: any = formData;
+          for (const k of keys) {
+              if (current === undefined || current === null) return '';
+              current = current[k];
+          }
+          return current;
+      };
+
+      const currentValue = getValueFromFormData();
       
       return (
           <div className="space-y-1 group" key={fieldKey}>
@@ -281,7 +310,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                   <input 
                       type={isDate ? 'date' : 'text'}
                       className={`w-full p-2 border rounded text-xs transition-all ${pending ? 'border-yellow-400 bg-yellow-50 pr-8' : 'border-gray-200 focus:border-blue-500'}`}
-                      value={value || ''}
+                      value={currentValue || ''}
                       onChange={(e) => {
                           const keys = fieldKey.split('.');
                           const newForm = { ...formData };

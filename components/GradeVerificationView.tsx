@@ -254,7 +254,10 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       setProcessedIds(prev => new Set(prev).add(request.id));
 
       try {
+          // Prepare updated student object
           const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+          
+          // 1. Update Request Status in Student Object
           if (updatedStudent.correctionRequests) {
               updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((r: CorrectionRequest) => {
                   if (r.id === request.id) {
@@ -276,7 +279,11 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                       const mapItem = SUBJECT_MAP.find(m => m.full === subjectFull);
                       if (mapItem) {
                           const newScore = Number(request.proposedValue);
+                          
+                          // OPTIMISTIC UI: Update Local State Immediately
                           setGradeData(prev => ({ ...prev, [mapItem.key]: newScore }));
+                          
+                          // Update Object to be sent
                           if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
                           let record = updatedStudent.academicRecords[activeSemester];
                           if (!record) {
@@ -286,6 +293,9 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                               };
                               updatedStudent.academicRecords[activeSemester] = record;
                           }
+                          
+                          // Ensure subjects array exists and update specific subject
+                          if (!record.subjects) record.subjects = [];
                           const subjIndex = record.subjects.findIndex((s: any) => s.subject === subjectFull);
                           if (subjIndex >= 0) record.subjects[subjIndex].score = newScore;
                           else record.subjects.push({ no: record.subjects.length + 1, subject: subjectFull, score: newScore, competency: '-' });
@@ -295,7 +305,10 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
               // --- HANDLE CLASS CORRECTION ---
               else if (request.fieldKey === `class-${activeSemester}`) {
                   const newClass = request.proposedValue;
+                  
+                  // OPTIMISTIC UI
                   setSemesterClass(newClass);
+                  
                   if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
                   let record = updatedStudent.academicRecords[activeSemester];
                   if (!record) {
@@ -305,9 +318,10 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                   record.className = newClass;
               }
           }
+          
           await api.updateStudent(updatedStudent);
           onUpdate(); 
-          alert(status === 'APPROVED' ? "Revisi disetujui & nilai diperbarui." : "Revisi ditolak.");
+          // alert(status === 'APPROVED' ? "Revisi disetujui & nilai diperbarui." : "Revisi ditolak.");
       } catch (e) {
           // Rollback
           setProcessedIds(prev => {
