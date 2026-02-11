@@ -175,6 +175,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   useEffect(() => {
       // 1. If we have a selection that is now processed or no longer pending, move to next.
       const currentDocObj = studentDocs.find(d => d.id === selectedDocId);
+      // Logic fix: Check if marked processed OR actually approved in data
       const isCurrentProcessed = selectedDocId && processedIds.has(selectedDocId);
       const isCurrentDone = currentDocObj && currentDocObj.status !== 'PENDING';
 
@@ -193,7 +194,8 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   }, [studentDocs, processedIds, selectedDocId]);
 
   const currentDoc = studentDocs.find(d => d.id === selectedDocId);
-  const isCurrentDocProcessed = currentDoc && processedIds.has(currentDoc.id);
+  // FIX: Check status from data as well to ensure UI consistency
+  const isCurrentDocProcessed = currentDoc && (processedIds.has(currentDoc.id) || currentDoc.status === 'APPROVED');
 
   const pendingRequests = useMemo(() => {
       if (!currentStudent?.correctionRequests) return [];
@@ -320,8 +322,9 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               setFormData(newFormData);
           }
 
-          await api.updateStudent(updatedStudent);
+          // OPTIMISTIC UPDATE
           onUpdate(updatedStudent); 
+          await api.updateStudent(updatedStudent);
       } catch (e) { 
           setProcessedIds(prev => { const next = new Set(prev); next.delete(request.id); return next; });
           alert("Gagal memproses perubahan data."); 
@@ -351,24 +354,15 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               updatedStudent.documents = updatedStudent.documents.map((d: any) => d.id === currentDoc.id ? { ...d, status, adminNote, verifierName: currentUser.name, verificationDate: new Date().toISOString() } : d);
           }
           
-          // API Call
+          // OPTIMISTIC UPDATE: Update Parent State FIRST
+          onUpdate(updatedStudent); 
+          
+          // Then Sync to Server
           await api.updateStudent(updatedStudent);
-          onUpdate(updatedStudent); // Update global data
           
           if (status !== 'SAVE_ONLY' && currentDoc) { 
               setAdminNote(''); 
-              
-              // Only advance if there's no next doc (because useEffect handles auto-advance when processedIds changes)
-              // We check if there are any *other* pending items to potentially switch student
-              const hasNextDoc = updatedStudent.documents.some((d: any) => d.status === 'PENDING' && allowedCategories.includes(d.category) && !processedIds.has(d.id) && d.id !== currentDoc.id);
-              
-              if (!hasNextDoc) {
-                  const hasPendingReq = updatedStudent.correctionRequests?.some((r: any) => r.status === 'PENDING' && !r.fieldKey.startsWith('grade-') && !r.fieldKey.startsWith('class-') && !r.fieldKey.startsWith('ijazah-'));
-                  if (!hasPendingReq) {
-                      const nextId = findNextStudentWithIssues();
-                      if (nextId) setTimeout(() => setSelectedStudentId(nextId), 500);
-                  }
-              }
+              // Auto-advance logic handled by useEffect on processedIds/doc change
           }
           if (status === 'SAVE_ONLY') alert("Data berhasil disimpan.");
       } catch (e) { 
@@ -376,7 +370,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           if (status !== 'SAVE_ONLY' && currentDoc) {
             setProcessedIds(prev => { const next = new Set(prev); next.delete(currentDoc.id); return next; });
           }
-          alert("Gagal memproses data."); 
+          alert("Gagal memproses data. Silakan coba lagi."); 
       } finally { setIsProcessing(false); }
   };
 
