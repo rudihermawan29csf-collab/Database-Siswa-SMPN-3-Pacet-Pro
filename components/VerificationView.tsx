@@ -11,7 +11,7 @@ import {
 interface VerificationViewProps {
   students: Student[];
   targetStudentId?: string;
-  onUpdate: () => void;
+  onUpdate: (student?: Student) => void;
   currentUser: { name: string; role: string };
 }
 
@@ -208,7 +208,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
       try {
           await api.updateStudent(updatedStudent);
-          onUpdate();
+          onUpdate(updatedStudent); // Pass updated student for instant notification update
           alert("Semua usulan berhasil disetujui.");
       } catch (e) {
           console.error(e);
@@ -273,9 +273,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           }
 
           await api.updateStudent(updatedStudent);
-          onUpdate();
-          // Alert is annoying for quick actions, better to just update UI
-          // alert(`Berhasil ${status === 'APPROVED' ? 'menyetujui' : 'menolak'} perubahan.`);
+          onUpdate(updatedStudent); // Pass updated student for instant notification update
       } catch (e) { 
           // Rollback on error
           setProcessedIds(prev => {
@@ -320,7 +318,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               if (next) setSelectedDocId(next.id); 
           }
           
-          onUpdate();
+          onUpdate(updatedStudent); // Pass updated student
           if (status === 'SAVE_ONLY') alert("Data berhasil disimpan.");
       } catch (e) { 
           // Rollback

@@ -166,7 +166,8 @@ function App() {
 
   // --- DATA FETCHING ---
   const fetchStudents = async () => {
-    setIsLoading(true);
+    // Only set loading if students are empty (first load), to avoid flickering on background updates
+    if (students.length === 0) setIsLoading(true);
     try {
       const data = await api.getStudents();
       if (data && data.length > 0) {
@@ -177,7 +178,7 @@ function App() {
       }
     } catch (error) {
       console.error("Failed to fetch students, using mock", error);
-      setStudents(MOCK_STUDENTS);
+      if (students.length === 0) setStudents(MOCK_STUDENTS);
     } finally {
       setIsLoading(false);
     }
@@ -385,7 +386,14 @@ function App() {
     setStudents(updatedStudents);
   };
 
-  const refreshData = () => {
+  // IMPORTANT: Instant Data Refresh for Optimistic UI
+  // When verification views update data, they pass the updated student object here
+  // We update the local state immediately so notifications disappear, then sync with server
+  const refreshData = (updatedStudent?: Student) => {
+    if (updatedStudent) {
+        setStudents(prev => prev.map(s => s.id === updatedStudent.id ? updatedStudent : s));
+    }
+    // Continue with background fetch to ensure consistency
     fetchStudents();
   };
 
@@ -413,7 +421,7 @@ function App() {
               updatedStudent.documents.push(newDoc);
               
               await api.updateStudent(updatedStudent);
-              refreshData(); // Triggers global update, which triggers useEffect sync for selectedStudent
+              refreshData(updatedStudent); // Update immediately
               alert("File berhasil diupload!");
           } else {
               alert("Gagal upload file.");
@@ -432,7 +440,7 @@ function App() {
           
           try {
               await api.updateStudent(updatedStudent);
-              refreshData();
+              refreshData(updatedStudent); // Update immediately
               alert("Dokumen berhasil dihapus.");
           } catch (e) {
               console.error(e);
@@ -497,7 +505,7 @@ function App() {
       
       // SHARED VIEWS (Different props based on role)
       case 'grades':
-        return <GradesView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext || undefined} onUpdate={refreshData} />;
+        return <GradesView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext || undefined} onUpdate={() => refreshData()} />;
       case 'recap':
         return <RecapView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext || undefined} />;
       case 'skl':
@@ -517,7 +525,7 @@ function App() {
                 onBack={() => setCurrentView('dashboard')} 
                 viewMode="student" 
                 readOnly={true}
-                onUpdate={refreshData}
+                onUpdate={() => refreshData(selectedStudent || undefined)}
             />
         ) : null;
       
@@ -540,7 +548,7 @@ function App() {
 
       case 'upload-rapor':
         return studentContext ? (
-            <UploadRaporView student={studentContext} onUpdate={refreshData} />
+            <UploadRaporView student={studentContext} onUpdate={() => refreshData(selectedStudent || undefined)} />
         ) : null;
 
       default:

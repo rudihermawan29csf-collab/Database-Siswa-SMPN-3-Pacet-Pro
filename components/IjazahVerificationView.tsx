@@ -7,7 +7,7 @@ import { CheckCircle2, XCircle, Loader2, AlertCircle, ScrollText, ZoomIn, ZoomOu
 interface IjazahVerificationViewProps {
   students: Student[];
   targetStudentId?: string;
-  onUpdate: () => void;
+  onUpdate: (student?: Student) => void;
   currentUser: { name: string; role: string };
 }
 
@@ -174,7 +174,7 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
 
       try {
           await api.updateStudent(updatedStudent);
-          onUpdate();
+          onUpdate(updatedStudent); // Pass updated student
           alert("Semua usulan berhasil disetujui.");
       } catch (e) {
           console.error(e);
@@ -224,7 +224,7 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
           }
           
           await api.updateStudent(updatedStudent);
-          onUpdate();
+          onUpdate(updatedStudent); // Pass updated student
           // alert(`Berhasil memproses perubahan.`);
       } catch (e) {
           setProcessedIds(prev => { const next = new Set(prev); next.delete(request.id); return next; });
@@ -238,7 +238,7 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
       try {
           const updatedStudent = { ...currentStudent, ...formData, dapodik: { ...currentStudent.dapodik, ...formData.dapodik }, father: { ...currentStudent.father, ...formData.father } };
           await api.updateStudent(updatedStudent);
-          onUpdate();
+          onUpdate(updatedStudent);
           alert("Data berhasil disimpan.");
       } catch (e) { alert("Gagal menyimpan."); } finally { setIsSavingData(false); }
   };
@@ -252,7 +252,7 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
           const updatedStudent = { ...currentStudent, ...formData };
           updatedStudent.documents = updatedStudent.documents.map(d => d.id === currentDoc.id ? { ...d, status, adminNote, verifierName: currentUser.name, verificationDate: new Date().toISOString() } : d);
           await api.updateStudent(updatedStudent);
-          onUpdate();
+          onUpdate(updatedStudent);
           setAdminNote('');
           const nextPending = updatedStudent.documents.find(d => d.status === 'PENDING' && allowedCategories.includes(d.category) && !processedIds.has(d.id));
           if(nextPending) setSelectedDocId(nextPending.id);

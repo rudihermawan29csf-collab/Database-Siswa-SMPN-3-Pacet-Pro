@@ -8,7 +8,7 @@ import { api } from '../services/api';
 
 interface StudentDocsAdminViewProps {
   students: Student[];
-  onUpdate?: () => void;
+  onUpdate: (student?: Student) => void;
 }
 
 const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, onUpdate }) => {
@@ -135,7 +135,7 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
                 }
             }
 
-            if (onUpdate) onUpdate();
+            if (onUpdate) onUpdate(updatedStudent);
         } else {
             alert("Gagal upload ke Drive. File hanya tersimpan lokal sementara.");
             currentStudent.documents = originalDocs; // Rollback
@@ -161,7 +161,7 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
 
           try {
               await api.updateStudent(updatedStudent);
-              if (onUpdate) onUpdate();
+              if (onUpdate) onUpdate(updatedStudent);
           } catch(e) {
               alert("Gagal menghapus dokumen.");
           }
@@ -241,7 +241,7 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
                     ) : (
                         <UploadRaporView 
                             student={currentStudent}
-                            onUpdate={onUpdate || (() => {})}
+                            onUpdate={onUpdate ? (() => onUpdate(currentStudent)) : (() => {})}
                         />
                     )}
                 </div>

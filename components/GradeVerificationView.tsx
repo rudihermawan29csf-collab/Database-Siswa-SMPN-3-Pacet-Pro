@@ -7,7 +7,7 @@ import { CheckCircle2, XCircle, Loader2, AlertCircle, FileText, ZoomIn, ZoomOut,
 interface GradeVerificationViewProps {
   students: Student[];
   targetStudentId?: string;
-  onUpdate: () => void;
+  onUpdate: (student?: Student) => void;
   currentUser: { name: string; role: string };
 }
 
@@ -321,7 +321,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
 
       try {
           await api.updateStudent(updatedStudent);
-          onUpdate();
+          onUpdate(updatedStudent); // Pass updated student
           alert("Semua revisi berhasil disetujui.");
       } catch (e) {
           console.error(e);
@@ -396,8 +396,8 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
               }
           }
           await api.updateStudent(updatedStudent);
-          onUpdate(); 
-          alert(status === 'APPROVED' ? "Revisi disetujui & nilai diperbarui." : "Revisi ditolak.");
+          onUpdate(updatedStudent); // Pass updated student
+          // alert(status === 'APPROVED' ? "Revisi disetujui & nilai diperbarui." : "Revisi ditolak.");
       } catch (e) {
           // Rollback
           setProcessedIds(prev => {
@@ -417,7 +417,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       try {
           const updatedStudent = prepareUpdatedStudent();
           await api.updateStudent(updatedStudent);
-          onUpdate(); 
+          onUpdate(updatedStudent); 
           alert("Data akademik berhasil disimpan!");
       } catch (e) {
           alert("Gagal menyimpan data.");
@@ -444,7 +444,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
               });
           }
           await api.updateStudent(updatedStudent);
-          onUpdate();
+          onUpdate(updatedStudent);
           // FIX: Disable auto-page advance for document approval to keep user context on data
           // if (status === 'APPROVED' && activePage < totalPages) setActivePage(activePage + 1);
       } catch (e) {
@@ -556,21 +556,9 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                         <div className="flex items-center gap-2 mb-1"><LayoutList className="w-4 h-4 text-blue-700" /><span className="text-sm font-bold text-blue-800">Verifikasi Nilai</span></div>
                         <div className="text-xs text-blue-600 font-medium">Semester {activeSemester}</div>
                     </div>
-                    <div className="flex gap-2">
-                        {pendingRequests.length > 0 && (
-                            <button 
-                                onClick={handleApproveAll} 
-                                disabled={isBulkApproving} 
-                                className="text-[10px] bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-full font-bold flex items-center gap-1 shadow-sm transition-all"
-                            >
-                                {isBulkApproving ? <Loader2 className="w-3 h-3 animate-spin"/> : <CheckCheck className="w-3 h-3"/>}
-                                Terima Semua ({pendingRequests.length})
-                            </button>
-                        )}
-                        <button onClick={handleSaveDataOnly} disabled={isSavingData} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm">
-                            {isSavingData ? <Loader2 className="w-3 h-3 animate-spin"/> : <Save className="w-3 h-3" />} Simpan Data
-                        </button>
-                    </div>
+                    <button onClick={handleSaveDataOnly} disabled={isSavingData} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm">
+                        {isSavingData ? <Loader2 className="w-3 h-3 animate-spin"/> : <Save className="w-3 h-3" />} Simpan Data
+                    </button>
                 </div>
 
                 <div className="flex-1 flex flex-col overflow-hidden bg-white">
