@@ -5,7 +5,7 @@ import { api } from '../services/api';
 import { 
   CheckCircle2, XCircle, Loader2, AlertCircle, ScrollText, ZoomIn, ZoomOut, 
   RotateCw, FileCheck2, User, Filter, Search, FileBadge, Save, 
-  GitPullRequest, Check, X, ArrowRight, FileText, MapPin, Users, Heart, Wallet, ChevronDown 
+  GitPullRequest, Check, X, ArrowRight, FileText, MapPin, Users, Heart, Wallet, ChevronDown, CheckCheck 
 } from 'lucide-react';
 
 interface VerificationViewProps {
@@ -72,6 +72,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   const [adminNote, setAdminNote] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingReqId, setProcessingReqId] = useState<string | null>(null);
+  const [isBulkApproving, setIsBulkApproving] = useState(false);
   
   // Local state to track processed IDs to prevent them from reappearing before server sync
   const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
@@ -163,6 +164,66 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       );
   }, [currentStudent, processedIds]);
 
+  const handleApproveAll = async () => {
+      if (!currentStudent || pendingRequests.length === 0) return;
+      if (!confirm(`Apakah Anda yakin ingin menyetujui ${pendingRequests.length} usulan perubahan data sekaligus?`)) return;
+
+      setIsBulkApproving(true);
+      const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+      const newlyProcessedIds = new Set<string>();
+
+      // Apply all pending requests
+      pendingRequests.forEach(req => {
+          newlyProcessedIds.add(req.id);
+          
+          // Update Status
+          if (updatedStudent.correctionRequests) {
+              const reqIndex = updatedStudent.correctionRequests.findIndex((r: CorrectionRequest) => r.id === req.id);
+              if (reqIndex !== -1) {
+                  updatedStudent.correctionRequests[reqIndex] = {
+                      ...updatedStudent.correctionRequests[reqIndex],
+                      status: 'APPROVED',
+                      verifierName: currentUser.name,
+                      processedDate: new Date().toISOString(),
+                      adminNote: 'Disetujui Masal.'
+                  };
+              }
+          }
+
+          // Update Fields
+          const keys = req.fieldKey.split('.');
+          let current = updatedStudent;
+          for (let i = 0; i < keys.length - 1; i++) {
+              if (!current[keys[i]]) current[keys[i]] = {};
+              current = current[keys[i]];
+          }
+          const lastKey = keys[keys.length - 1];
+          const val = (['height', 'weight', 'siblingCount', 'childOrder', 'entryYear'].includes(lastKey) || req.fieldKey.includes('circumference')) ? Number(req.proposedValue) : req.proposedValue;
+          current[lastKey] = val;
+      });
+
+      // Optimistic Update UI
+      setProcessedIds(prev => new Set([...prev, ...newlyProcessedIds]));
+      setFormData(updatedStudent); // Update form immediately
+
+      try {
+          await api.updateStudent(updatedStudent);
+          onUpdate();
+          alert("Semua usulan berhasil disetujui.");
+      } catch (e) {
+          console.error(e);
+          // Rollback processed IDs
+          setProcessedIds(prev => {
+              const next = new Set(prev);
+              newlyProcessedIds.forEach(id => next.delete(id));
+              return next;
+          });
+          alert("Gagal memproses persetujuan masal.");
+      } finally {
+          setIsBulkApproving(false);
+      }
+  };
+
   const handleDataCorrection = async (e: React.MouseEvent, request: CorrectionRequest, status: 'APPROVED' | 'REJECTED') => {
       e.preventDefault();
       e.stopPropagation();
@@ -191,8 +252,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
           if (status === 'APPROVED') {
               const keys = request.fieldKey.split('.');
-              
-              // 1. Update the object that will be sent to API
               let current = updatedStudent;
               for (let i = 0; i < keys.length - 1; i++) {
                   if (!current[keys[i]]) current[keys[i]] = {};
@@ -202,18 +261,15 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               const val = (['height', 'weight', 'siblingCount', 'childOrder', 'entryYear'].includes(lastKey) || request.fieldKey.includes('circumference')) ? Number(request.proposedValue) : request.proposedValue;
               current[lastKey] = val;
 
-              // 2. IMPORTANT: Update Local FormData State IMMEDIATELY (Optimistic Update)
-              // This ensures the UI input shows the new value instantly
-              setFormData(prev => {
-                  const newFormData = JSON.parse(JSON.stringify(prev)); // Deep copy prev formData
-                  let formCurr = newFormData;
-                  for (let i = 0; i < keys.length - 1; i++) {
-                      if (!formCurr[keys[i]]) formCurr[keys[i]] = {};
-                      formCurr = formCurr[keys[i]];
-                  }
-                  formCurr[lastKey] = val;
-                  return newFormData;
-              });
+              // Synchronize local formData immediately
+              const newFormData = { ...formData };
+              let currentForm: any = newFormData;
+              for (let i = 0; i < keys.length - 1; i++) {
+                  if (!currentForm[keys[i]]) currentForm[keys[i]] = {};
+                  currentForm = currentForm[keys[i]];
+              }
+              currentForm[keys[keys.length - 1]] = val;
+              setFormData(newFormData);
           }
 
           await api.updateStudent(updatedStudent);
@@ -458,9 +514,21 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                 <div className="flex-1 flex flex-col overflow-hidden">
                     <div className="p-3 bg-blue-50 border-y border-blue-100 flex justify-between items-center">
                         <span className="text-xs font-black text-blue-800 uppercase flex items-center gap-2"><User className="w-3.5 h-3.5" /> Isian Buku Induk</span>
-                        <button onClick={() => handleProcess('SAVE_ONLY')} disabled={isProcessing} className="text-blue-600 hover:text-blue-800 p-1 bg-white rounded shadow-sm border border-blue-200">
-                            {isProcessing ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4"/>}
-                        </button>
+                        <div className="flex gap-2">
+                            {pendingRequests.length > 0 && (
+                                <button 
+                                    onClick={handleApproveAll} 
+                                    disabled={isBulkApproving} 
+                                    className="text-[10px] bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-full font-bold flex items-center gap-1 shadow-sm transition-all"
+                                >
+                                    {isBulkApproving ? <Loader2 className="w-3 h-3 animate-spin"/> : <CheckCheck className="w-3 h-3"/>}
+                                    Terima Semua ({pendingRequests.length})
+                                </button>
+                            )}
+                            <button onClick={() => handleProcess('SAVE_ONLY')} disabled={isProcessing} className="text-blue-600 hover:text-blue-800 p-1 bg-white rounded shadow-sm border border-blue-200">
+                                {isProcessing ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4"/>}
+                            </button>
+                        </div>
                     </div>
                     
                     <div className="flex-1 overflow-y-auto custom-scrollbar bg-white">

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Student, CorrectionRequest, DocumentFile } from '../types';
 import { api } from '../services/api';
-import { CheckCircle2, XCircle, Loader2, AlertCircle, FileText, ZoomIn, ZoomOut, RotateCw, LayoutList, Filter, Search, Save, Calendar, ChevronRight, File, School, RefreshCw, UserCheck, Lock, Check, X } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, AlertCircle, FileText, ZoomIn, ZoomOut, RotateCw, LayoutList, Filter, Search, Save, Calendar, ChevronRight, File, School, RefreshCw, UserCheck, Lock, Check, X, CheckCheck } from 'lucide-react';
 
 interface GradeVerificationViewProps {
   students: Student[];
@@ -71,6 +71,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSavingData, setIsSavingData] = useState(false); 
   const [processingReqId, setProcessingReqId] = useState<string | null>(null);
+  const [isBulkApproving, setIsBulkApproving] = useState(false);
   
   // Local state to track processed IDs
   const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
@@ -247,6 +248,95 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       return updatedStudent;
   };
 
+  // Find all pending grade/class requests for the CURRENT semester
+  const pendingRequests = useMemo(() => {
+      if (!currentStudent?.correctionRequests) return [];
+      return currentStudent.correctionRequests.filter(r => 
+          (r.fieldKey.startsWith(`grade-${activeSemester}-`) || r.fieldKey === `class-${activeSemester}`) &&
+          r.status === 'PENDING' && 
+          !processedIds.has(r.id)
+      );
+  }, [currentStudent, activeSemester, processedIds]);
+
+  const handleApproveAll = async () => {
+      if (!currentStudent || pendingRequests.length === 0) return;
+      if (!confirm(`Setujui semua ${pendingRequests.length} revisi nilai & kelas untuk Semester ${activeSemester}?`)) return;
+
+      setIsBulkApproving(true);
+      const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+      const newlyProcessedIds = new Set<string>();
+
+      // Init Record if missing
+      if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
+      let record = updatedStudent.academicRecords[activeSemester];
+      if (!record) {
+          record = {
+              semester: activeSemester, classLevel: semesterClass.split(' ')[0] || 'VII',
+              year: academicYear, subjects: [], attendance: { sick: 0, permitted: 0, noReason: 0 }
+          };
+          updatedStudent.academicRecords[activeSemester] = record;
+      }
+      if (!record.subjects) record.subjects = [];
+
+      // Loop & Apply
+      pendingRequests.forEach(req => {
+          newlyProcessedIds.add(req.id);
+          
+          // Mark as Approved
+          if (updatedStudent.correctionRequests) {
+              const reqIndex = updatedStudent.correctionRequests.findIndex((r: CorrectionRequest) => r.id === req.id);
+              if (reqIndex !== -1) {
+                  updatedStudent.correctionRequests[reqIndex] = {
+                      ...updatedStudent.correctionRequests[reqIndex],
+                      status: 'APPROVED',
+                      verifierName: currentUser.name,
+                      processedDate: new Date().toISOString(),
+                      adminNote: 'Disetujui Masal.'
+                  };
+              }
+          }
+
+          // Apply Data
+          if (req.fieldKey.startsWith(`grade-${activeSemester}-`)) {
+              const subjectFull = req.fieldKey.split(`grade-${activeSemester}-`)[1];
+              const newScore = Number(req.proposedValue);
+              
+              // Update local state map for immediate UI
+              setGradeData(prev => ({ ...prev, [SUBJECT_MAP.find(m => m.full === subjectFull)?.key || '']: newScore }));
+
+              const subjIndex = record.subjects.findIndex((s: any) => s.subject === subjectFull);
+              if (subjIndex >= 0) record.subjects[subjIndex].score = newScore;
+              else record.subjects.push({ no: record.subjects.length + 1, subject: subjectFull, score: newScore, competency: '-' });
+
+          } else if (req.fieldKey === `class-${activeSemester}`) {
+              const newClass = req.proposedValue;
+              setSemesterClass(newClass);
+              record.className = newClass;
+              record.classLevel = newClass.split(' ')[0];
+          }
+      });
+
+      // Optimistic UI
+      setProcessedIds(prev => new Set([...prev, ...newlyProcessedIds]));
+
+      try {
+          await api.updateStudent(updatedStudent);
+          onUpdate();
+          alert("Semua revisi berhasil disetujui.");
+      } catch (e) {
+          console.error(e);
+          // Rollback
+          setProcessedIds(prev => {
+              const next = new Set(prev);
+              newlyProcessedIds.forEach(id => next.delete(id));
+              return next;
+          });
+          alert("Gagal memproses persetujuan masal.");
+      } finally {
+          setIsBulkApproving(false);
+      }
+  };
+
   const handleCorrectionResponse = async (request: CorrectionRequest, status: 'APPROVED' | 'REJECTED') => {
       if (!currentStudent) return;
       setProcessingReqId(request.id);
@@ -254,10 +344,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       setProcessedIds(prev => new Set(prev).add(request.id));
 
       try {
-          // Prepare updated student object
           const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
-          
-          // 1. Update Request Status in Student Object
           if (updatedStudent.correctionRequests) {
               updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((r: CorrectionRequest) => {
                   if (r.id === request.id) {
@@ -279,11 +366,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                       const mapItem = SUBJECT_MAP.find(m => m.full === subjectFull);
                       if (mapItem) {
                           const newScore = Number(request.proposedValue);
-                          
-                          // OPTIMISTIC UI: Update Local State Immediately
                           setGradeData(prev => ({ ...prev, [mapItem.key]: newScore }));
-                          
-                          // Update Object to be sent
                           if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
                           let record = updatedStudent.academicRecords[activeSemester];
                           if (!record) {
@@ -293,9 +376,6 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                               };
                               updatedStudent.academicRecords[activeSemester] = record;
                           }
-                          
-                          // Ensure subjects array exists and update specific subject
-                          if (!record.subjects) record.subjects = [];
                           const subjIndex = record.subjects.findIndex((s: any) => s.subject === subjectFull);
                           if (subjIndex >= 0) record.subjects[subjIndex].score = newScore;
                           else record.subjects.push({ no: record.subjects.length + 1, subject: subjectFull, score: newScore, competency: '-' });
@@ -305,10 +385,7 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
               // --- HANDLE CLASS CORRECTION ---
               else if (request.fieldKey === `class-${activeSemester}`) {
                   const newClass = request.proposedValue;
-                  
-                  // OPTIMISTIC UI
                   setSemesterClass(newClass);
-                  
                   if (!updatedStudent.academicRecords) updatedStudent.academicRecords = {};
                   let record = updatedStudent.academicRecords[activeSemester];
                   if (!record) {
@@ -318,10 +395,9 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                   record.className = newClass;
               }
           }
-          
           await api.updateStudent(updatedStudent);
           onUpdate(); 
-          // alert(status === 'APPROVED' ? "Revisi disetujui & nilai diperbarui." : "Revisi ditolak.");
+          alert(status === 'APPROVED' ? "Revisi disetujui & nilai diperbarui." : "Revisi ditolak.");
       } catch (e) {
           // Rollback
           setProcessedIds(prev => {
@@ -480,9 +556,21 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                         <div className="flex items-center gap-2 mb-1"><LayoutList className="w-4 h-4 text-blue-700" /><span className="text-sm font-bold text-blue-800">Verifikasi Nilai</span></div>
                         <div className="text-xs text-blue-600 font-medium">Semester {activeSemester}</div>
                     </div>
-                    <button onClick={handleSaveDataOnly} disabled={isSavingData} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm">
-                        {isSavingData ? <Loader2 className="w-3 h-3 animate-spin"/> : <Save className="w-3 h-3" />} Simpan Data
-                    </button>
+                    <div className="flex gap-2">
+                        {pendingRequests.length > 0 && (
+                            <button 
+                                onClick={handleApproveAll} 
+                                disabled={isBulkApproving} 
+                                className="text-[10px] bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-full font-bold flex items-center gap-1 shadow-sm transition-all"
+                            >
+                                {isBulkApproving ? <Loader2 className="w-3 h-3 animate-spin"/> : <CheckCheck className="w-3 h-3"/>}
+                                Terima Semua ({pendingRequests.length})
+                            </button>
+                        )}
+                        <button onClick={handleSaveDataOnly} disabled={isSavingData} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm">
+                            {isSavingData ? <Loader2 className="w-3 h-3 animate-spin"/> : <Save className="w-3 h-3" />} Simpan Data
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex-1 flex flex-col overflow-hidden bg-white">

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Student, DocumentFile, CorrectionRequest } from '../types';
 import { api } from '../services/api';
-import { CheckCircle2, XCircle, Loader2, AlertCircle, ScrollText, ZoomIn, ZoomOut, RotateCw, FileCheck2, User, Filter, Search, FileBadge, Save, Check, X } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, AlertCircle, ScrollText, ZoomIn, ZoomOut, RotateCw, FileCheck2, User, Filter, Search, FileBadge, Save, Check, X, CheckCheck } from 'lucide-react';
 
 interface IjazahVerificationViewProps {
   students: Student[];
@@ -49,6 +49,7 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSavingData, setIsSavingData] = useState(false);
   const [processingReqId, setProcessingReqId] = useState<string | null>(null);
+  const [isBulkApproving, setIsBulkApproving] = useState(false);
   
   const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
   const isTargetingRef = useRef(false);
@@ -125,6 +126,69 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
   }, [ijazahDocs, processedIds]);
 
   const currentDoc = ijazahDocs.find(d => d.id === selectedDocId);
+
+  // STRICTLY FILTER PENDING REQUESTS FOR IJAZAH FIELDS
+  const pendingRequests = useMemo(() => {
+      if (!currentStudent?.correctionRequests) return [];
+      return currentStudent.correctionRequests.filter(r => 
+          r.status === 'PENDING' && 
+          (r.fieldKey.startsWith('ijazah-') || ['fullName','nis','nisn','birthPlace','birthDate','diplomaNumber','father.name'].includes(r.fieldKey)) &&
+          !processedIds.has(r.id)
+      );
+  }, [currentStudent, processedIds]);
+
+  const handleApproveAll = async () => {
+      if (!currentStudent || pendingRequests.length === 0) return;
+      if (!confirm(`Setujui semua ${pendingRequests.length} revisi data Ijazah?`)) return;
+
+      setIsBulkApproving(true);
+      const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+      const newlyProcessedIds = new Set<string>();
+
+      // Apply all
+      pendingRequests.forEach(req => {
+          newlyProcessedIds.add(req.id);
+          
+          if (updatedStudent.correctionRequests) {
+              const reqIndex = updatedStudent.correctionRequests.findIndex((r: CorrectionRequest) => r.id === req.id);
+              if (reqIndex !== -1) {
+                  updatedStudent.correctionRequests[reqIndex] = {
+                      ...updatedStudent.correctionRequests[reqIndex],
+                      status: 'APPROVED',
+                      verifierName: currentUser.name,
+                      processedDate: new Date().toISOString(),
+                      adminNote: 'Disetujui Masal.'
+                  };
+              }
+          }
+
+          const keys = req.fieldKey.split('.');
+          let current: any = updatedStudent;
+          for (let i = 0; i < keys.length - 1; i++) { if (!current[keys[i]]) current[keys[i]] = {}; current = current[keys[i]]; }
+          current[keys[keys.length - 1]] = req.proposedValue;
+      });
+
+      // Optimistic
+      setProcessedIds(prev => new Set([...prev, ...newlyProcessedIds]));
+      setFormData(updatedStudent);
+
+      try {
+          await api.updateStudent(updatedStudent);
+          onUpdate();
+          alert("Semua usulan berhasil disetujui.");
+      } catch (e) {
+          console.error(e);
+          // Rollback
+          setProcessedIds(prev => {
+              const next = new Set(prev);
+              newlyProcessedIds.forEach(id => next.delete(id));
+              return next;
+          });
+          alert("Gagal memproses persetujuan masal.");
+      } finally {
+          setIsBulkApproving(false);
+      }
+  };
 
   const handleDataCorrection = async (e: React.MouseEvent, request: CorrectionRequest, status: 'APPROVED' | 'REJECTED') => {
       e.preventDefault(); e.stopPropagation();
@@ -309,7 +373,19 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
                 <div className="flex-1 flex flex-col overflow-hidden bg-white">
                     <div className="p-3 bg-purple-50 border-b border-purple-100 text-xs text-purple-800 font-bold flex items-center justify-between">
                         <span className="flex items-center gap-2"><FileBadge className="w-3 h-3" /> Data Ijazah & SKL</span>
-                        <button onClick={handleSaveData} disabled={isSavingData} className="text-purple-600 hover:text-purple-800">{isSavingData ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4"/>}</button>
+                        <div className="flex gap-2">
+                            {pendingRequests.length > 0 && (
+                                <button 
+                                    onClick={handleApproveAll} 
+                                    disabled={isBulkApproving} 
+                                    className="text-[10px] bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-full font-bold flex items-center gap-1 shadow-sm transition-all"
+                                >
+                                    {isBulkApproving ? <Loader2 className="w-3 h-3 animate-spin"/> : <CheckCheck className="w-3 h-3"/>}
+                                    Terima Semua ({pendingRequests.length})
+                                </button>
+                            )}
+                            <button onClick={handleSaveData} disabled={isSavingData} className="text-purple-600 hover:text-purple-800">{isSavingData ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4"/>}</button>
+                        </div>
                     </div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-4">
                         {currentStudent ? (
