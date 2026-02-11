@@ -171,6 +171,11 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       return docs;
   }, [currentStudent, activeTab, allowedCategories]);
 
+  // Documents pending approval in current view
+  const pendingDocs = useMemo(() => {
+      return studentDocs.filter(d => d.status === 'PENDING' && !processedIds.has(d.id));
+  }, [studentDocs, processedIds]);
+
   // --- IMPROVED AUTO-ADVANCE LOGIC ---
   useEffect(() => {
       // 1. If we have a selection that is now processed or no longer pending, move to next.
@@ -224,6 +229,57 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           if (hasPendingReq || hasPendingDoc) return s.id;
       }
       return null;
+  };
+
+  const handleApproveAllDocs = async () => {
+      if (!currentStudent || pendingDocs.length === 0) return;
+      if (!confirm(`Setujui ${pendingDocs.length} dokumen sekaligus?`)) return;
+
+      setIsBulkApproving(true);
+      const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+      const newlyProcessedIds = new Set<string>();
+
+      pendingDocs.forEach(doc => {
+          newlyProcessedIds.add(doc.id);
+          updatedStudent.documents = updatedStudent.documents.map((d: any) => {
+              if (d.id === doc.id) {
+                  return {
+                      ...d,
+                      status: 'APPROVED',
+                      verifierName: currentUser.name,
+                      verificationDate: new Date().toISOString(),
+                      adminNote: 'Disetujui Masal.'
+                  };
+              }
+              return d;
+          });
+      });
+
+      setProcessedIds(prev => new Set([...prev, ...newlyProcessedIds]));
+
+      try {
+          onUpdate(updatedStudent);
+          await api.updateStudent(updatedStudent);
+          
+          // Auto Advance check
+          const remainingReqs = updatedStudent.correctionRequests?.some((r: any) => r.status === 'PENDING' && !processedIds.has(r.id));
+          const remainingAllDocs = updatedStudent.documents.some((d: any) => d.status === 'PENDING' && allowedCategories.includes(d.category) && !processedIds.has(d.id));
+          
+          if (!remainingReqs && !remainingAllDocs) {
+              const nextId = findNextStudentWithIssues();
+              if (nextId) setTimeout(() => setSelectedStudentId(nextId), 500);
+          }
+      } catch (e) {
+          console.error(e);
+          setProcessedIds(prev => {
+              const next = new Set(prev);
+              newlyProcessedIds.forEach(id => next.delete(id));
+              return next;
+          });
+          alert("Gagal memproses dokumen.");
+      } finally {
+          setIsBulkApproving(false);
+      }
   };
 
   const handleApproveAll = async () => {
@@ -324,6 +380,8 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
           // OPTIMISTIC UPDATE
           onUpdate(updatedStudent); 
+          
+          // Then Sync to Server
           await api.updateStudent(updatedStudent);
       } catch (e) { 
           setProcessedIds(prev => { const next = new Set(prev); next.delete(request.id); return next; });
@@ -525,9 +583,19 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
             <div className="w-[480px] bg-white border-l border-gray-200 flex flex-col shadow-xl z-10">
                 <div className="bg-gray-50 border-b border-gray-200">
-                    <div className="p-3 text-[10px] font-bold text-gray-500 uppercase flex justify-between">
+                    <div className="p-3 text-[10px] font-bold text-gray-500 uppercase flex justify-between items-center">
                         <span>Navigasi Dokumen</span>
-                        <span>{studentDocs.length} File</span>
+                        {pendingDocs.length > 0 && (
+                            <button 
+                                onClick={handleApproveAllDocs}
+                                disabled={isBulkApproving}
+                                className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-[9px] font-bold flex items-center gap-1 shadow-sm transition-all"
+                            >
+                                {isBulkApproving ? <Loader2 className="w-3 h-3 animate-spin"/> : <CheckCheck className="w-3 h-3"/>}
+                                Terima Semua ({pendingDocs.length})
+                            </button>
+                        )}
+                        <span className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded ml-2">{studentDocs.length} File</span>
                     </div>
                     <div className="flex gap-2 px-3 pb-3 overflow-x-auto no-scrollbar">
                         <button onClick={() => setActiveTab('ALL')} className={`px-3 py-1.5 rounded-full text-[10px] font-bold whitespace-nowrap border ${activeTab === 'ALL' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>SEMUA</button>
