@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Student, CorrectionRequest, DocumentFile } from '../types';
 import { api } from '../services/api';
-import { CheckCircle2, XCircle, Loader2, AlertCircle, FileText, ZoomIn, ZoomOut, RotateCw, LayoutList, Filter, Search, Save, Calendar, ChevronRight, File, School, RefreshCw, UserCheck, Lock, Check, X, CheckCheck } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, AlertCircle, FileText, ZoomIn, ZoomOut, RotateCw, LayoutList, Filter, Search, Save, Calendar, ChevronRight, File, School, RefreshCw, UserCheck, Lock, Check, X, CheckCheck, Files } from 'lucide-react';
 
 interface GradeVerificationViewProps {
   students: Student[];
@@ -277,6 +277,68 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           !processedIds.has(r.id)
       );
   }, [currentStudent, activeSemester, processedIds]);
+
+  // Find all pending DOCUMENTS for the CURRENT semester
+  const pendingDocs = useMemo(() => {
+      if (!currentStudent) return [];
+      return currentStudent.documents.filter(d => 
+          d.category === 'RAPOR' && 
+          d.subType?.semester === activeSemester && 
+          d.status === 'PENDING' && 
+          !processedIds.has(d.id)
+      );
+  }, [currentStudent, activeSemester, processedIds]);
+
+  const handleApproveAllDocs = async () => {
+      if (!currentStudent || pendingDocs.length === 0) return;
+      if (!confirm(`Setujui semua ${pendingDocs.length} dokumen Rapor Semester ${activeSemester}?`)) return;
+
+      setIsBulkApproving(true);
+      const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
+      const newlyProcessedIds = new Set<string>();
+
+      pendingDocs.forEach(doc => {
+          newlyProcessedIds.add(doc.id);
+          updatedStudent.documents = updatedStudent.documents.map((d: any) => {
+              if (d.id === doc.id) {
+                  return {
+                      ...d,
+                      status: 'APPROVED',
+                      verifierName: currentUser.name,
+                      verificationDate: new Date().toISOString(),
+                      adminNote: 'Disetujui Masal.'
+                  };
+              }
+              return d;
+          });
+      });
+
+      setProcessedIds(prev => new Set([...prev, ...newlyProcessedIds]));
+
+      try {
+          onUpdate(updatedStudent);
+          await api.updateStudent(updatedStudent);
+          
+          // Auto advance check
+          const otherPending = updatedStudent.correctionRequests?.some((r: any) => r.status === 'PENDING' && (r.fieldKey.startsWith('grade-') || r.fieldKey.startsWith('class-')));
+          const hasPendingDocs = updatedStudent.documents?.some((d: any) => d.status === 'PENDING' && d.category === 'RAPOR');
+          
+          if (!otherPending && !hasPendingDocs) {
+              const nextId = findNextStudentWithIssues();
+              if(nextId) setTimeout(() => setSelectedStudentId(nextId), 500);
+          }
+      } catch (e) {
+          console.error(e);
+          setProcessedIds(prev => {
+              const next = new Set(prev);
+              newlyProcessedIds.forEach(id => next.delete(id));
+              return next;
+          });
+          alert("Gagal memproses dokumen.");
+      } finally {
+          setIsBulkApproving(false);
+      }
+  };
 
   const handleApproveAll = async () => {
       if (!currentStudent || pendingRequests.length === 0) return;
@@ -644,11 +706,22 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                                 className="text-[10px] bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-full font-bold flex items-center gap-1 shadow-sm transition-all"
                             >
                                 {isBulkApproving ? <Loader2 className="w-3 h-3 animate-spin"/> : <CheckCheck className="w-3 h-3"/>}
-                                Terima Semua ({pendingRequests.length})
+                                Terima Nilai ({pendingRequests.length})
+                            </button>
+                        )}
+                        {pendingDocs.length > 0 && (
+                            <button 
+                                key="approve-docs-btn"
+                                onClick={handleApproveAllDocs} 
+                                disabled={isBulkApproving} 
+                                className="text-[10px] bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-full font-bold flex items-center gap-1 shadow-sm transition-all"
+                            >
+                                {isBulkApproving ? <Loader2 className="w-3 h-3 animate-spin"/> : <Files className="w-3 h-3"/>}
+                                Dokumen ({pendingDocs.length})
                             </button>
                         )}
                         <button onClick={handleSaveDataOnly} disabled={isSavingData} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm">
-                            {isSavingData ? <Loader2 className="w-3 h-3 animate-spin"/> : <Save className="w-3 h-3" />} Simpan Data
+                            {isSavingData ? <Loader2 className="w-3 h-3 animate-spin"/> : <Save className="w-3 h-3" />} Data
                         </button>
                     </div>
                 </div>
