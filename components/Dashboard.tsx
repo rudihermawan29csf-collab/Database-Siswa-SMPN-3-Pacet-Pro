@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Users, FileCheck, School, AlertCircle, FileText, CheckCircle2, Clock, AlertTriangle, ArrowRight, BookOpen, FileCheck2, Files, ClipboardList, Filter, Award } from 'lucide-react';
+import { Users, FileCheck, School, AlertCircle, FileText, CheckCircle2, Clock, AlertTriangle, ArrowRight, BookOpen, FileCheck2, Files, ClipboardList, Filter, Award, X } from 'lucide-react';
 import { Student } from '../types';
 
 const COLORS = ['#007AFF', '#FF2D55', '#FFCC00', '#34C759'];
@@ -21,6 +21,7 @@ export interface DashboardNotification {
 interface DashboardProps {
     notifications?: DashboardNotification[];
     onNotificationClick?: (notification: DashboardNotification) => void;
+    onNotificationDismiss?: (id: string) => void; // New prop
     userRole?: 'ADMIN' | 'STUDENT' | 'GURU';
     students?: Student[]; // Add students prop for calculation
     schoolName?: string; // Added schoolName prop
@@ -39,7 +40,7 @@ const StatCard: React.FC<{ title: string; value: string | number; icon: React.Re
   </div>
 );
 
-const NotificationCard: React.FC<{ notification: DashboardNotification; onClick: () => void }> = ({ notification, onClick }) => {
+const NotificationCard: React.FC<{ notification: DashboardNotification; onClick: () => void; onDismiss?: (id: string) => void }> = ({ notification, onClick, onDismiss }) => {
     const getIcon = () => {
         switch(notification.type) {
             case 'ADMIN_VERIFY': 
@@ -73,12 +74,23 @@ const NotificationCard: React.FC<{ notification: DashboardNotification; onClick:
     return (
         <div 
             onClick={onClick}
-            className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-4 ${getBgColor()}`}
+            className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-4 relative group ${getBgColor()}`}
         >
+            {/* Dismiss Button */}
+            {onDismiss && (
+                <button 
+                    onClick={(e) => { e.stopPropagation(); onDismiss(notification.id); }}
+                    className="absolute top-2 right-2 p-1 bg-white/50 hover:bg-white rounded-full text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                    title="Hapus Notifikasi"
+                >
+                    <X className="w-3 h-3" />
+                </button>
+            )}
+
             <div className="mt-1 bg-white p-2 rounded-full shadow-sm">
                 {getIcon()}
             </div>
-            <div className="flex-1">
+            <div className="flex-1 pr-6">
                 <h4 className="font-bold text-gray-800 text-sm">{notification.title}</h4>
                 <p className="text-xs text-gray-600 mt-1 line-clamp-2">{notification.description}</p>
                 {notification.verifierName && (
@@ -102,7 +114,7 @@ const NotificationCard: React.FC<{ notification: DashboardNotification; onClick:
     );
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ notifications = [], onNotificationClick, userRole = 'ADMIN', students = [], schoolName = 'SMPN 3 Pacet' }) => {
+const Dashboard: React.FC<DashboardProps> = ({ notifications = [], onNotificationClick, onNotificationDismiss, userRole = 'ADMIN', students = [], schoolName = 'SMPN 3 Pacet' }) => {
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('ALL');
 
   const uniqueClasses = useMemo(() => {
@@ -271,6 +283,7 @@ const Dashboard: React.FC<DashboardProps> = ({ notifications = [], onNotificatio
                             key={notif.id} 
                             notification={notif} 
                             onClick={() => onNotificationClick && onNotificationClick(notif)}
+                            onDismiss={onNotificationDismiss}
                         />
                     ))
                 ) : (

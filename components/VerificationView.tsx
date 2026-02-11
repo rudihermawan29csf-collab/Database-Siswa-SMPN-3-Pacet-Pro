@@ -62,7 +62,7 @@ const AccordionItem = ({ title, icon: Icon, isOpen, onToggle, children, badge }:
 );
 
 const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStudentId, onUpdate, currentUser }) => {
-  const [selectedClass, setSelectedClass] = useState<string>('VII A');
+  const [selectedClass, setSelectedClass] = useState<string>(''); // Default empty to trigger smart init
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>('ALL');
@@ -79,6 +79,8 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   // Ref to lock auto-selection when target is present
   const isTargetingRef = useRef(false);
+  // Ref to track initialized state
+  const isInitializedRef = useRef(false);
 
   const [zoomLevel, setZoomLevel] = useState(1);
   const [rotation, setRotation] = useState(0);
@@ -95,31 +97,66 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       fetchSettings();
   }, []);
 
-  // --- HANDLE NOTIFICATION TARGET ---
+  const uniqueClasses = useMemo(() => Array.from(new Set(students.map(s => s.className))).sort(), [students]);
+
+  // --- SMART INITIALIZATION ---
   useEffect(() => {
+      // If we have a specific target from notification, prioritize that
       if (targetStudentId && students.length > 0) {
           const student = students.find(s => s.id === targetStudentId);
           if (student) { 
-              isTargetingRef.current = true; // Lock auto-select
+              isTargetingRef.current = true;
               setSelectedClass(student.className); 
               setSelectedStudentId(student.id); 
-              
-              // Unlock after a delay to allow UI to settle
               setTimeout(() => { isTargetingRef.current = false; }, 800);
+              return;
           }
       }
-  }, [targetStudentId, students]);
 
-  const uniqueClasses = useMemo(() => Array.from(new Set(students.map(s => s.className))).sort(), [students]);
+      // Otherwise, if not initialized, find the first student with PENDING issues
+      if (!isInitializedRef.current && students.length > 0 && !selectedStudentId) {
+          let found = false;
+          // Sort students by name to be consistent
+          const sortedAll = [...students].sort((a, b) => a.fullName.localeCompare(b.fullName));
+          
+          for (const s of sortedAll) {
+              const hasPendingReq = s.correctionRequests?.some(r => r.status === 'PENDING' && !r.fieldKey.startsWith('grade-') && !r.fieldKey.startsWith('class-') && !r.fieldKey.startsWith('ijazah-'));
+              const hasPendingDoc = s.documents?.some(d => d.status === 'PENDING' && allowedCategories.includes(d.category));
+              
+              if (hasPendingReq || hasPendingDoc) {
+                  setSelectedClass(s.className);
+                  setSelectedStudentId(s.id);
+                  found = true;
+                  break;
+              }
+          }
+
+          // If no one has issues, default to first class
+          if (!found && uniqueClasses.length > 0) {
+              setSelectedClass(uniqueClasses[0]);
+          }
+          
+          isInitializedRef.current = true;
+      }
+  }, [students, targetStudentId, uniqueClasses, allowedCategories, selectedStudentId]);
+
+  // Fallback: If selectedClass is still empty after init, set to first available
+  useEffect(() => {
+      if (!selectedClass && uniqueClasses.length > 0) {
+          setSelectedClass(uniqueClasses[0]);
+      }
+  }, [uniqueClasses, selectedClass]);
+
   const filteredStudents = useMemo(() => students.filter(s => s.className === selectedClass).sort((a, b) => a.fullName.localeCompare(b.fullName)), [students, selectedClass]);
   
-  // --- AUTO SELECT FIRST STUDENT (Only if NOT targeting) ---
+  // --- AUTO SELECT FIRST STUDENT IN CLASS (If Selection Empty) ---
   useEffect(() => {
-      if (isTargetingRef.current) return; // Skip if processing target
+      if (isTargetingRef.current) return; 
 
       if (!selectedStudentId && filteredStudents.length > 0) {
           setSelectedStudentId(filteredStudents[0].id);
       } else if (filteredStudents.length > 0 && !filteredStudents.find(s => s.id === selectedStudentId)) {
+          // If current selection not in list (e.g. class changed), pick first
           setSelectedStudentId(filteredStudents[0].id);
       }
   }, [filteredStudents, selectedStudentId]);
@@ -129,9 +166,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   // RESET FORM DATA ONLY WHEN STUDENT ID CHANGES
   useEffect(() => {
       if (currentStudent) {
-          // Deep Copy to prevent mutation
           const dataCopy = JSON.parse(JSON.stringify(currentStudent));
-          // Only update formData if the ID is different to prevent overwriting ongoing edits or optimistic updates
           setFormData(prev => prev.id === currentStudent.id ? prev : dataCopy);
           setActiveTab('ALL');
       }
@@ -153,16 +188,14 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   const currentDoc = studentDocs.find(d => d.id === selectedDocId);
 
-  // STRICTLY FILTER PENDING REQUESTS
-  // EXCLUDES 'grade-' AND 'ijazah-' to show only BIO requests
   const pendingRequests = useMemo(() => {
       if (!currentStudent?.correctionRequests) return [];
       return currentStudent.correctionRequests.filter(r => 
           r.status === 'PENDING' && 
           !r.fieldKey.startsWith('grade-') && 
-          !r.fieldKey.startsWith('class-') && // Added class- check
+          !r.fieldKey.startsWith('class-') &&
           !r.fieldKey.startsWith('ijazah-') &&
-          !['diplomaNumber'].includes(r.fieldKey) && // Exclude Ijazah fields if managed elsewhere
+          !['diplomaNumber'].includes(r.fieldKey) &&
           !processedIds.has(r.id)
       );
   }, [currentStudent, processedIds]);
@@ -173,16 +206,18 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       const currentIndex = filteredStudents.findIndex(s => s.id === selectedStudentId);
       for (let i = currentIndex + 1; i < filteredStudents.length; i++) {
           const s = filteredStudents[i];
-          const hasPending = s.correctionRequests?.some(r => r.status === 'PENDING' && !r.fieldKey.startsWith('grade-') && !r.fieldKey.startsWith('ijazah-')) ||
-                             s.documents.some(d => d.status === 'PENDING' && allowedCategories.includes(d.category));
-          if (hasPending) return s.id;
+          const hasPendingReq = s.correctionRequests?.some(r => r.status === 'PENDING' && !r.fieldKey.startsWith('grade-') && !r.fieldKey.startsWith('class-') && !r.fieldKey.startsWith('ijazah-') && !processedIds.has(r.id));
+          const hasPendingDoc = s.documents.some(d => d.status === 'PENDING' && allowedCategories.includes(d.category) && !processedIds.has(d.id));
+          
+          if (hasPendingReq || hasPendingDoc) return s.id;
       }
       // Loop back to start
       for (let i = 0; i < currentIndex; i++) {
           const s = filteredStudents[i];
-          const hasPending = s.correctionRequests?.some(r => r.status === 'PENDING' && !r.fieldKey.startsWith('grade-') && !r.fieldKey.startsWith('ijazah-')) ||
-                             s.documents.some(d => d.status === 'PENDING' && allowedCategories.includes(d.category));
-          if (hasPending) return s.id;
+          const hasPendingReq = s.correctionRequests?.some(r => r.status === 'PENDING' && !r.fieldKey.startsWith('grade-') && !r.fieldKey.startsWith('class-') && !r.fieldKey.startsWith('ijazah-') && !processedIds.has(r.id));
+          const hasPendingDoc = s.documents.some(d => d.status === 'PENDING' && allowedCategories.includes(d.category) && !processedIds.has(d.id));
+          
+          if (hasPendingReq || hasPendingDoc) return s.id;
       }
       return null;
   };
@@ -192,16 +227,11 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       if (!confirm(`Apakah Anda yakin ingin menyetujui ${pendingRequests.length} usulan perubahan data sekaligus?`)) return;
 
       setIsBulkApproving(true);
-      
-      // 1. Deep Clone for mutation
       const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
       const newlyProcessedIds = new Set<string>();
 
-      // 2. Iterate ALL pending requests found in the filter
       pendingRequests.forEach(req => {
           newlyProcessedIds.add(req.id);
-          
-          // A. Update Status in Correction Requests Array (CRITICAL FOR NOTIFICATIONS)
           if (updatedStudent.correctionRequests) {
               const reqIndex = updatedStudent.correctionRequests.findIndex((r: CorrectionRequest) => r.id === req.id);
               if (reqIndex !== -1) {
@@ -214,8 +244,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                   };
               }
           }
-
-          // B. Apply Value to Student Fields
           const keys = req.fieldKey.split('.');
           let current = updatedStudent;
           for (let i = 0; i < keys.length - 1; i++) {
@@ -227,27 +255,20 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           current[lastKey] = val;
       });
 
-      // 3. Optimistic Update
       setProcessedIds(prev => new Set([...prev, ...newlyProcessedIds]));
-      setFormData(updatedStudent); // Update form immediately
+      setFormData(updatedStudent); 
 
       try {
-          // 4. Send updated student (with APPROVED requests) to App.tsx to clear notifications
           onUpdate(updatedStudent); 
-          
-          // 5. Sync to server
           await api.updateStudent(updatedStudent);
           
-          // 6. Auto-Advance to next student if no more docs
           const remainingDocs = updatedStudent.documents.filter((d: any) => d.status === 'PENDING' && allowedCategories.includes(d.category));
           if (remainingDocs.length === 0) {
               const nextId = findNextStudentWithIssues();
               if (nextId) setTimeout(() => setSelectedStudentId(nextId), 500);
           }
-
       } catch (e) {
           console.error(e);
-          // Rollback
           setProcessedIds(prev => {
               const next = new Set(prev);
               newlyProcessedIds.forEach(id => next.delete(id));
@@ -260,10 +281,8 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   };
 
   const handleDataCorrection = async (e: React.MouseEvent, request: CorrectionRequest, status: 'APPROVED' | 'REJECTED') => {
-      e.preventDefault();
-      e.stopPropagation();
+      e.preventDefault(); e.stopPropagation();
       if (!currentStudent) return;
-      
       setProcessingReqId(request.id);
       setProcessedIds(prev => new Set(prev).add(request.id));
 
@@ -272,13 +291,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           if (updatedStudent.correctionRequests) {
               updatedStudent.correctionRequests = updatedStudent.correctionRequests.map((r: CorrectionRequest) => {
                   if (r.id === request.id) {
-                      return { 
-                          ...r, 
-                          status, 
-                          verifierName: currentUser.name, 
-                          processedDate: new Date().toISOString(), 
-                          adminNote: status === 'APPROVED' ? 'Disetujui.' : 'Ditolak.' 
-                      };
+                      return { ...r, status, verifierName: currentUser.name, processedDate: new Date().toISOString(), adminNote: status === 'APPROVED' ? 'Disetujui.' : 'Ditolak.' };
                   }
                   return r;
               });
@@ -295,7 +308,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               const val = (['height', 'weight', 'siblingCount', 'childOrder', 'entryYear'].includes(lastKey) || request.fieldKey.includes('circumference')) ? Number(request.proposedValue) : request.proposedValue;
               current[lastKey] = val;
 
-              // Synchronize local formData immediately
               const newFormData = { ...formData };
               let currentForm: any = newFormData;
               for (let i = 0; i < keys.length - 1; i++) {
@@ -309,16 +321,9 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           await api.updateStudent(updatedStudent);
           onUpdate(updatedStudent); 
       } catch (e) { 
-          // Rollback on error
-          setProcessedIds(prev => {
-              const next = new Set(prev);
-              next.delete(request.id);
-              return next;
-          });
+          setProcessedIds(prev => { const next = new Set(prev); next.delete(request.id); return next; });
           alert("Gagal memproses perubahan data."); 
-      } finally { 
-          setProcessingReqId(null); 
-      }
+      } finally { setProcessingReqId(null); }
   };
 
   const handleProcess = async (status: 'APPROVED' | 'REVISION' | 'SAVE_ONLY') => {
@@ -344,49 +349,35 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           }
           
           await api.updateStudent(updatedStudent);
-          onUpdate(updatedStudent); // Pass updated student
+          onUpdate(updatedStudent); 
           
           if (status !== 'SAVE_ONLY' && currentDoc) { 
               setAdminNote(''); 
-              // Move to next pending doc in THIS student
               const next = updatedStudent.documents.find((d: any) => d.status === 'PENDING' && allowedCategories.includes(d.category) && !processedIds.has(d.id)); 
               if (next) {
                   setSelectedDocId(next.id); 
               } else {
-                  // No more docs for this student? Check for pending requests
-                  const hasPendingReq = updatedStudent.correctionRequests?.some((r: any) => r.status === 'PENDING' && !r.fieldKey.startsWith('grade-') && !r.fieldKey.startsWith('ijazah-'));
+                  const hasPendingReq = updatedStudent.correctionRequests?.some((r: any) => r.status === 'PENDING' && !r.fieldKey.startsWith('grade-') && !r.fieldKey.startsWith('class-') && !r.fieldKey.startsWith('ijazah-'));
                   if (!hasPendingReq) {
-                      // If totally done, move to next student
-                      const nextStudentId = findNextStudentWithIssues();
-                      if (nextStudentId) setTimeout(() => setSelectedStudentId(nextStudentId), 500);
+                      const nextId = findNextStudentWithIssues();
+                      if (nextId) setTimeout(() => setSelectedStudentId(nextId), 500);
                   }
               }
           }
-          
           if (status === 'SAVE_ONLY') alert("Data berhasil disimpan.");
       } catch (e) { 
-          // Rollback
           if (status !== 'SAVE_ONLY' && currentDoc) {
-            setProcessedIds(prev => {
-                const next = new Set(prev);
-                next.delete(currentDoc.id);
-                return next;
-            });
+            setProcessedIds(prev => { const next = new Set(prev); next.delete(currentDoc.id); return next; });
           }
           alert("Gagal memproses data."); 
-      } finally { 
-          setIsProcessing(false); 
-      }
+      } finally { setIsProcessing(false); }
   };
 
   const renderField = ({ label, value, fieldKey, type = 'text', section }: { label: string, value: any, fieldKey: string, type?: string, section: string }) => {
-      // Find request in the original student object, BUT filter out if it's in processedIds
       const pending = currentStudent?.correctionRequests?.find(r => r.fieldKey === fieldKey && r.status === 'PENDING' && !processedIds.has(r.id));
-      
       const isDate = type === 'date';
       const isProcessingThis = pending && processingReqId === pending.id;
       
-      // Look up value in local formData (which receives optimistic updates)
       const getValueFromFormData = () => {
           const keys = fieldKey.split('.');
           let current: any = formData;
@@ -473,9 +464,10 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                     <Search className="w-4 h-4 text-gray-500" />
                     <select className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-full" value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>
                         {filteredStudents.map(s => {
-                            // Check if student has pending issues to mark them
-                            const hasIssues = s.correctionRequests?.some(r => r.status === 'PENDING' && !r.fieldKey.startsWith('grade-') && !r.fieldKey.startsWith('ijazah-')) ||
-                                              s.documents.some(d => d.status === 'PENDING' && allowedCategories.includes(d.category));
+                            const hasPendingReq = s.correctionRequests?.some(r => r.status === 'PENDING' && !r.fieldKey.startsWith('grade-') && !r.fieldKey.startsWith('class-') && !r.fieldKey.startsWith('ijazah-') && !processedIds.has(r.id));
+                            const hasPendingDoc = s.documents.some(d => d.status === 'PENDING' && allowedCategories.includes(d.category) && !processedIds.has(d.id));
+                            const hasIssues = hasPendingReq || hasPendingDoc;
+                            
                             return (
                                 <option key={s.id} value={s.id} className={hasIssues ? "font-bold text-red-600 bg-red-50" : ""}>
                                     {hasIssues ? '🔴 ' : ''}{s.fullName}

@@ -79,6 +79,8 @@ function App() {
 
   // Target ID for notifications navigation
   const [targetNotificationStudentId, setTargetNotificationStudentId] = useState<string | undefined>(undefined);
+  // NEW: State for manually dismissed notifications
+  const [dismissedNotifIds, setDismissedNotifIds] = useState<Set<string>>(new Set());
 
   // Profile & School Data State
   const [adminProfile, setAdminProfile] = useState({ name: 'Administrator' });
@@ -322,9 +324,16 @@ function App() {
           }
       });
 
+      // Filter out dismissed notifications
+      const filteredList = list.filter(n => !dismissedNotifIds.has(n.id));
+
       // Sort by date descending
-      return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [students, userRole, currentUser]);
+      return filteredList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [students, userRole, currentUser, dismissedNotifIds]);
+
+  const handleDismissNotification = (id: string) => {
+      setDismissedNotifIds(prev => new Set(prev).add(id));
+  };
 
   // --- NOTIFICATION HANDLER ---
   const handleNotificationClick = (notif: DashboardNotification) => {
@@ -387,11 +396,10 @@ function App() {
   };
 
   // IMPORTANT: Instant Data Refresh for Optimistic UI
-  // FIXED: If updatedStudent is passed, do NOT fetch from server immediately to avoid overwriting 
-  // with stale data from slow Google Sheets. Trust the local update.
+  // FIXED: Ensure immutable update by mapping through the array
   const refreshData = (updatedStudent?: Student) => {
     if (updatedStudent) {
-        setStudents(prev => prev.map(s => s.id === updatedStudent.id ? updatedStudent : s));
+        setStudents(prev => prev.map(s => s.id === updatedStudent.id ? { ...updatedStudent } : s));
         // We SKIP fetchStudents() here intentionally to let the optimistic update stick.
         // Data is already sent to server in the background components.
     } else {
@@ -487,7 +495,14 @@ function App() {
 
     switch (currentView) {
       case 'dashboard':
-        return <Dashboard notifications={notifications} onNotificationClick={handleNotificationClick} userRole={userRole || 'ADMIN'} students={students} schoolName={schoolName} />;
+        return <Dashboard 
+                  notifications={notifications} 
+                  onNotificationClick={handleNotificationClick} 
+                  onNotificationDismiss={handleDismissNotification} // Pass dismiss handler
+                  userRole={userRole || 'ADMIN'} 
+                  students={students} 
+                  schoolName={schoolName} 
+               />;
       
       // ADMIN VIEWS
       case 'database':
@@ -554,7 +569,14 @@ function App() {
         ) : null;
 
       default:
-        return <Dashboard notifications={notifications} onNotificationClick={handleNotificationClick} userRole={userRole || 'ADMIN'} students={students} schoolName={schoolName} />;
+        return <Dashboard 
+                  notifications={notifications} 
+                  onNotificationClick={handleNotificationClick} 
+                  onNotificationDismiss={handleDismissNotification}
+                  userRole={userRole || 'ADMIN'} 
+                  students={students} 
+                  schoolName={schoolName} 
+               />;
     }
   };
 
