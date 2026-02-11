@@ -387,14 +387,16 @@ function App() {
   };
 
   // IMPORTANT: Instant Data Refresh for Optimistic UI
-  // When verification views update data, they pass the updated student object here
-  // We update the local state immediately so notifications disappear, then sync with server
+  // FIXED: If updatedStudent is passed, do NOT fetch from server immediately to avoid overwriting 
+  // with stale data from slow Google Sheets. Trust the local update.
   const refreshData = (updatedStudent?: Student) => {
     if (updatedStudent) {
         setStudents(prev => prev.map(s => s.id === updatedStudent.id ? updatedStudent : s));
+        // We SKIP fetchStudents() here intentionally to let the optimistic update stick.
+        // Data is already sent to server in the background components.
+    } else {
+        fetchStudents();
     }
-    // Continue with background fetch to ensure consistency
-    fetchStudents();
   };
 
   // --- STUDENT UPLOAD HANDLER ---
@@ -505,7 +507,7 @@ function App() {
       
       // SHARED VIEWS (Different props based on role)
       case 'grades':
-        return <GradesView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext || undefined} onUpdate={() => refreshData()} />;
+        return <GradesView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext || undefined} onUpdate={() => refreshData(selectedStudent || undefined)} />;
       case 'recap':
         return <RecapView students={students} userRole={userRole || 'ADMIN'} loggedInStudent={studentContext || undefined} />;
       case 'skl':

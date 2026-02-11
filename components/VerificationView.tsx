@@ -154,12 +154,15 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   const currentDoc = studentDocs.find(d => d.id === selectedDocId);
 
   // STRICTLY FILTER PENDING REQUESTS
+  // EXCLUDES 'grade-' AND 'ijazah-' to show only BIO requests
   const pendingRequests = useMemo(() => {
       if (!currentStudent?.correctionRequests) return [];
       return currentStudent.correctionRequests.filter(r => 
           r.status === 'PENDING' && 
           !r.fieldKey.startsWith('grade-') && 
+          !r.fieldKey.startsWith('class-') && // Added class- check
           !r.fieldKey.startsWith('ijazah-') &&
+          !['diplomaNumber'].includes(r.fieldKey) && // Exclude Ijazah fields if managed elsewhere
           !processedIds.has(r.id)
       );
   }, [currentStudent, processedIds]);
@@ -515,6 +518,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                         <div className="flex gap-2">
                             {pendingRequests.length > 0 && (
                                 <button 
+                                    key="approve-all-btn" // Added key for React stability
                                     onClick={handleApproveAll} 
                                     disabled={isBulkApproving} 
                                     className="text-[10px] bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-full font-bold flex items-center gap-1 shadow-sm transition-all"
@@ -530,6 +534,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                     </div>
                     
                     <div className="flex-1 overflow-y-auto custom-scrollbar bg-white">
+                        {/* ... FIELDS RENDERING (Unchanged from previous logic) ... */}
                         <AccordionItem title="1. Identitas Utama" icon={User} isOpen={openSection === 'IDENTITY'} onToggle={() => setOpenSection(openSection === 'IDENTITY' ? '' : 'IDENTITY')}>
                             <div className="grid grid-cols-1 gap-4">
                                 {renderField({ label: "Nama Lengkap", value: formData.fullName, fieldKey: "fullName", section: "IDENTITY" })}
