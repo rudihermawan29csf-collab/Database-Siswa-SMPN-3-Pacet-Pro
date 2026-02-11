@@ -137,6 +137,26 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
       );
   }, [currentStudent, processedIds]);
 
+  // Helper to find next student with issues
+  const findNextStudentWithIssues = () => {
+      // Look in current filtered list first
+      const currentIndex = filteredStudents.findIndex(s => s.id === selectedStudentId);
+      for (let i = currentIndex + 1; i < filteredStudents.length; i++) {
+          const s = filteredStudents[i];
+          const hasPending = s.correctionRequests?.some(r => r.status === 'PENDING' && (r.fieldKey.startsWith('ijazah-') || ['fullName','nis','nisn','birthPlace','birthDate','diplomaNumber','father.name'].includes(r.fieldKey))) ||
+                             s.documents.some(d => d.status === 'PENDING' && allowedCategories.includes(d.category));
+          if (hasPending) return s.id;
+      }
+      // Loop back to start
+      for (let i = 0; i < currentIndex; i++) {
+          const s = filteredStudents[i];
+          const hasPending = s.correctionRequests?.some(r => r.status === 'PENDING' && (r.fieldKey.startsWith('ijazah-') || ['fullName','nis','nisn','birthPlace','birthDate','diplomaNumber','father.name'].includes(r.fieldKey))) ||
+                             s.documents.some(d => d.status === 'PENDING' && allowedCategories.includes(d.category));
+          if (hasPending) return s.id;
+      }
+      return null;
+  };
+
   const handleApproveAll = async () => {
       if (!currentStudent || pendingRequests.length === 0) return;
       if (!confirm(`Setujui semua ${pendingRequests.length} revisi data Ijazah?`)) return;
@@ -178,7 +198,14 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
           onUpdate(updatedStudent);
           
           await api.updateStudent(updatedStudent);
-          alert("Semua usulan berhasil disetujui.");
+          
+          // Auto advance if no more pending docs
+          const remainingDocs = updatedStudent.documents.filter((d: any) => d.status === 'PENDING' && allowedCategories.includes(d.category));
+          if(remainingDocs.length === 0) {
+              const nextId = findNextStudentWithIssues();
+              if(nextId) setTimeout(() => setSelectedStudentId(nextId), 500);
+          }
+
       } catch (e) {
           console.error(e);
           // Rollback
@@ -257,8 +284,20 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
           await api.updateStudent(updatedStudent);
           
           setAdminNote('');
+          
+          // Auto advance logic
           const nextPending = updatedStudent.documents.find(d => d.status === 'PENDING' && allowedCategories.includes(d.category) && !processedIds.has(d.id));
-          if(nextPending) setSelectedDocId(nextPending.id);
+          if(nextPending) {
+              setSelectedDocId(nextPending.id);
+          } else {
+              // No pending docs, check if pending requests exist
+              const hasReq = updatedStudent.correctionRequests?.some((r: any) => r.status === 'PENDING' && (r.fieldKey.startsWith('ijazah-') || ['fullName','nis','nisn','birthPlace','birthDate','diplomaNumber','father.name'].includes(r.fieldKey)));
+              if(!hasReq) {
+                  const nextId = findNextStudentWithIssues();
+                  if(nextId) setTimeout(() => setSelectedStudentId(nextId), 500);
+              }
+          }
+
       } catch (e) {
           setProcessedIds(prev => { const next = new Set(prev); next.delete(currentDoc.id); return next; });
           alert("Gagal memproses.");
@@ -320,7 +359,18 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
                     <select className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer min-w-[100px]" value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}>{uniqueClasses.map(c => <option key={c} value={c}>Kelas {c}</option>)}</select>
                 </div>
                 <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200 w-full md:w-64"><Search className="w-4 h-4 text-gray-500" />
-                    <select className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-full" value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>{filteredStudents.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}</select>
+                    <select className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-full" value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>
+                        {filteredStudents.map(s => {
+                            // Check for issues specific to Ijazah view
+                            const hasIssues = s.correctionRequests?.some(r => r.status === 'PENDING' && (r.fieldKey.startsWith('ijazah-') || ['fullName','nis','nisn','birthPlace','birthDate','diplomaNumber','father.name'].includes(r.fieldKey))) ||
+                                              s.documents.some(d => d.status === 'PENDING' && allowedCategories.includes(d.category));
+                            return (
+                                <option key={s.id} value={s.id} className={hasIssues ? "font-bold text-red-600 bg-red-50" : ""}>
+                                    {hasIssues ? '🔴 ' : ''}{s.fullName}
+                                </option>
+                            );
+                        })}
+                    </select>
                 </div>
             </div>
         </div>

@@ -248,6 +248,26 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       return updatedStudent;
   };
 
+  // Helper to find next student with issues
+  const findNextStudentWithIssues = () => {
+      // Look in current filtered list first
+      const currentIndex = filteredStudents.findIndex(s => s.id === selectedStudentId);
+      for (let i = currentIndex + 1; i < filteredStudents.length; i++) {
+          const s = filteredStudents[i];
+          const hasPending = s.correctionRequests?.some(r => r.status === 'PENDING' && (r.fieldKey.startsWith('grade-') || r.fieldKey.startsWith('class-'))) ||
+                             s.documents.some(d => d.status === 'PENDING' && d.category === 'RAPOR');
+          if (hasPending) return s.id;
+      }
+      // Loop back to start
+      for (let i = 0; i < currentIndex; i++) {
+          const s = filteredStudents[i];
+          const hasPending = s.correctionRequests?.some(r => r.status === 'PENDING' && (r.fieldKey.startsWith('grade-') || r.fieldKey.startsWith('class-'))) ||
+                             s.documents.some(d => d.status === 'PENDING' && d.category === 'RAPOR');
+          if (hasPending) return s.id;
+      }
+      return null;
+  };
+
   // Find all pending grade/class requests for the CURRENT semester
   const pendingRequests = useMemo(() => {
       if (!currentStudent?.correctionRequests) return [];
@@ -325,7 +345,18 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           
           // Sync to server
           await api.updateStudent(updatedStudent);
-          alert("Semua revisi berhasil disetujui.");
+          
+          // Check if user has any OTHER pending items
+          // If not, auto-advance
+          const otherPending = updatedStudent.correctionRequests?.some((r: any) => r.status === 'PENDING' && (r.fieldKey.startsWith('grade-') || r.fieldKey.startsWith('class-')));
+          const pendingDocs = updatedStudent.documents?.some((d: any) => d.status === 'PENDING' && d.category === 'RAPOR');
+          
+          if (!otherPending && !pendingDocs) {
+              const nextId = findNextStudentWithIssues();
+              if(nextId) setTimeout(() => setSelectedStudentId(nextId), 500);
+          }
+
+          // alert("Semua revisi berhasil disetujui.");
       } catch (e) {
           console.error(e);
           // Rollback
@@ -450,6 +481,20 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           }
           onUpdate(updatedStudent);
           await api.updateStudent(updatedStudent);
+          
+          // Auto advance logic
+          const otherDocs = updatedStudent.documents.filter((d: any) => d.category === 'RAPOR' && d.status === 'PENDING' && !processedIds.has(d.id));
+          if (otherDocs.length > 0) {
+              // Stay on current student if more pages
+          } else {
+              // Check requests
+              const hasReq = updatedStudent.correctionRequests?.some((r: any) => r.status === 'PENDING' && (r.fieldKey.startsWith('grade-') || r.fieldKey.startsWith('class-')));
+              if(!hasReq) {
+                  const nextId = findNextStudentWithIssues();
+                  if(nextId) setTimeout(() => setSelectedStudentId(nextId), 500);
+              }
+          }
+
       } catch (e) {
           if (currentDoc) {
             setProcessedIds(prev => {
@@ -496,7 +541,15 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                     <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200 md:w-64 flex-1">
                         <Search className="w-4 h-4 text-gray-500" />
                         <select className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-full" value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>
-                            {filteredStudents.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}
+                            {filteredStudents.map(s => {
+                                const hasIssues = s.correctionRequests?.some(r => r.status === 'PENDING' && (r.fieldKey.startsWith('grade-') || r.fieldKey.startsWith('class-'))) ||
+                                                  s.documents.some(d => d.status === 'PENDING' && d.category === 'RAPOR');
+                                return (
+                                    <option key={s.id} value={s.id} className={hasIssues ? "font-bold text-red-600 bg-red-50" : ""}>
+                                        {hasIssues ? '🔴 ' : ''}{s.fullName}
+                                    </option>
+                                );
+                            })}
                         </select>
                     </div>
                 </div>
