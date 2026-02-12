@@ -424,11 +424,25 @@ function App() {
                   status: 'PENDING'
               };
               
+              // FIX: Immutable State Update Logic
               const updatedStudent = { ...selectedStudent };
-              if (category !== 'RAPOR') {
-                  updatedStudent.documents = updatedStudent.documents.filter(d => d.category !== category);
+              let currentDocs = [...selectedStudent.documents];
+
+              if (category === 'RAPOR') {
+                  // Rapor upload is typically handled by UploadRaporView separately
+                  // But if this handler is ever used for Rapor, we just append since Rapor has multiple pages
+                  // Logic in UploadRaporView manages deduplication of pages
+                  currentDocs.push(newDoc);
+              } else if (category === 'LAINNYA') {
+                  // Append for generic docs
+                  currentDocs.push(newDoc);
+              } else {
+                  // Unique Category (KK, Akta, dll) -> Replace existing
+                  currentDocs = currentDocs.filter(d => d.category !== category);
+                  currentDocs.push(newDoc);
               }
-              updatedStudent.documents.push(newDoc);
+              
+              updatedStudent.documents = currentDocs;
               
               await api.updateStudent(updatedStudent);
               refreshData(updatedStudent); // Update immediately
@@ -565,7 +579,7 @@ function App() {
 
       case 'upload-rapor':
         return studentContext ? (
-            <UploadRaporView student={studentContext} onUpdate={() => refreshData(selectedStudent || undefined)} />
+            <UploadRaporView student={studentContext} onUpdate={(updated) => refreshData(updated)} />
         ) : null;
 
       default:

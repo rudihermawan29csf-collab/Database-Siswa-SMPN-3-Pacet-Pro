@@ -6,7 +6,7 @@ import { api } from '../services/api';
 
 interface UploadRaporViewProps {
   student: Student;
-  onUpdate: () => void;
+  onUpdate: (updatedStudent: Student) => void;
 }
 
 const SEMESTERS = [1, 2, 3, 4, 5, 6];
@@ -183,7 +183,8 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
 
                   setLoadingText('Menyimpan...');
                   await api.updateStudent(updatedStudent);
-                  if (onUpdate) onUpdate();
+                  // FIX: Pass the updated student object back to parent
+                  if (onUpdate) onUpdate(updatedStudent);
               } else {
                   alert("Gagal upload ke Google Drive (URL kosong).");
               }
@@ -209,7 +210,8 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
               const updatedStudent = { ...student, documents: updatedDocs };
               
               await api.updateStudent(updatedStudent);
-              if (onUpdate) onUpdate();
+              // FIX: Pass the updated student object back to parent
+              if (onUpdate) onUpdate(updatedStudent);
           } catch (error) {
               console.error(error);
               alert("Gagal menghapus file.");
