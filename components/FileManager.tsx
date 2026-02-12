@@ -48,11 +48,79 @@ const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
     return url;
 };
 
+// --- IMAGE COMPRESSION UTILITY ---
+const compressImage = (file: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+        // Only compress images
+        if (!file.type.match(/image.*/)) {
+            return resolve(file);
+        }
+
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target?.result as string;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Max Dimensions (Safe for Docs)
+                const MAX_WIDTH = 1280;
+                const MAX_HEIGHT = 1280;
+                let width = img.width;
+                let height = img.height;
+
+                if (width > height) {
+                    if (width > MAX_WIDTH) {
+                        height *= MAX_WIDTH / width;
+                        width = MAX_WIDTH;
+                    }
+                } else {
+                    if (height > MAX_HEIGHT) {
+                        width *= MAX_HEIGHT / height;
+                        height = MAX_HEIGHT;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                
+                if (ctx) {
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    // Compress to JPEG with 0.7 quality
+                    canvas.toBlob((blob) => {
+                        if (blob) {
+                            if (blob.size > file.size) {
+                                resolve(file); // Don't use if larger
+                            } else {
+                                const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
+                                    type: 'image/jpeg',
+                                    lastModified: Date.now(),
+                                });
+                                resolve(compressedFile);
+                            }
+                        } else {
+                            resolve(file); // Fallback
+                        }
+                    }, 'image/jpeg', 0.7);
+                } else {
+                    resolve(file);
+                }
+            };
+            img.onerror = () => resolve(file);
+        };
+        reader.onerror = () => resolve(file);
+    });
+};
+
 const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete, allowDeleteApproved = false, allowedCategories }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [targetCategory, setTargetCategory] = useState<string>('');
     const [previewDoc, setPreviewDoc] = useState<DocumentFile | null>(null);
     const [useFallbackViewer, setUseFallbackViewer] = useState(false);
+    const [isCompressing, setIsCompressing] = useState(false);
 
     // Reset fallback state when doc changes
     useEffect(() => {
@@ -68,10 +136,19 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
         if (fileInputRef.current) fileInputRef.current.click();
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file && targetCategory) {
-            onUpload(file, targetCategory);
+            setIsCompressing(true);
+            try {
+                const processedFile = await compressImage(file);
+                onUpload(processedFile, targetCategory);
+            } catch (err) {
+                console.error("Compression error", err);
+                onUpload(file, targetCategory); // Fallback to original
+            } finally {
+                setIsCompressing(false);
+            }
         }
         if (fileInputRef.current) fileInputRef.current.value = '';
         setTargetCategory('');
@@ -91,6 +168,14 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
 
     return (
         <div className="space-y-6 animate-fade-in relative">
+            {/* COMPRESSING OVERLAY */}
+            {isCompressing && (
+                <div className="absolute inset-0 z-50 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-xl">
+                    <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-2" />
+                    <p className="text-gray-600 font-bold animate-pulse text-sm">Mengoptimalkan gambar...</p>
+                </div>
+            )}
+
             {/* PREVIEW MODAL */}
             {previewDoc && (
                 <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">

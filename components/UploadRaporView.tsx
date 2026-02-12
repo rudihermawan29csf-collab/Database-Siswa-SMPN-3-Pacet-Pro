@@ -35,11 +35,80 @@ const getDriveUrl = (url: string, type: 'preview' | 'direct') => {
     return url;
 };
 
+// --- IMAGE COMPRESSION UTILITY ---
+const compressImage = (file: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+        // Only compress images
+        if (!file.type.match(/image.*/)) {
+            return resolve(file);
+        }
+
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target?.result as string;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Max Dimensions
+                const MAX_WIDTH = 1280;
+                const MAX_HEIGHT = 1280;
+                let width = img.width;
+                let height = img.height;
+
+                if (width > height) {
+                    if (width > MAX_WIDTH) {
+                        height *= MAX_WIDTH / width;
+                        width = MAX_WIDTH;
+                    }
+                } else {
+                    if (height > MAX_HEIGHT) {
+                        width *= MAX_HEIGHT / height;
+                        height = MAX_HEIGHT;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                
+                if (ctx) {
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    // Compress to JPEG with 0.7 quality
+                    canvas.toBlob((blob) => {
+                        if (blob) {
+                            // If compression actually made it larger (rare but possible for small optimized PNGs), use original
+                            if (blob.size > file.size) {
+                                resolve(file);
+                            } else {
+                                const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
+                                    type: 'image/jpeg',
+                                    lastModified: Date.now(),
+                                });
+                                resolve(compressedFile);
+                            }
+                        } else {
+                            resolve(file); // Fallback
+                        }
+                    }, 'image/jpeg', 0.7);
+                } else {
+                    resolve(file);
+                }
+            };
+            img.onerror = () => resolve(file);
+        };
+        reader.onerror = () => resolve(file);
+    });
+};
+
 const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) => {
   const [activeSemester, setActiveSemester] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [stagingPage, setStagingPage] = useState<number | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [loadingText, setLoadingText] = useState('Memproses...');
   
   // State untuk Modal Preview
   const [previewDoc, setPreviewDoc] = useState<DocumentFile | null>(null);
@@ -78,20 +147,26 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
       const file = e.target.files?.[0];
       if (file && stagingPage !== null) {
           setIsUploading(true);
+          setLoadingText('Mengkompresi...');
           
           try {
-              // Upload to Google Drive via API
-              const driveUrl = await api.uploadFile(file, student.id, 'RAPOR');
+              // 1. Compress Image
+              const fileToUpload = await compressImage(file);
+              
+              setLoadingText('Mengupload...');
+              
+              // 2. Upload to Google Drive via API
+              const driveUrl = await api.uploadFile(fileToUpload, student.id, 'RAPOR');
               
               if (driveUrl) {
                   const newDoc: DocumentFile = {
                       id: Math.random().toString(36).substr(2, 9),
-                      name: file.name,
-                      type: file.type.includes('pdf') ? 'PDF' : 'IMAGE',
+                      name: fileToUpload.name,
+                      type: fileToUpload.type.includes('pdf') ? 'PDF' : 'IMAGE',
                       url: driveUrl, 
                       category: 'RAPOR',
                       uploadDate: new Date().toISOString().split('T')[0],
-                      size: `${(file.size / 1024).toFixed(0)} KB`,
+                      size: `${(fileToUpload.size / 1024).toFixed(0)} KB`,
                       status: 'PENDING',
                       subType: { semester: activeSemester, page: stagingPage }
                   };
@@ -106,6 +181,7 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
                       documents: [...otherDocs, newDoc]
                   };
 
+                  setLoadingText('Menyimpan...');
                   await api.updateStudent(updatedStudent);
                   if (onUpdate) onUpdate();
               } else {
@@ -116,6 +192,7 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
               alert("Terjadi kesalahan saat mengupload file.");
           } finally {
               setIsUploading(false);
+              setLoadingText('Memproses...');
           }
       }
       
@@ -125,7 +202,8 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
 
   const handleDelete = async (docId: string) => {
       if (window.confirm("Hapus file ini?")) {
-          setIsUploading(true); // Reuse loading overlay to show progress
+          setIsUploading(true); 
+          setLoadingText('Menghapus...');
           try {
               const updatedDocs = student.documents.filter(d => d.id !== docId);
               const updatedStudent = { ...student, documents: updatedDocs };
@@ -137,6 +215,7 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
               alert("Gagal menghapus file.");
           } finally {
               setIsUploading(false);
+              setLoadingText('Memproses...');
           }
       }
   };
@@ -172,10 +251,10 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
     <div className="flex flex-col h-full space-y-4 animate-fade-in relative">
         {/* Loading Overlay */}
         {isUploading && (
-            <div className="absolute inset-0 z-50 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-xl">
-                <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-2" />
-                <p className="text-gray-600 font-bold animate-pulse">Memproses...</p>
-                <p className="text-xs text-gray-400">Mohon jangan tutup halaman ini.</p>
+            <div className="absolute inset-0 z-50 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center rounded-xl">
+                <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-3" />
+                <p className="text-gray-700 font-bold animate-pulse text-lg">{loadingText}</p>
+                <p className="text-xs text-gray-400 mt-1">Mohon jangan tutup halaman ini.</p>
             </div>
         )}
 

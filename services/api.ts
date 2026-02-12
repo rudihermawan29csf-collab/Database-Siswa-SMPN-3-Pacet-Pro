@@ -1,3 +1,4 @@
+
 import { Student, DocumentFile } from '../types';
 
 // URL Deployment Google Apps Script
@@ -181,7 +182,7 @@ const normalizeStudentData = (rawData: any[]): Student[] => {
 };
 
 const fetchWithTimeout = async (resource: string, options: RequestInit = {}) => {
-  const { timeout = 60000 } = options as any; 
+  const { timeout = 120000 } = options as any; // Increased to 120s for upload
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
   
@@ -280,6 +281,13 @@ export const api = {
     if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('PASTE_URL')) {
         return new Promise(resolve => setTimeout(() => resolve(URL.createObjectURL(file)), 1000));
     }
+    
+    // VALIDATION: Prevent uploading massive files that will definitely crash GAS
+    if (file.size > 8 * 1024 * 1024) { // 8MB limit check (GAS limit ~10-50MB but payload heavy)
+        alert("Ukuran file terlalu besar! Maksimal 8MB. Mohon kompres file Anda.");
+        return null;
+    }
+
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
@@ -293,7 +301,7 @@ export const api = {
                 action: 'uploadFile', fileBase64: base64, fileName: file.name, mimeType: file.type,
                 studentId: studentId, category: category
             }),
-            timeout: 90000 
+            timeout: 120000 
           } as any);
           const result = await response.json();
           if (result.status === 'success') resolve(result.url); else reject(result.message);
