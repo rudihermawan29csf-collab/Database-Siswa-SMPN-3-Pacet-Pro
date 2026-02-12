@@ -114,6 +114,12 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
   const [previewDoc, setPreviewDoc] = useState<DocumentFile | null>(null);
   const [useFallbackViewer, setUseFallbackViewer] = useState(false);
 
+  // CRITICAL FIX: Keep a ref to the latest student prop to ensure async operations always use the latest state
+  const studentRef = useRef(student);
+  useEffect(() => {
+      studentRef.current = student;
+  }, [student]);
+
   // Reset fallback state when doc changes
   useEffect(() => {
       setUseFallbackViewer(false);
@@ -156,7 +162,8 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
               setLoadingText('Mengupload...');
               
               // 2. Upload to Google Drive via API
-              const driveUrl = await api.uploadFile(fileToUpload, student.id, 'RAPOR');
+              // Use studentRef to ensure we have the ID (though ID rarely changes)
+              const driveUrl = await api.uploadFile(fileToUpload, studentRef.current.id, 'RAPOR');
               
               if (driveUrl) {
                   const newDoc: DocumentFile = {
@@ -171,13 +178,17 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
                       subType: { semester: activeSemester, page: stagingPage }
                   };
 
-                  // Filter old doc out
-                  const otherDocs = student.documents.filter(d => 
+                  // CRITICAL FIX: Use studentRef.current to get the absolutely latest document list
+                  // This prevents race conditions if multiple uploads happen or background sync occurs
+                  const currentStudentState = studentRef.current;
+
+                  // Filter old doc out from the LATEST state
+                  const otherDocs = currentStudentState.documents.filter(d => 
                       !(d.category === 'RAPOR' && d.subType?.semester === activeSemester && d.subType?.page === stagingPage)
                   );
                   
                   const updatedStudent = {
-                      ...student,
+                      ...currentStudentState,
                       documents: [...otherDocs, newDoc]
                   };
 
@@ -206,8 +217,10 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
           setIsUploading(true); 
           setLoadingText('Menghapus...');
           try {
-              const updatedDocs = student.documents.filter(d => d.id !== docId);
-              const updatedStudent = { ...student, documents: updatedDocs };
+              // Use studentRef for latest state
+              const currentStudentState = studentRef.current;
+              const updatedDocs = currentStudentState.documents.filter(d => d.id !== docId);
+              const updatedStudent = { ...currentStudentState, documents: updatedDocs };
               
               await api.updateStudent(updatedStudent);
               // FIX: Pass the updated student object back to parent

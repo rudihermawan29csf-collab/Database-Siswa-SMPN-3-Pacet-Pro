@@ -410,8 +410,13 @@ function App() {
   // --- STUDENT UPLOAD HANDLER ---
   const handleStudentUpload = async (file: File, category: string) => {
       if (!selectedStudent) return;
+      
+      // CRITICAL FIX: Always fetch the latest student state from the main 'students' array
+      // This prevents overwriting data if selectedStudent is stale.
+      const latestStudent = students.find(s => s.id === selectedStudent.id) || selectedStudent;
+
       try {
-          const driveUrl = await api.uploadFile(file, selectedStudent.id, category);
+          const driveUrl = await api.uploadFile(file, latestStudent.id, category);
           if (driveUrl) {
               const newDoc: DocumentFile = {
                   id: Math.random().toString(36).substr(2, 9),
@@ -424,14 +429,13 @@ function App() {
                   status: 'PENDING'
               };
               
-              // FIX: Immutable State Update Logic
-              const updatedStudent = { ...selectedStudent };
-              let currentDocs = [...selectedStudent.documents];
+              // FIX: Immutable State Update Logic based on LATEST data
+              const updatedStudent = { ...latestStudent };
+              let currentDocs = [...latestStudent.documents];
 
               if (category === 'RAPOR') {
                   // Rapor upload is typically handled by UploadRaporView separately
                   // But if this handler is ever used for Rapor, we just append since Rapor has multiple pages
-                  // Logic in UploadRaporView manages deduplication of pages
                   currentDocs.push(newDoc);
               } else if (category === 'LAINNYA') {
                   // Append for generic docs
@@ -458,9 +462,13 @@ function App() {
 
   const handleStudentDelete = async (docId: string) => {
       if (!selectedStudent) return;
+      
+      // CRITICAL FIX: Use latest data
+      const latestStudent = students.find(s => s.id === selectedStudent.id) || selectedStudent;
+
       if (window.confirm("Apakah Anda yakin ingin menghapus dokumen ini?")) {
-          const updatedDocs = selectedStudent.documents.filter(d => d.id !== docId);
-          const updatedStudent = { ...selectedStudent, documents: updatedDocs };
+          const updatedDocs = latestStudent.documents.filter(d => d.id !== docId);
+          const updatedStudent = { ...latestStudent, documents: updatedDocs };
           
           try {
               await api.updateStudent(updatedStudent);
