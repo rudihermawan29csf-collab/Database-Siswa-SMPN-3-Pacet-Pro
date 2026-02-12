@@ -1,3 +1,4 @@
+
 import { Student, AcademicRecord } from '../types';
 
 // Helper to generate random scores for the new data
@@ -119,7 +120,7 @@ Sahazika Gistiano Maisegalung	1200	P	0103615932	Mojokerto	2010-12-14	35160354121
 SALSABILLA PUTRI RAMADHANI	1202	P	0101966980	MOJOKERTO	2010-08-13	3516035308100002	Islam	SUMBERSONO	2	9	SUMBERSONO	Sumberkembar	Kec. Pacet	61374	Bersama orang tua	Jalan kaki		085746040379			Tidak		SYAHRONI	1986	SMA / sederajat	Karyawan Swasta	Rp. 500,000 - Rp. 999,999	3516032811860001	RIRIN ANDRIANA	1987	SMP / sederajat	Tidak bekerja	Tidak Berpenghasilan	3516084109870001			Tidak sekolah			3516084109870001	Kelas IX A			Tidak		0		AL 7060029021				Tidak		Tidak ada	SDN SUMBERKEMBAR	1	-7,616165	112,5421905		40	150	53	0	1
 Samsul Nurul Huda	1330	L	0107745569	Mojokerto	2010-05-31	3516033105100002	Islam	Tirto Wening	2	2	Karangsari	Bendunganjati	Kec. Pacet	61374	Bersama orang tua	Jalan kaki		082334489101			Tidak		Mustaqim	1985	SMP / sederajat	Karyawan Swasta	Rp. 2,000,000 - Rp. 4,999,999	3516030308850002	Khoiliyah Dwi Nur Rosidah	1991	SMP / sederajat	Tidak bekerja	Tidak Berpenghasilan	3516034606910003			Tidak sekolah				Kelas IX A			Tidak		0		8582/DS.T/2010/KAB.MR				Ya	Siswa Miskin/Rentan Miskin	Tidak ada	SMP TERPADU HUSNUL HIDAYAH	1	-7,62677	112,546627		65	167	50	3	3
 SASKIA AISYAH AZZAHRA	1203	P	0109241032	MOJOKERTO	2010-09-27	3516036709100002	Islam	DUSUN BELOR	4	2	BELOR	Kembangbelor	Kec. Pacet	61374	Bersama orang tua	Ojek		081336813620			Tidak		AKHMAD RIFA'I	1986	SMP / sederajat	Wiraswasta	Rp. 500,000 - Rp. 999,999	3516031709860001	INDAH ERFINA	1992	SMP / sederajat	Tidak bekerja	Tidak Berpenghasilan	3516036506920003			Tidak sekolah				Kelas IX A			Tidak		0		7288/UM/2010/KAB.MR				Ya	Siswa Miskin/Rentan Miskin	Tidak ada	SDN KEMBANGBELOR	1	-7,6458	112,5539	3516030510120001	40	150	53	0	1
-SHERLIN HERLA AZZAHRA	1204	P	0106468352	MOJOKERTO	2010-12-02	3516034212100001	Islam	Glingsem	2		Glingsem	Desa/Kel. Tanjungkenongo	Kec. Pacet	61374	Bersama orang tua	Ojek					Tidak		Heru Agus Waluyo	1988	SMP / sederajat	Karyawan Swasta	Rp. 500,000 - Rp. 999,999	3516030703880001	LASMIASIH	1989	SD / sederajat	Tidak bekerja	Tidak Berpenghasilan	3516030703880002							Kelas IX A			Tidak		1		AL70600				Ya	Siswa Miskin/Rentan Miskin	Tidak ada		1	-7,6441	112,5536	3516030401110007	40	150	50	0	4
+SHERLIN HERLA AZZAHRA	1204	P	0106488352	MOJOKERTO	2010-12-02	3516034212100001	Islam	Glingsem	2		Glingsem	Desa/Kel. Tanjungkenongo	Kec. Pacet	61374	Bersama orang tua	Ojek					Tidak		Heru Agus Waluyo	1988	SMP / sederajat	Karyawan Swasta	Rp. 500,000 - Rp. 999,999	3516030703880001	LASMIASIH	1989	SD / sederajat	Tidak bekerja	Tidak Berpenghasilan	3516030703880002							Kelas IX A			Tidak		1		AL70600				Ya	Siswa Miskin/Rentan Miskin	Tidak ada		1	-7,6441	112,5536	3516030401110007	40	150	50	0	4
 Siwetul Jennah	1205	P	3098115460	Bangkalan	2009-07-26	3526176607090003	Islam	Samelloh	0	0	Samelloh	Pakes	Kec. Konang	69175	Bersama orang tua	Jalan kaki		087858332962			Tidak		Maulidi	1982	Putus SD	Wiraswasta	Kurang dari Rp. 500,000	3527020107821300	Nonah	1990	SD / sederajat	Wiraswasta	Kurang dari Rp. 500,000	3526175408900002			Tidak sekolah				Kelas IX B			Tidak		0						Ya	Siswa Miskin/Rentan Miskin	Tidak ada	SDN TANJUNGKENONGO 2	2	-7,609354	112,538664	3526172308170001	45	150	53	0	1
 Slamet Rizki Gali Rimba Angkasa	1206	L	0116423386	Mojokerto	2011-03-24	3516032403110001	Islam	Mojokembang	9	2	mojokembang	Mojokembang	Kec. Pacet	61374	Bersama orang tua	Jalan kaki		082131712852			Tidak		SOKIB	0	Tidak sekolah	Karyawan Swasta	Rp. 1,000,000 - Rp. 1,999,999		Sujiati	1978	SD / sederajat	Tidak bekerja	Tidak Berpenghasilan	3516035407790004			Tidak sekolah				Kelas IX A			Tidak		0		AL.706.0051037				Ya	Siswa Miskin/Rentan Miskin	Tidak ada	SDN MOJOKEMBANG	1	-7,634129	112,560041		40	150	53	0	1
 TONI ADI SETIAWAN	1207	L	0105761346	MOJOKERTO	2010-10-27	3516032710100001	Islam	DUSUN KEMBANG	4	5	KEMBANG	Kembangbelor	Kec. Pacet	61374	Bersama orang tua	Ojek		082131712855			Tidak		SUSANTO	1989	SMP / sederajat	Wiraswasta	Rp. 500,000 - Rp. 999,999	3516030501890001	PIATI	1991	SMP / sederajat	Tidak bekerja	Tidak Berpenghasilan	3516034906910001			Tidak sekolah				Kelas IX B			Tidak		0		7978/UM/2010/KAB,MR				Ya	Siswa Miskin/Rentan Miskin	Tidak ada	SDN KEMBANGBELOR	1	-7,6458	112,5539	3516031810100006	45	150	10	0	1
@@ -135,7 +136,8 @@ ZIDAN RAHMAT ADITYA	1214	L	3113082691	MOJOKERTO	2011-02-24	3516032402110001	Isla
 export const MOCK_STUDENTS: Student[] = (() => {
   const lines = RAW_DATA.trim().split('\n');
   const dataLines = lines.slice(1);
-  
+  const seenNisns = new Set<string>(); // Used to track duplicate students
+
   return dataLines.map((line) => {
     const cols = line.split('\t');
     
@@ -147,14 +149,24 @@ export const MOCK_STUDENTS: Student[] = (() => {
     // Fix: Remove "Kelas" entirely (case insensitive) then let UI re-add it if needed.
     const normalizedClass = rawClass.replace(/kelas/gi, '').trim();
 
+    // DEDUPLICATION: Check by NISN (Col 3) or Full Name (Col 0) if NISN missing
+    const nisn = cols[3]?.trim();
+    const fullName = cols[0]?.trim();
+    const uniqueKey = nisn ? nisn : (fullName ? fullName.toLowerCase() : '');
+
+    if (!uniqueKey || seenNisns.has(uniqueKey)) {
+        return null; // Skip duplicate
+    }
+    seenNisns.add(uniqueKey);
+
     // Mapping based on the exact columns 0-64 provided in the prompt
     return {
         id: Math.random().toString(36).substr(2, 9),
         // 1. Identitas
-        fullName: cols[0]?.trim() || '',
+        fullName: fullName || '',
         nis: cols[1]?.trim() || '',
         gender: (cols[2]?.trim() === 'L' || cols[2]?.trim() === 'Laki-laki') ? 'L' : 'P',
-        nisn: cols[3]?.trim() || '',
+        nisn: nisn || '',
         birthPlace: cols[4]?.trim() || '',
         birthDate: cols[5]?.trim() || '',
         dapodik: {

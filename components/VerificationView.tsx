@@ -81,6 +81,8 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
   const isTargetingRef = useRef(false);
   // Ref to track initialized state
   const isInitializedRef = useRef(false);
+  // Ref to track handled target to prevent re-selection on updates
+  const handledTargetRef = useRef<string | undefined>(undefined);
 
   const [zoomLevel, setZoomLevel] = useState(1);
   const [rotation, setRotation] = useState(0);
@@ -101,18 +103,21 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   // --- SMART INITIALIZATION ---
   useEffect(() => {
-      if (targetStudentId && students.length > 0) {
+      // FIX: Only target if we haven't handled this specific target ID yet
+      if (targetStudentId && students.length > 0 && targetStudentId !== handledTargetRef.current) {
           const student = students.find(s => s.id === targetStudentId);
           if (student) { 
               isTargetingRef.current = true;
               setSelectedClass(student.className); 
               setSelectedStudentId(student.id); 
+              handledTargetRef.current = targetStudentId; // Mark as handled
+              isInitializedRef.current = true;
               setTimeout(() => { isTargetingRef.current = false; }, 800);
               return;
           }
       }
 
-      if (!isInitializedRef.current && students.length > 0 && !selectedStudentId) {
+      if (!isInitializedRef.current && students.length > 0 && !selectedStudentId && !targetStudentId) {
           let found = false;
           const sortedAll = [...students].sort((a, b) => a.fullName.localeCompare(b.fullName));
           

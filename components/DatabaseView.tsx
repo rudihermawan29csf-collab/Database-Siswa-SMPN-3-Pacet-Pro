@@ -281,7 +281,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                   return '';
               };
 
-              const newStudents: Student[] = data.map((row: any) => {
+              const newStudentsRaw: Student[] = data.map((row: any) => {
                   return {
                       id: Math.random().toString(36).substr(2, 9),
                       fullName: getValue(row, 'Nama Lengkap', 'Nama Siswa', 'Nama', 'Nama Peserta Didik'),
@@ -386,27 +386,43 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ students, onUpdateStudents 
                   } as Student;
               });
 
-              if (newStudents.length > 0) {
-                  // APPEND DATA LOGIC (Check for duplicates by NISN/Name first)
+              // DEDUPLICATION LOGIC
+              if (newStudentsRaw.length > 0) {
+                  // 1. Get existing IDs/NISNs
                   const existingNisns = new Set(students.map(s => s.nisn));
-                  const nonDuplicateStudents = newStudents.filter(s => {
-                      if (s.nisn && existingNisns.has(s.nisn)) return false; 
+                  
+                  // 2. Filter new students
+                  const nonDuplicateStudents = newStudentsRaw.filter(s => {
+                      if (!s.nisn) return false; // Must have NISN
+                      
+                      // Check against existing database
+                      if (existingNisns.has(s.nisn)) return false;
+                      
                       return true;
                   });
 
-                  if (nonDuplicateStudents.length > 0) {
-                      const mergedStudents = [...students, ...nonDuplicateStudents];
+                  // 3. Remove internal duplicates within the uploaded file itself
+                  const uniqueNewStudents = [];
+                  const seenInBatch = new Set();
+                  
+                  for (const s of nonDuplicateStudents) {
+                      if (!seenInBatch.has(s.nisn)) {
+                          seenInBatch.add(s.nisn);
+                          uniqueNewStudents.push(s);
+                      }
+                  }
+
+                  if (uniqueNewStudents.length > 0) {
+                      const mergedStudents = [...students, ...uniqueNewStudents];
                       onUpdateStudents(mergedStudents);
                       await api.syncInitialData(mergedStudents);
                       
-                      // Notification Success
                       setNotification({
-                          message: `Berhasil mengimport ${nonDuplicateStudents.length} data siswa baru.`,
+                          message: `Berhasil mengimport ${uniqueNewStudents.length} data siswa baru.`,
                           type: 'success'
                       });
-                      setTimeout(() => setNotification(null), 5000); // Hide after 5s
+                      setTimeout(() => setNotification(null), 5000);
                   } else {
-                      // Notification Duplicate
                       setNotification({
                           message: "Data terbaca, tetapi semua siswa sudah ada di database (NISN duplikat).",
                           type: 'warning'

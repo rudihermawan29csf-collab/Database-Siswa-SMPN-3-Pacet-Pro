@@ -53,6 +53,7 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
   
   const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
   const isTargetingRef = useRef(false);
+  const handledTargetRef = useRef<string | undefined>(undefined);
 
   const [zoomLevel, setZoomLevel] = useState(1);
   const [rotation, setRotation] = useState(0);
@@ -70,12 +71,14 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
   }, []);
 
   useEffect(() => {
-      if (targetStudentId && students.length > 0) {
+      // FIX: Only target if we haven't handled this specific target ID yet
+      if (targetStudentId && students.length > 0 && targetStudentId !== handledTargetRef.current) {
           const student = students.find(s => s.id === targetStudentId);
           if (student) {
               isTargetingRef.current = true;
               setSelectedClass(student.className);
               setSelectedStudentId(student.id);
+              handledTargetRef.current = targetStudentId;
               setTimeout(() => { isTargetingRef.current = false; }, 800);
           }
       }
