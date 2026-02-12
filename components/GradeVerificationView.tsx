@@ -167,6 +167,8 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
       );
   }, [currentStudent, activeSemester, activePage]);
 
+  const isCurrentDocProcessed = currentDoc && (processedIds.has(currentDoc.id) || currentDoc.status === 'APPROVED' || currentDoc.status === 'REVISION');
+
   // Reset viewer when doc changes
   useEffect(() => {
       setZoomLevel(1);
@@ -567,16 +569,18 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
           onUpdate(updatedStudent);
           await api.updateStudent(updatedStudent);
           
-          // Auto advance logic
-          const otherDocs = updatedStudent.documents.filter((d: any) => d.category === 'RAPOR' && d.status === 'PENDING' && !processedIds.has(d.id));
-          if (otherDocs.length > 0) {
-              // Stay on current student if more pages
-          } else {
-              // Check requests
-              const hasReq = updatedStudent.correctionRequests?.some((r: any) => r.status === 'PENDING' && (r.fieldKey.startsWith('grade-') || r.fieldKey.startsWith('class-')));
-              if(!hasReq) {
-                  const nextId = findNextStudentWithIssues();
-                  if(nextId) setTimeout(() => setSelectedStudentId(nextId), 500);
+          // Auto advance logic (Only if APPROVED)
+          if (status === 'APPROVED') {
+              const otherDocs = updatedStudent.documents.filter((d: any) => d.category === 'RAPOR' && d.status === 'PENDING' && !processedIds.has(d.id));
+              if (otherDocs.length > 0) {
+                  // Stay on current student if more pages
+              } else {
+                  // Check requests
+                  const hasReq = updatedStudent.correctionRequests?.some((r: any) => r.status === 'PENDING' && (r.fieldKey.startsWith('grade-') || r.fieldKey.startsWith('class-')));
+                  if(!hasReq) {
+                      const nextId = findNextStudentWithIssues();
+                      if(nextId) setTimeout(() => setSelectedStudentId(nextId), 500);
+                  }
               }
           }
 
@@ -796,12 +800,19 @@ const GradeVerificationView: React.FC<GradeVerificationViewProps> = ({ students,
                     </div>
 
                     {currentStudent && (
-                        <div className="p-4 border-t border-gray-200 bg-gray-50">
+                        <div className="p-4 border-t border-gray-200 bg-gray-50 shadow-inner">
                             <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Catatan Dokumen (Hal {activePage})</label>
                             <input type="text" className="w-full p-2.5 border border-gray-300 rounded-lg text-sm mb-3 outline-none" placeholder="Catatan untuk siswa..." value={adminNote} onChange={(e) => setAdminNote(e.target.value)}/>
+                            
+                            {isCurrentDocProcessed && (
+                                <div className={`mb-3 p-2 rounded text-center text-xs font-bold ${currentDoc?.status === 'APPROVED' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'}`}>
+                                    Status Saat Ini: {currentDoc?.status === 'APPROVED' ? 'DISETUJUI' : 'DITOLAK / REVISI'}
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-2 gap-2">
-                                <button onClick={() => handleProcess('REVISION')} disabled={isProcessing || !currentDoc} className="py-2.5 bg-white border border-red-200 text-red-600 font-bold rounded-lg text-sm flex items-center justify-center gap-2"><XCircle className="w-4 h-4" /> Tolak Dokumen</button>
-                                <button onClick={() => handleProcess('APPROVED')} disabled={isProcessing} className="py-2.5 bg-green-600 text-white font-bold rounded-lg text-sm flex items-center justify-center gap-2 shadow-sm">{isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} {currentDoc ? 'Valid & Simpan' : 'Simpan Nilai'}</button>
+                                <button onClick={() => handleProcess('REVISION')} disabled={isProcessing || !currentDoc} className="py-2.5 bg-white border border-red-200 text-red-600 font-bold rounded-lg text-sm flex items-center justify-center gap-2"><XCircle className="w-4 h-4" /> Tolak / Batalkan</button>
+                                <button onClick={() => handleProcess('APPROVED')} disabled={isProcessing} className={`py-2.5 text-white font-bold rounded-lg text-sm flex items-center justify-center gap-2 shadow-sm ${currentDoc?.status === 'APPROVED' ? 'bg-green-700' : 'bg-green-600 hover:bg-green-700'}`}>{isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} {currentDoc ? (currentDoc.status === 'APPROVED' ? 'Sudah Valid' : 'Valid & Simpan') : 'Simpan Nilai'}</button>
                             </div>
                         </div>
                     )}

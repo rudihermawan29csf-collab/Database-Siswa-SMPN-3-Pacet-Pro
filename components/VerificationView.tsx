@@ -5,7 +5,7 @@ import { api } from '../services/api';
 import { 
   CheckCircle2, XCircle, Loader2, AlertCircle, ScrollText, ZoomIn, ZoomOut, 
   RotateCw, FileCheck2, User, Filter, Search, FileBadge, Save, 
-  GitPullRequest, Check, X, ArrowRight, FileText, MapPin, Users, Heart, Wallet, ChevronDown, CheckCheck 
+  GitPullRequest, Check, X, ArrowRight, FileText, MapPin, Users, Heart, Wallet, ChevronDown, CheckCheck, RefreshCw 
 } from 'lucide-react';
 
 interface VerificationViewProps {
@@ -173,6 +173,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   // Documents pending approval in current view
   const pendingDocs = useMemo(() => {
+      // FIX: Ensure docs are filtered if they are already in processedIds to prevent flashing
       return studentDocs.filter(d => d.status === 'PENDING' && !processedIds.has(d.id));
   }, [studentDocs, processedIds]);
 
@@ -200,7 +201,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   const currentDoc = studentDocs.find(d => d.id === selectedDocId);
   // FIX: Check status from data as well to ensure UI consistency
-  const isCurrentDocProcessed = currentDoc && (processedIds.has(currentDoc.id) || currentDoc.status === 'APPROVED');
+  const isCurrentDocProcessed = currentDoc && (processedIds.has(currentDoc.id) || currentDoc.status === 'APPROVED' || currentDoc.status === 'REVISION');
 
   const pendingRequests = useMemo(() => {
       if (!currentStudent?.correctionRequests) return [];
@@ -236,13 +237,22 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       if (!confirm(`Setujui ${pendingDocs.length} dokumen sekaligus?`)) return;
 
       setIsBulkApproving(true);
-      const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
-      const newlyProcessedIds = new Set<string>();
+      
+      // 1. Capture IDs for immediate local update
+      const idsToProcess = pendingDocs.map(d => d.id);
+      
+      // 2. Optimistic Update: Mark processed immediately
+      setProcessedIds(prev => {
+          const next = new Set(prev);
+          idsToProcess.forEach(id => next.add(id));
+          return next;
+      });
 
-      pendingDocs.forEach(doc => {
-          newlyProcessedIds.add(doc.id);
+      try {
+          // 3. Prepare updated data
+          const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
           updatedStudent.documents = updatedStudent.documents.map((d: any) => {
-              if (d.id === doc.id) {
+              if (idsToProcess.includes(d.id)) {
                   return {
                       ...d,
                       status: 'APPROVED',
@@ -253,17 +263,16 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               }
               return d;
           });
-      });
 
-      setProcessedIds(prev => new Set([...prev, ...newlyProcessedIds]));
-
-      try {
+          // 4. Update parent state immediately (Optimistic UI)
           onUpdate(updatedStudent);
+          
+          // 5. Sync to server
           await api.updateStudent(updatedStudent);
           
-          // Auto Advance check
+          // Auto Advance check using the updated data structure
           const remainingReqs = updatedStudent.correctionRequests?.some((r: any) => r.status === 'PENDING' && !processedIds.has(r.id));
-          const remainingAllDocs = updatedStudent.documents.some((d: any) => d.status === 'PENDING' && allowedCategories.includes(d.category) && !processedIds.has(d.id));
+          const remainingAllDocs = updatedStudent.documents.some((d: any) => d.status === 'PENDING' && allowedCategories.includes(d.category) && !idsToProcess.includes(d.id));
           
           if (!remainingReqs && !remainingAllDocs) {
               const nextId = findNextStudentWithIssues();
@@ -271,9 +280,10 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           }
       } catch (e) {
           console.error(e);
+          // Revert processing state on error
           setProcessedIds(prev => {
               const next = new Set(prev);
-              newlyProcessedIds.forEach(id => next.delete(id));
+              idsToProcess.forEach(id => next.delete(id));
               return next;
           });
           alert("Gagal memproses dokumen.");
@@ -766,16 +776,16 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                             <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Catatan Dokumen</label>
                             <input type="text" className="w-full p-2.5 border border-gray-300 rounded-lg text-sm mb-3 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Catatan untuk siswa jika ditolak..." value={adminNote} onChange={(e) => setAdminNote(e.target.value)} />
                             
-                            {isCurrentDocProcessed ? (
-                                <div className="py-2.5 bg-green-50 border border-green-200 text-green-700 font-bold rounded-lg text-sm flex items-center justify-center gap-2 animate-pulse">
-                                    <CheckCircle2 className="w-4 h-4" /> Berhasil Disimpan
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button onClick={() => handleProcess('REVISION')} disabled={isProcessing} className="py-2.5 bg-white border border-red-200 text-red-600 font-bold rounded-lg hover:bg-red-50 text-sm flex items-center justify-center gap-2"><XCircle className="w-4 h-4" /> Tolak</button>
-                                    <button onClick={() => handleProcess('APPROVED')} disabled={isProcessing} className="py-2.5 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 text-sm flex items-center justify-center gap-2 shadow-sm">{isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Valid & Simpan</button>
+                            {isCurrentDocProcessed && (
+                                <div className={`mb-3 p-2 rounded text-center text-xs font-bold ${currentDoc.status === 'APPROVED' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'}`}>
+                                    Status Saat Ini: {currentDoc.status === 'APPROVED' ? 'DISETUJUI' : 'DITOLAK / REVISI'}
                                 </div>
                             )}
+
+                            <div className="grid grid-cols-2 gap-2">
+                                <button onClick={() => handleProcess('REVISION')} disabled={isProcessing} className="py-2.5 bg-white border border-red-200 text-red-600 font-bold rounded-lg hover:bg-red-50 text-sm flex items-center justify-center gap-2"><XCircle className="w-4 h-4" /> Tolak / Batalkan</button>
+                                <button onClick={() => handleProcess('APPROVED')} disabled={isProcessing} className={`py-2.5 text-white font-bold rounded-lg text-sm flex items-center justify-center gap-2 shadow-sm ${currentDoc.status === 'APPROVED' ? 'bg-green-700' : 'bg-green-600 hover:bg-green-700'}`}>{isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} {currentDoc.status === 'APPROVED' ? 'Sudah Valid' : 'Valid & Simpan'}</button>
+                            </div>
                         </div>
                     ) : (
                         <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-center text-gray-400 text-xs">

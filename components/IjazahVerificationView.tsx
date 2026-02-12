@@ -126,6 +126,7 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
   }, [ijazahDocs, processedIds]);
 
   const currentDoc = ijazahDocs.find(d => d.id === selectedDocId);
+  const isCurrentDocProcessed = currentDoc && (processedIds.has(currentDoc.id) || currentDoc.status === 'APPROVED' || currentDoc.status === 'REVISION');
 
   // STRICTLY FILTER PENDING REQUESTS FOR IJAZAH FIELDS
   const pendingRequests = useMemo(() => {
@@ -459,12 +460,19 @@ const IjazahVerificationView: React.FC<IjazahVerificationViewProps> = ({ student
                         ) : <div className="text-center text-gray-400 text-xs py-10">Pilih dokumen di atas.</div>}
                     </div>
                     {currentDoc && (
-                        <div className="p-4 border-t border-gray-200 bg-gray-50">
+                        <div className="p-4 border-t border-gray-200 bg-gray-50 shadow-inner">
                             <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Catatan</label>
                             <input type="text" className="w-full p-2.5 border border-gray-300 rounded-lg text-sm mb-3 outline-none" placeholder="Catatan..." value={adminNote} onChange={(e) => setAdminNote(e.target.value)} />
+                            
+                            {isCurrentDocProcessed && (
+                                <div className={`mb-3 p-2 rounded text-center text-xs font-bold ${currentDoc.status === 'APPROVED' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'}`}>
+                                    Status Saat Ini: {currentDoc.status === 'APPROVED' ? 'DISETUJUI' : 'DITOLAK / REVISI'}
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-2 gap-2">
-                                <button onClick={() => handleProcess('REVISION')} disabled={isProcessing} className="py-2.5 bg-white border border-red-200 text-red-600 font-bold rounded-lg text-sm flex items-center justify-center gap-2"><XCircle className="w-4 h-4" /> Tolak</button>
-                                <button onClick={() => handleProcess('APPROVED')} disabled={isProcessing} className="py-2.5 bg-green-600 text-white font-bold rounded-lg text-sm flex items-center justify-center gap-2 shadow-sm">{isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Simpan & Valid</button>
+                                <button onClick={() => handleProcess('REVISION')} disabled={isProcessing} className="py-2.5 bg-white border border-red-200 text-red-600 font-bold rounded-lg hover:bg-red-50 text-sm flex items-center justify-center gap-2"><XCircle className="w-4 h-4" /> Tolak / Batalkan</button>
+                                <button onClick={() => handleProcess('APPROVED')} disabled={isProcessing} className={`py-2.5 text-white font-bold rounded-lg text-sm flex items-center justify-center gap-2 shadow-sm ${currentDoc.status === 'APPROVED' ? 'bg-green-700' : 'bg-green-600 hover:bg-green-700'}`}>{isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} {currentDoc.status === 'APPROVED' ? 'Sudah Valid' : 'Valid & Simpan'}</button>
                             </div>
                         </div>
                     )}
