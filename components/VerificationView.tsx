@@ -101,61 +101,80 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   const uniqueClasses = useMemo(() => Array.from(new Set(students.map(s => s.className))).sort(), [students]);
 
-  // --- SMART INITIALIZATION ---
+  // --- SMART TARGETING (NOTIFICATION CLICK) ---
   useEffect(() => {
-      // FIX: Only target if we haven't handled this specific target ID yet
+      // Logic: If targetStudentId exists and we haven't handled it yet
       if (targetStudentId && students.length > 0 && targetStudentId !== handledTargetRef.current) {
           const student = students.find(s => s.id === targetStudentId);
           if (student) { 
+              console.log("Targeting Student:", student.fullName);
               isTargetingRef.current = true;
+              
+              // Set states
               setSelectedClass(student.className); 
               setSelectedStudentId(student.id); 
-              handledTargetRef.current = targetStudentId; // Mark as handled
-              isInitializedRef.current = true;
-              setTimeout(() => { isTargetingRef.current = false; }, 800);
+              
+              // Mark handled
+              handledTargetRef.current = targetStudentId; 
+              
+              // Find if there's a specific pending doc to select
+              const pendingDoc = student.documents.find(d => d.status === 'PENDING' && allowedCategories.includes(d.category));
+              if (pendingDoc) setSelectedDocId(pendingDoc.id);
+
+              // Release lock after delay to allow UI to render the correct class list
+              setTimeout(() => { isTargetingRef.current = false; }, 1000);
               return;
           }
       }
 
+      // Initial Load Auto-Select (Only if no target)
       if (!isInitializedRef.current && students.length > 0 && !selectedStudentId && !targetStudentId) {
-          let found = false;
+          let foundId = '';
+          let foundClass = '';
           const sortedAll = [...students].sort((a, b) => a.fullName.localeCompare(b.fullName));
           
           for (const s of sortedAll) {
-              const hasPendingReq = s.correctionRequests?.some(r => r.status === 'PENDING' && !r.fieldKey.startsWith('grade-') && !r.fieldKey.startsWith('class-') && !r.fieldKey.startsWith('ijazah-'));
+              const hasPendingReq = s.correctionRequests?.some(r => r.status === 'PENDING' && !r.fieldKey.startsWith('grade-'));
               const hasPendingDoc = s.documents?.some(d => d.status === 'PENDING' && allowedCategories.includes(d.category));
               
               if (hasPendingReq || hasPendingDoc) {
-                  setSelectedClass(s.className);
-                  setSelectedStudentId(s.id);
-                  found = true;
+                  foundClass = s.className;
+                  foundId = s.id;
                   break;
               }
           }
 
-          if (!found && uniqueClasses.length > 0) {
+          if (foundId) {
+              setSelectedClass(foundClass);
+              setSelectedStudentId(foundId);
+          } else if (uniqueClasses.length > 0) {
               setSelectedClass(uniqueClasses[0]);
           }
           
           isInitializedRef.current = true;
       }
-  }, [students, targetStudentId, uniqueClasses, allowedCategories, selectedStudentId]);
+  }, [students, targetStudentId, uniqueClasses, allowedCategories]);
 
+  // Default Class Selection
   useEffect(() => {
-      if (!selectedClass && uniqueClasses.length > 0) {
+      if (!selectedClass && uniqueClasses.length > 0 && !isTargetingRef.current) {
           setSelectedClass(uniqueClasses[0]);
       }
   }, [uniqueClasses, selectedClass]);
 
   const filteredStudents = useMemo(() => students.filter(s => s.className === selectedClass).sort((a, b) => a.fullName.localeCompare(b.fullName)), [students, selectedClass]);
   
+  // --- AUTO SELECT STUDENT IN LIST ---
   useEffect(() => {
       if (isTargetingRef.current) return; 
 
-      if (!selectedStudentId && filteredStudents.length > 0) {
-          setSelectedStudentId(filteredStudents[0].id);
-      } else if (filteredStudents.length > 0 && !filteredStudents.find(s => s.id === selectedStudentId)) {
-          setSelectedStudentId(filteredStudents[0].id);
+      // If current selected student is NOT in the new filtered list (e.g. class changed manually), select first
+      const isValid = filteredStudents.find(s => s.id === selectedStudentId);
+      
+      if (filteredStudents.length > 0) {
+          if (!selectedStudentId || !isValid) {
+              setSelectedStudentId(filteredStudents[0].id);
+          }
       }
   }, [filteredStudents, selectedStudentId]);
 
@@ -163,9 +182,10 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
 
   useEffect(() => {
       if (currentStudent) {
+          // Reset form data when student changes
           const dataCopy = JSON.parse(JSON.stringify(currentStudent));
           setFormData(prev => prev.id === currentStudent.id ? prev : dataCopy);
-          setActiveTab('ALL');
+          // Don't reset activeTab here to keep context
       }
   }, [currentStudent]);
 
@@ -176,36 +196,35 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       return docs;
   }, [currentStudent, activeTab, allowedCategories]);
 
-  // Documents pending approval in current view
   const pendingDocs = useMemo(() => {
-      // FIX: Ensure docs are filtered if they are already in processedIds to prevent flashing
       return studentDocs.filter(d => d.status === 'PENDING' && !processedIds.has(d.id));
   }, [studentDocs, processedIds]);
 
-  // --- IMPROVED AUTO-ADVANCE LOGIC ---
+  // --- FIX: AUTO SELECT DOCUMENT WHEN TAB CHANGES ---
   useEffect(() => {
-      // 1. If we have a selection that is now processed or no longer pending, move to next.
-      const currentDocObj = studentDocs.find(d => d.id === selectedDocId);
-      // Logic fix: Check if marked processed OR actually approved in data
-      const isCurrentProcessed = selectedDocId && processedIds.has(selectedDocId);
-      const isCurrentDone = currentDocObj && currentDocObj.status !== 'PENDING';
+      // Check if current selectedDocId is visible in the current studentDocs list
+      const isVisible = studentDocs.some(d => d.id === selectedDocId);
 
-      // 2. If no selection at all, or current selection is done/processed
-      if (!selectedDocId || !currentDocObj || isCurrentProcessed || isCurrentDone) {
-          // Find the first pending doc that is NOT in processedIds
-          const nextPending = studentDocs.find(d => d.status === 'PENDING' && !processedIds.has(d.id));
-          
-          if (nextPending) {
-              setSelectedDocId(nextPending.id);
-          } else if (!selectedDocId && studentDocs.length > 0) {
-              // Fallback: If nothing pending, just select the first one (for viewing)
-              setSelectedDocId(studentDocs[0].id);
+      if (!isVisible || !selectedDocId) {
+          if (studentDocs.length > 0) {
+              // Priority 1: Pending Document not processed
+              const pending = studentDocs.find(d => d.status === 'PENDING' && !processedIds.has(d.id));
+              // Priority 2: First Document
+              setSelectedDocId(pending ? pending.id : studentDocs[0].id);
+          } else {
+              setSelectedDocId(null);
+          }
+      } else {
+          // If current doc IS visible, check if it's now processed (approved/rejected), if so, try to move to next pending
+          const currentDocObj = studentDocs.find(d => d.id === selectedDocId);
+          if (currentDocObj && (processedIds.has(currentDocObj.id) || currentDocObj.status !== 'PENDING')) {
+               const nextPending = studentDocs.find(d => d.status === 'PENDING' && !processedIds.has(d.id));
+               if (nextPending) setSelectedDocId(nextPending.id);
           }
       }
-  }, [studentDocs, processedIds, selectedDocId]);
+  }, [studentDocs, activeTab, selectedDocId, processedIds]);
 
   const currentDoc = studentDocs.find(d => d.id === selectedDocId);
-  // FIX: Check status from data as well to ensure UI consistency
   const isCurrentDocProcessed = currentDoc && (processedIds.has(currentDoc.id) || currentDoc.status === 'APPROVED' || currentDoc.status === 'REVISION');
 
   const pendingRequests = useMemo(() => {
@@ -224,13 +243,13 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       const currentIndex = filteredStudents.findIndex(s => s.id === selectedStudentId);
       for (let i = currentIndex + 1; i < filteredStudents.length; i++) {
           const s = filteredStudents[i];
-          const hasPendingReq = s.correctionRequests?.some(r => r.status === 'PENDING' && !r.fieldKey.startsWith('grade-') && !r.fieldKey.startsWith('class-') && !r.fieldKey.startsWith('ijazah-') && !processedIds.has(r.id));
+          const hasPendingReq = s.correctionRequests?.some(r => r.status === 'PENDING' && !r.fieldKey.startsWith('grade-') && !processedIds.has(r.id));
           const hasPendingDoc = s.documents.some(d => d.status === 'PENDING' && allowedCategories.includes(d.category) && !processedIds.has(d.id));
           if (hasPendingReq || hasPendingDoc) return s.id;
       }
       for (let i = 0; i < currentIndex; i++) {
           const s = filteredStudents[i];
-          const hasPendingReq = s.correctionRequests?.some(r => r.status === 'PENDING' && !r.fieldKey.startsWith('grade-') && !r.fieldKey.startsWith('class-') && !r.fieldKey.startsWith('ijazah-') && !processedIds.has(r.id));
+          const hasPendingReq = s.correctionRequests?.some(r => r.status === 'PENDING' && !r.fieldKey.startsWith('grade-') && !processedIds.has(r.id));
           const hasPendingDoc = s.documents.some(d => d.status === 'PENDING' && allowedCategories.includes(d.category) && !processedIds.has(d.id));
           if (hasPendingReq || hasPendingDoc) return s.id;
       }
@@ -242,11 +261,8 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       if (!confirm(`Setujui ${pendingDocs.length} dokumen sekaligus?`)) return;
 
       setIsBulkApproving(true);
-      
-      // 1. Capture IDs for immediate local update
       const idsToProcess = pendingDocs.map(d => d.id);
       
-      // 2. Optimistic Update: Mark processed immediately
       setProcessedIds(prev => {
           const next = new Set(prev);
           idsToProcess.forEach(id => next.add(id));
@@ -254,38 +270,24 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       });
 
       try {
-          // 3. Prepare updated data
           const updatedStudent = JSON.parse(JSON.stringify(currentStudent));
           updatedStudent.documents = updatedStudent.documents.map((d: any) => {
               if (idsToProcess.includes(d.id)) {
-                  return {
-                      ...d,
-                      status: 'APPROVED',
-                      verifierName: currentUser.name,
-                      verificationDate: new Date().toISOString(),
-                      adminNote: 'Disetujui Masal.'
-                  };
+                  return { ...d, status: 'APPROVED', verifierName: currentUser.name, verificationDate: new Date().toISOString(), adminNote: 'Disetujui Masal.' };
               }
               return d;
           });
 
-          // 4. Update parent state immediately (Optimistic UI)
           onUpdate(updatedStudent);
-          
-          // 5. Sync to server
           await api.updateStudent(updatedStudent);
           
-          // Auto Advance check using the updated data structure
-          const remainingReqs = updatedStudent.correctionRequests?.some((r: any) => r.status === 'PENDING' && !processedIds.has(r.id));
           const remainingAllDocs = updatedStudent.documents.some((d: any) => d.status === 'PENDING' && allowedCategories.includes(d.category) && !idsToProcess.includes(d.id));
-          
-          if (!remainingReqs && !remainingAllDocs) {
+          if (!remainingAllDocs) {
               const nextId = findNextStudentWithIssues();
               if (nextId) setTimeout(() => setSelectedStudentId(nextId), 500);
           }
       } catch (e) {
           console.error(e);
-          // Revert processing state on error
           setProcessedIds(prev => {
               const next = new Set(prev);
               idsToProcess.forEach(id => next.delete(id));
@@ -310,13 +312,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           if (updatedStudent.correctionRequests) {
               const reqIndex = updatedStudent.correctionRequests.findIndex((r: CorrectionRequest) => r.id === req.id);
               if (reqIndex !== -1) {
-                  updatedStudent.correctionRequests[reqIndex] = {
-                      ...updatedStudent.correctionRequests[reqIndex],
-                      status: 'APPROVED',
-                      verifierName: currentUser.name,
-                      processedDate: new Date().toISOString(),
-                      adminNote: 'Disetujui Masal.'
-                  };
+                  updatedStudent.correctionRequests[reqIndex] = { ...updatedStudent.correctionRequests[reqIndex], status: 'APPROVED', verifierName: currentUser.name, processedDate: new Date().toISOString(), adminNote: 'Disetujui Masal.' };
               }
           }
           const keys = req.fieldKey.split('.');
@@ -344,11 +340,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           }
       } catch (e) {
           console.error(e);
-          setProcessedIds(prev => {
-              const next = new Set(prev);
-              newlyProcessedIds.forEach(id => next.delete(id));
-              return next;
-          });
+          setProcessedIds(prev => { const next = new Set(prev); newlyProcessedIds.forEach(id => next.delete(id)); return next; });
           alert("Gagal memproses persetujuan masal.");
       } finally {
           setIsBulkApproving(false);
@@ -375,28 +367,19 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
           if (status === 'APPROVED') {
               const keys = request.fieldKey.split('.');
               let current = updatedStudent;
-              for (let i = 0; i < keys.length - 1; i++) {
-                  if (!current[keys[i]]) current[keys[i]] = {};
-                  current = current[keys[i]];
-              }
+              for (let i = 0; i < keys.length - 1; i++) { if (!current[keys[i]]) current[keys[i]] = {}; current = current[keys[i]]; }
               const lastKey = keys[keys.length - 1];
               const val = (['height', 'weight', 'siblingCount', 'childOrder', 'entryYear'].includes(lastKey) || request.fieldKey.includes('circumference')) ? Number(request.proposedValue) : request.proposedValue;
               current[lastKey] = val;
 
               const newFormData = { ...formData };
               let currentForm: any = newFormData;
-              for (let i = 0; i < keys.length - 1; i++) {
-                  if (!currentForm[keys[i]]) currentForm[keys[i]] = {};
-                  currentForm = currentForm[keys[i]];
-              }
+              for (let i = 0; i < keys.length - 1; i++) { if (!currentForm[keys[i]]) currentForm[keys[i]] = {}; currentForm = currentForm[keys[i]]; }
               currentForm[keys[keys.length - 1]] = val;
               setFormData(newFormData);
           }
 
-          // OPTIMISTIC UPDATE
           onUpdate(updatedStudent); 
-          
-          // Then Sync to Server
           await api.updateStudent(updatedStudent);
       } catch (e) { 
           setProcessedIds(prev => { const next = new Set(prev); next.delete(request.id); return next; });
@@ -409,7 +392,6 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
       if (status === 'REVISION' && !adminNote.trim()) { alert("Mohon isi catatan revisi."); return; }
       
       setIsProcessing(true);
-      // Mark as processed IMMEDIATELY to update UI
       if (status !== 'SAVE_ONLY' && currentDoc) {
           setProcessedIds(prev => new Set(prev).add(currentDoc.id));
       }
@@ -427,19 +409,14 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
               updatedStudent.documents = updatedStudent.documents.map((d: any) => d.id === currentDoc.id ? { ...d, status, adminNote, verifierName: currentUser.name, verificationDate: new Date().toISOString() } : d);
           }
           
-          // OPTIMISTIC UPDATE: Update Parent State FIRST
           onUpdate(updatedStudent); 
-          
-          // Then Sync to Server
           await api.updateStudent(updatedStudent);
           
           if (status !== 'SAVE_ONLY' && currentDoc) { 
               setAdminNote(''); 
-              // Auto-advance logic handled by useEffect on processedIds/doc change
           }
           if (status === 'SAVE_ONLY') alert("Data berhasil disimpan.");
       } catch (e) { 
-          // Revert processed ID on error
           if (status !== 'SAVE_ONLY' && currentDoc) {
             setProcessedIds(prev => { const next = new Set(prev); next.delete(currentDoc.id); return next; });
           }
@@ -591,7 +568,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                 ) : (
                     <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
                         <FileText className="w-16 h-16 mb-4 opacity-20" />
-                        <p>Dokumen tidak tersedia.</p>
+                        <p>Dokumen tidak tersedia atau belum dipilih.</p>
                     </div>
                 )}
             </div>
@@ -619,7 +596,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                         ))}
                     </div>
                     <div className="max-h-32 overflow-y-auto border-t border-gray-100">
-                        {studentDocs.map(doc => {
+                        {studentDocs.length > 0 ? studentDocs.map(doc => {
                             const isProcessed = processedIds.has(doc.id);
                             return (
                                 <div key={doc.id} onClick={() => setSelectedDocId(doc.id)} className={`p-2 px-4 border-b border-gray-50 cursor-pointer hover:bg-white flex items-center justify-between ${selectedDocId === doc.id ? 'bg-white border-l-4 border-l-blue-600 shadow-inner' : ''}`}>
@@ -634,7 +611,7 @@ const VerificationView: React.FC<VerificationViewProps> = ({ students, targetStu
                                     )}
                                 </div>
                             );
-                        })}
+                        }) : <div className="p-3 text-center text-xs text-gray-400">Tidak ada dokumen sesuai filter.</div>}
                     </div>
                 </div>
 
