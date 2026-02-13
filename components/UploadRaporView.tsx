@@ -429,16 +429,14 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
                                             >
                                                 <Eye className="w-3 h-3" /> Lihat
                                             </button>
-                                            {!isApproved && (
-                                                <>
-                                                    <button onClick={(e) => { e.stopPropagation(); handleUploadClick(page); }} className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-bold hover:bg-blue-700 w-full flex items-center justify-center gap-1 shadow-sm">
-                                                        <RefreshCw className="w-3 h-3" /> {isRevision ? 'Upload Ulang' : 'Ganti'}
-                                                    </button>
-                                                    <button onClick={(e) => { e.stopPropagation(); handleDelete(doc.id); }} className="px-3 py-1.5 bg-red-600 text-white rounded text-xs font-bold hover:bg-red-700 w-full flex items-center justify-center gap-1 shadow-sm">
-                                                        <Trash2 className="w-3 h-3" /> Hapus
-                                                    </button>
-                                                </>
-                                            )}
+                                            
+                                            {/* REMOVED !isApproved CHECK HERE */}
+                                            <button onClick={(e) => { e.stopPropagation(); handleUploadClick(page); }} className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-bold hover:bg-blue-700 w-full flex items-center justify-center gap-1 shadow-sm">
+                                                <RefreshCw className="w-3 h-3" /> {isRevision ? 'Upload Ulang' : 'Ganti'}
+                                            </button>
+                                            <button onClick={(e) => { e.stopPropagation(); handleDelete(doc.id); }} className="px-3 py-1.5 bg-red-600 text-white rounded text-xs font-bold hover:bg-red-700 w-full flex items-center justify-center gap-1 shadow-sm">
+                                                <Trash2 className="w-3 h-3" /> Hapus
+                                            </button>
                                         </div>
                                     </>
                                 ) : (

@@ -290,16 +290,16 @@ const FileManager: React.FC<FileManagerProps> = ({ documents, onUpload, onDelete
                                                 <Eye className="w-3 h-3 mr-1.5" /> Lihat Dokumen
                                             </button>
                                             
-                                            {!isApproved && (
-                                                <button 
-                                                    onClick={() => handleTriggerUpload(cat.id)}
-                                                    className={`w-full py-2 rounded-lg text-xs font-bold border flex items-center justify-center ${isRevision ? 'bg-red-600 text-white border-red-600 hover:bg-red-700' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'}`}
-                                                >
-                                                    <RefreshCw className="w-3 h-3 mr-1.5" /> {isRevision ? 'Upload Revisi' : 'Ganti File'}
-                                                </button>
-                                            )}
+                                            {/* REMOVED !isApproved CHECK HERE */}
+                                            <button 
+                                                onClick={() => handleTriggerUpload(cat.id)}
+                                                className={`w-full py-2 rounded-lg text-xs font-bold border flex items-center justify-center ${isRevision ? 'bg-red-600 text-white border-red-600 hover:bg-red-700' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'}`}
+                                            >
+                                                <RefreshCw className="w-3 h-3 mr-1.5" /> {isRevision ? 'Upload Revisi' : 'Ganti File'}
+                                            </button>
 
-                                            {onDelete && (allowDeleteApproved || !isApproved) && (
+                                            {/* SIMPLIFY DELETE CHECK */}
+                                            {onDelete && (
                                                 <button 
                                                     onClick={() => onDelete(doc.id)}
                                                     className="w-full py-2 bg-white text-red-600 border border-red-200 rounded-lg text-xs font-bold hover:bg-red-50 flex items-center justify-center"
