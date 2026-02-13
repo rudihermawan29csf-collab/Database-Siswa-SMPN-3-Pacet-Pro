@@ -564,7 +564,7 @@ function App() {
                 onBack={() => setCurrentView('dashboard')} 
                 viewMode="student" 
                 readOnly={true}
-                onUpdate={() => refreshData(selectedStudent || undefined)}
+                onUpdate={(updated) => refreshData(updated)}
             />
         ) : null;
       

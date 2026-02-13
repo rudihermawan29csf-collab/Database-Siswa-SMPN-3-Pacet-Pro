@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Save, Pencil, AlertTriangle, X, CheckCircle2, XCircle, MessageSquare, Loader2, FileText, ListChecks, AlertCircle, User, MapPin, Users, Heart, Wallet, ChevronDown, ChevronUp } from 'lucide-react';
 import { Student, CorrectionRequest } from '../types';
@@ -33,7 +34,7 @@ interface StudentDetailProps {
   readOnly?: boolean;
   highlightFieldKey?: string;
   highlightDocumentId?: string;
-  onUpdate?: () => void;
+  onUpdate?: (student?: Student) => void;
   onSave?: (student: Student) => void;
   currentUser?: { name: string; role: string };
 }
@@ -105,7 +106,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
           await onSave(updatedStudent);
       } else {
           await api.updateStudent(updatedStudent);
-          if (onUpdate) onUpdate();
+          // Pass updatedStudent back to parent to refresh state immediately
+          if (onUpdate) onUpdate(updatedStudent);
       }
       
       setCorrectionModalOpen(false);
@@ -155,7 +157,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student, onBack, viewMode
               await onSave(updatedStudent);
           } else {
               await api.updateStudent(updatedStudent);
-              if (onUpdate) setTimeout(() => onUpdate(), 1000); 
+              if (onUpdate) onUpdate(updatedStudent);
           }
           if(status === 'APPROVED') alert("Perubahan disetujui dan data siswa diperbarui.");
       } catch (e) {
