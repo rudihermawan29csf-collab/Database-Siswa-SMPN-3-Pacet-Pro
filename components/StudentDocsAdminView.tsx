@@ -140,9 +140,9 @@ const StudentDocsAdminView: React.FC<StudentDocsAdminViewProps> = ({ students, o
             alert("Gagal upload ke Drive. File hanya tersimpan lokal sementara.");
             currentStudent.documents = originalDocs; // Rollback
         }
-    } catch (e) {
+    } catch (e: any) {
         console.error(e);
-        alert("Terjadi kesalahan saat upload.");
+        alert("Gagal upload: " + (e.message || e));
         currentStudent.documents = originalDocs; // Rollback
     } finally {
         setIsUploading(false);

@@ -454,9 +454,9 @@ function App() {
           } else {
               alert("Gagal upload file.");
           }
-      } catch (e) {
+      } catch (e: any) {
           console.error(e);
-          alert("Terjadi kesalahan saat upload.");
+          alert("Gagal upload: " + (e.message || e));
       }
   };
 

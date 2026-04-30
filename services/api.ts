@@ -2,7 +2,7 @@
 import { Student, DocumentFile } from '../types';
 
 // URL Deployment Google Apps Script
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxb8fmeWo7qNdYFQc830sLF5uSWHkFj73Nk82H9qL97kjeP3QQUJggXKm5hJZD6Cin/exec';
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwHJSd2AkpLPPkW2vJ1iOIacL5i1RfAfDCUGHKkpVMgkmYQ4Lc46B9FPvhchr-pWpM8/exec';
 
 // --- HELPER: SMART MAPPER (Penerjemah Spreadsheet ke App) ---
 const normalizeStudentData = (rawData: any[]): Student[] => {
@@ -304,7 +304,15 @@ export const api = {
             timeout: 120000 
           } as any);
           const result = await response.json();
-          if (result.status === 'success') resolve(result.url); else reject(result.message);
+          if (result.status === 'success') {
+              resolve(result.url);
+          } else {
+              let errMsg = result.message || 'Gagal dari server';
+              if (errMsg.includes('DriveApp') || errMsg.includes('存取遭拒')) {
+                  errMsg = "Akses Google Drive ditolak! Silakan buka Google Apps Script Anda, jalankan fungsi doPost() secara manual sekali di editor, lalu klik 'Review Permissions' untuk memberi izin baca/tulis Google Drive kepada script tersebut.";
+              }
+              reject(errMsg);
+          }
         } catch (e) { reject(e); }
       };
       reader.onerror = (error) => reject(error);

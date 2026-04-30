@@ -199,9 +199,9 @@ const UploadRaporView: React.FC<UploadRaporViewProps> = ({ student, onUpdate }) 
               } else {
                   alert("Gagal upload ke Google Drive (URL kosong).");
               }
-          } catch (error) {
+          } catch (error: any) {
               console.error("Upload failed", error);
-              alert("Terjadi kesalahan saat mengupload file.");
+              alert("Gagal upload: " + (error.message || error));
           } finally {
               setIsUploading(false);
               setLoadingText('Memproses...');
