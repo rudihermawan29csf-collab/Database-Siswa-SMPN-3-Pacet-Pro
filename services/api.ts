@@ -283,8 +283,8 @@ export const api = {
     }
     
     // VALIDATION: Prevent uploading massive files that will definitely crash GAS
-    if (file.size > 8 * 1024 * 1024) { // 8MB limit check (GAS limit ~10-50MB but payload heavy)
-        alert("Ukuran file terlalu besar! Maksimal 8MB. Mohon kompres file Anda.");
+    if (file.size > 2.5 * 1024 * 1024) { // 2.5MB limit
+        alert("Ukuran file terlalu besar! Maksimal 2.5 MB. File yang lebih besar akan membuat Google Script error. Mohon kompres file Anda terlebih dahulu.");
         return null;
     }
 
